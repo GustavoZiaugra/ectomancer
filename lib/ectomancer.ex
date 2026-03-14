@@ -7,31 +7,47 @@ defmodule Ectomancer do
 
   ## Quick Start
 
-      # In your router
-      forward "/mcp", Ectomancer.Plug
+  1. Create your MCP module:
 
-      # In a dedicated module
       defmodule MyApp.MCP do
-        use Ectomancer
+        use Ectomancer,
+          name: "my-app-mcp",
+          version: "1.0.0"
 
-        tool :send_password_reset do
-          description "Send a password reset email"
-          param :email, :string, required: true
-          handle fn %{email: email}, actor ->
-            MyApp.Accounts.send_reset_email(email, actor)
-          end
-        end
+        # Tools are defined as Anubis.Server.Component.Tool modules
+        # See anubis_mcp documentation for details
       end
 
-  ## Configuration
+  2. Add to your router:
 
-      # config/config.exs
+      forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
+
+  3. Configure actor extraction:
+
       config :ectomancer,
         actor_from: fn conn ->
           conn
-          |> get_req_header("authorization")
-          |> MyApp.Auth.resolve_user()
+          |> Plug.Conn.get_req_header("authorization")
+          |> List.first()
+          |> case do
+            nil -> {:error, :unauthorized}
+            "Bearer " <> token -> MyApp.Auth.verify_token(token)
+            _ -> {:error, :unauthorized}
+          end
         end
+
+  ## Actor Access in Tools
+
+  Tools receive the actor via frame.assigns:
+
+      defmodule MyApp.MCP.MyTool do
+        @behaviour Anubis.Server.Behaviour.Tool
+
+        def execute(params, frame) do
+          actor = frame.assigns[:ectomancer_actor]
+          # Use actor for authorization...
+        end
+      end
   """
 
   @doc """
@@ -39,5 +55,15 @@ defmodule Ectomancer do
   """
   def version do
     "0.1.0"
+  end
+
+  @doc false
+  defmacro __using__(opts) do
+    quote do
+      use Anubis.Server,
+        name: Keyword.get(unquote(opts), :name, "ectomancer-server"),
+        version: Keyword.get(unquote(opts), :version, "0.1.0"),
+        capabilities: [:tools]
+    end
   end
 end
