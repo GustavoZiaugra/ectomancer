@@ -22,8 +22,21 @@ defmodule Ectomancer.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      # MCP Server Implementation (fork of Hermes, more actively maintained)
+      {:anubis_mcp, "~> 0.17"},
+
+      # JSON handling
+      {:jason, "~> 1.4"},
+
+      # Optional dependencies (only loaded if parent app uses them)
+      {:phoenix, "~> 1.7", optional: true},
+      {:ecto, "~> 3.12", optional: true},
+      {:plug, "~> 1.16", optional: true},
+
+      # Development and testing
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 end
