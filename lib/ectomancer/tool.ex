@@ -78,21 +78,13 @@ defmodule Ectomancer.Tool do
       tool_module_name =
         Module.concat(__MODULE__, "Tool.#{Macro.camelize(unquote(tool_name_str))}")
 
-      # Register handler if present
+      # Register handler if present - do this OUTSIDE the defmodule to avoid compile warning
       if handler do
-        handlers = Application.get_env(:ectomancer, :ectomancer_tool_handlers, %{})
-
-        Application.put_env(
-          :ectomancer,
-          :ectomancer_tool_handlers,
-          Map.put(handlers, tool_module_name, handler)
-        )
+        Ectomancer.Tool.__register_handler__(tool_module_name, handler)
       end
 
       # Generate the tool module
       defmodule tool_module_name do
-        @behaviour Anubis.Server.Behaviour.Tool
-
         @moduledoc description
 
         @tool_name unquote(tool_name_str)
@@ -100,13 +92,10 @@ defmodule Ectomancer.Tool do
         @schema_fields schema_fields
         @required_fields required_fields
 
-        @impl Anubis.Server.Behaviour.Tool
         def name, do: @tool_name
 
-        @impl Anubis.Server.Behaviour.Tool
         def description, do: @tool_description
 
-        @impl Anubis.Server.Behaviour.Tool
         def input_schema do
           properties =
             Map.new(@schema_fields, fn {name, type, _opts} ->
@@ -128,10 +117,8 @@ defmodule Ectomancer.Tool do
         # Mark this as a tool component for Anubis
         def __mcp_component_type__, do: :tool
 
-        @doc false
         def __description__, do: @moduledoc
 
-        @impl Anubis.Server.Behaviour.Tool
         def execute(params, frame) do
           actor = frame.assigns[:ectomancer_actor]
           Ectomancer.Tool.__execute__(__MODULE__, params, actor)
@@ -142,6 +129,17 @@ defmodule Ectomancer.Tool do
       require Anubis.Server
       Anubis.Server.component(tool_module_name, name: unquote(tool_name_str))
     end
+  end
+
+  @doc false
+  def __register_handler__(tool_module, handler) do
+    handlers = Application.get_env(:ectomancer, :ectomancer_tool_handlers, %{})
+
+    Application.put_env(
+      :ectomancer,
+      :ectomancer_tool_handlers,
+      Map.put(handlers, tool_module, handler)
+    )
   end
 
   @doc false
