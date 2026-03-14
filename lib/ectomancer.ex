@@ -66,6 +66,7 @@ defmodule Ectomancer do
         capabilities: [:tools]
 
       import Ectomancer.Tool, only: [tool: 2]
+      import Ectomancer.Expose, only: [expose: 2]
     end
   end
 end
