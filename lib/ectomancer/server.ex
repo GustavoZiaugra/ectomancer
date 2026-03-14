@@ -1,10 +1,33 @@
 defmodule Ectomancer.Server do
   @moduledoc """
-  Hermes.Server wrapper with actor threading.
+  Server utilities for Ectomancer.
 
-  Wraps the anubis_mcp server and ensures the current actor
-  is threaded through to every tool handler via frame.assigns.
+  This module provides helper functions for working with the actor
+  in tool handlers. The actor is automatically extracted by
+  Ectomancer.Plug and made available in frame.assigns.
+
+  ## Actor Access
+
+  In tool handlers, access the actor via:
+
+      actor = Ectomancer.Server.get_actor(frame)
+
+  Or directly from frame.assigns:
+
+      actor = frame.assigns[:ectomancer_actor]
   """
 
-  # NOTE: Implement server wrapper with actor threading
+  alias Anubis.Server.Frame
+
+  @doc """
+  Gets the actor from a frame's assigns.
+
+  ## Examples
+
+      actor = Ectomancer.Server.get_actor(frame)
+  """
+  @spec get_actor(Frame.t()) :: any()
+  def get_actor(frame) do
+    get_in(frame, [:assigns, :ectomancer_actor])
+  end
 end
