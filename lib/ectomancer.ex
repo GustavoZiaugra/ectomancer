@@ -64,6 +64,8 @@ defmodule Ectomancer do
         name: Keyword.get(unquote(opts), :name, "ectomancer-server"),
         version: Keyword.get(unquote(opts), :version, "0.1.0"),
         capabilities: [:tools]
+
+      import Ectomancer.Tool, only: [tool: 2]
     end
   end
 end
