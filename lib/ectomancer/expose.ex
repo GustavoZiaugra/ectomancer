@@ -51,8 +51,11 @@ defmodule Ectomancer.Expose do
     * `:update` - Updates existing record by primary key
     * `:destroy` - Deletes record by primary key
 
-  Note: This is a simplified implementation for Issue #7. Full CRUD execution
-  will be implemented in Issue #8.
+  ## Repo Configuration
+
+  The CRUD operations require an Ecto Repo. Configure it in your config:
+
+      config :ectomancer, :repo, MyApp.Repo
   """
 
   alias Ectomancer.SchemaBuilder
@@ -160,9 +163,8 @@ defmodule Ectomancer.Expose do
 
         unquote_splicing(params)
 
-        handle(fn _params, _actor ->
-          # Placeholder - Issue #8 will implement actual CRUD operations
-          {:ok, %{message: "#{unquote(action)} #{unquote(schema)} placeholder"}}
+        handle(fn params, _actor ->
+          Ectomancer.Repo.unquote(action)(unquote(schema), params)
         end)
       end
     end
