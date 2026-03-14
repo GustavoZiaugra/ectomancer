@@ -10,61 +10,72 @@ env:
   MIX_ENV: test
 
 jobs:
-  test:
+  mix_test:
+    name: mix test (OTP ${{ matrix.otp }} | Elixir ${{ matrix.elixir }})
     runs-on: ubuntu-latest
-    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    
     strategy:
+      fail-fast: false
       matrix:
-        elixir: ['1.18', '1.19']
-        otp: ['26', '27']
         include:
-          - elixir: '1.19'
-            otp: '27'
-            check_formatted: true
-            check_warnings: true
-            check_credo: true
+          # Test on latest stable
+          - elixir: '1.18.4'
+            otp: '27.3'
+          
+          # Test on minimum supported versions
+          - elixir: '1.18.4'
+            otp: '26.2'
+          
+          # Lint and check on latest
+          - elixir: '1.19.1'
+            otp: '28.1'
+            lint: true
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Setup Elixir
+    - name: Set up Elixir
       uses: erlef/setup-beam@v1
       with:
         elixir-version: ${{ matrix.elixir }}
         otp-version: ${{ matrix.otp }}
 
-    - name: Cache deps
+    - name: Restore deps and _build cache
       uses: actions/cache@v4
       with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-mix-
-
-    - name: Cache build
-      uses: actions/cache@v4
-      with:
-        path: _build
-        key: ${{ runner.os }}-build-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-build-
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
 
     - name: Install dependencies
       run: mix deps.get
 
-    - name: Check formatting
-      if: matrix.check_formatted
-      run: mix format --check-formatted
+    - name: Remove compiled application files
+      run: mix clean
+
+    - name: Compile dependencies
+      if: ${{ !matrix.lint }}
+      run: mix compile
 
     - name: Compile with warnings as errors
-      if: matrix.check_warnings
+      if: ${{ matrix.lint }}
       run: mix compile --warnings-as-errors
 
+    - name: Check formatting
+      if: ${{ matrix.lint }}
+      run: mix format --check-formatted
+
     - name: Run Credo
-      if: matrix.check_credo
+      if: ${{ matrix.lint }}
       run: mix credo --strict
 
-    - name: Run tests
-      run: mix test
-
     - name: Run Dialyzer
-      if: matrix.check_warnings
+      if: ${{ matrix.lint }}
       run: mix dialyzer --halt-exit-status
+
+    - name: Run tests
+      run: mix test --warnings-as-errors
