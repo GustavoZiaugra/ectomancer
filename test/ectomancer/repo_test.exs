@@ -147,8 +147,8 @@ defmodule Ectomancer.RepoTest do
       frame = %{assigns: %{ectomancer_actor: nil}}
       result = ListTestUsers.execute(%{}, frame)
 
-      # Should return repo_not_configured error
-      assert {:error, :repo_not_configured} = result
+      # Should return Anubis error format
+      assert {:error, %Anubis.MCP.Error{data: %{reason: :repo_not_configured}}, _} = result
     end
   end
 end
