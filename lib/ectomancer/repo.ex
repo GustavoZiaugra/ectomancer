@@ -31,23 +31,8 @@ defmodule Ectomancer.Repo do
   @spec repo() :: module() | nil
   def repo do
     case Application.get_env(:ectomancer, :repo) do
-      nil ->
-        # Try to detect based on app name
-        detected = detect_repo()
-        # Make sure we don't return ourselves
-        if detected == __MODULE__ do
-          nil
-        else
-          detected
-        end
-
-      repo_module ->
-        # Make sure configured repo is not this module
-        if repo_module == __MODULE__ do
-          nil
-        else
-          repo_module
-        end
+      nil -> detect_repo()
+      repo_module -> validate_repo(repo_module)
     end
   end
 
@@ -56,28 +41,9 @@ defmodule Ectomancer.Repo do
   """
   @spec detect_repo() :: module() | nil
   def detect_repo do
-    # Get the application name from the current process
-    # This is a heuristic - checks if MyApp.Repo exists
-    apps = Application.started_applications()
-
-    # Try to find a repo in started apps (exclude :ectomancer itself)
-    apps
+    Application.started_applications()
     |> Enum.reject(fn {app_name, _, _} -> app_name == :ectomancer end)
     |> Enum.find_value(&find_repo_in_app/1)
-  end
-
-  defp find_repo_in_app({app_name, _, _}) do
-    app_module =
-      app_name
-      |> Atom.to_string()
-      |> Macro.camelize()
-      |> String.to_atom()
-
-    repo_module = Module.concat(app_module, Repo)
-
-    if Code.ensure_loaded?(repo_module) and function_exported?(repo_module, :all, 1) do
-      repo_module
-    end
   end
 
   @doc """
@@ -95,11 +61,7 @@ defmodule Ectomancer.Repo do
   """
   @spec list(module(), map(), keyword()) :: {:ok, [struct()]} | {:error, any()}
   def list(schema_module, params \\ %{}, opts \\ []) do
-    repo = repo()
-
-    if is_nil(repo) do
-      {:error, :repo_not_configured}
-    else
+    with_repo(fn repo ->
       introspection = SchemaIntrospection.analyze(schema_module)
 
       query =
@@ -107,13 +69,8 @@ defmodule Ectomancer.Repo do
         |> build_filter_query(params, introspection.fields)
         |> apply_pagination(opts)
 
-      try do
-        records = repo.all(query)
-        {:ok, records}
-      rescue
-        e -> {:error, Exception.message(e)}
-      end
-    end
+      {:ok, repo.all(query)}
+    end)
   end
 
   @doc """
@@ -131,30 +88,11 @@ defmodule Ectomancer.Repo do
   @spec get(module(), map()) :: {:ok, struct() | nil} | {:error, any()}
   def get(schema_module, params) do
     with {:ok, repo} <- get_repo(),
-         {:ok, pk_values} <- extract_pk_values_for_get(schema_module, params) do
-      fetch_record(repo, schema_module, pk_values)
+         {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
+      fetch_single_record(repo, schema_module, pk_values)
     end
   rescue
     e -> {:error, "GET failed: #{Exception.message(e)}"}
-  end
-
-  defp extract_pk_values_for_get(schema_module, params) do
-    introspection = SchemaIntrospection.analyze(schema_module)
-    pk_fields = introspection.primary_key
-
-    case extract_primary_key(params, pk_fields) do
-      {:ok, pk_values} -> {:ok, pk_values}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp fetch_record(repo, schema_module, pk_values) do
-    query = build_pk_query(schema_module, [], pk_values)
-
-    case repo.one(query) do
-      nil -> {:error, :not_found}
-      record -> {:ok, record}
-    end
   end
 
   @doc """
@@ -171,23 +109,14 @@ defmodule Ectomancer.Repo do
   """
   @spec create(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t()}
   def create(schema_module, params) do
-    repo = repo()
-
-    if is_nil(repo) do
-      {:error, :repo_not_configured}
-    else
-      # Build a simple changeset
+    with_repo(fn repo ->
       struct = struct(schema_module)
+      attrs = normalize_params(params)
+      writable = writable_fields(schema_module)
 
-      # Convert string keys to atoms and filter to writable fields
-      attrs =
-        params
-        |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
-        |> Enum.into(%{})
-
-      changeset = Ecto.Changeset.cast(struct, attrs, writable_fields(schema_module))
+      changeset = Ecto.Changeset.cast(struct, attrs, writable)
       repo.insert(changeset)
-    end
+    end)
   rescue
     e -> {:error, "CREATE failed: #{Exception.message(e)}"}
   end
@@ -207,53 +136,12 @@ defmodule Ectomancer.Repo do
   @spec update(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t() | :not_found}
   def update(schema_module, params) do
     with {:ok, repo} <- get_repo(),
-         {:ok, pk_fields, pk_values} <- extract_pk_for_update(schema_module, params),
-         {:ok, record} <- fetch_record_for_update(repo, schema_module, pk_fields, pk_values) do
+         {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+         {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
       perform_update(repo, schema_module, record, params, pk_fields)
     end
   rescue
     e -> {:error, "UPDATE failed: #{Exception.message(e)}"}
-  end
-
-  defp get_repo do
-    case repo() do
-      nil -> {:error, :repo_not_configured}
-      repo -> {:ok, repo}
-    end
-  end
-
-  defp extract_pk_for_update(schema_module, params) do
-    introspection = SchemaIntrospection.analyze(schema_module)
-    pk_fields = introspection.primary_key
-
-    case extract_primary_key(params, pk_fields) do
-      {:ok, pk_values} -> {:ok, pk_fields, pk_values}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp fetch_record_for_update(repo, schema_module, pk_fields, pk_values) do
-    query = build_pk_query(schema_module, pk_fields, pk_values)
-
-    case repo.one(query) do
-      nil -> {:error, :not_found}
-      record -> {:ok, record}
-    end
-  end
-
-  defp perform_update(repo, schema_module, record, params, pk_fields) do
-    update_attrs =
-      params
-      |> Enum.reject(fn {k, _v} -> String.to_atom(k) in pk_fields end)
-      |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
-      |> Enum.into(%{})
-
-    writable = writable_fields(schema_module) |> Enum.reject(fn f -> f in pk_fields end)
-    changeset = Ecto.Changeset.cast(record, update_attrs, writable)
-
-    repo.update(changeset)
-  rescue
-    e -> {:error, Exception.message(e)}
   end
 
   @doc """
@@ -271,15 +159,60 @@ defmodule Ectomancer.Repo do
   @spec destroy(module(), map()) :: {:ok, struct()} | {:error, :not_found | any()}
   def destroy(schema_module, params) do
     with {:ok, repo} <- get_repo(),
-         {:ok, pk_fields, pk_values} <- extract_pk_for_destroy(schema_module, params),
-         {:ok, record} <- fetch_record_for_destroy(repo, schema_module, pk_fields, pk_values) do
+         {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+         {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
       perform_destroy(repo, record)
     end
   rescue
     e -> {:error, "DESTROY failed: #{Exception.message(e)}"}
   end
 
-  defp extract_pk_for_destroy(schema_module, params) do
+  # Private functions
+
+  defp validate_repo(repo_module) when repo_module == __MODULE__, do: nil
+  defp validate_repo(repo_module), do: repo_module
+
+  defp find_repo_in_app({app_name, _, _}) do
+    app_module =
+      app_name
+      |> Atom.to_string()
+      |> Macro.camelize()
+      |> String.to_atom()
+
+    repo_module = Module.concat(app_module, Repo)
+
+    if Code.ensure_loaded?(repo_module) and function_exported?(repo_module, :all, 1) do
+      repo_module
+    end
+  end
+
+  defp with_repo(fun) do
+    case repo() do
+      nil -> {:error, :repo_not_configured}
+      repo -> fun.(repo)
+    end
+  end
+
+  defp get_repo do
+    case repo() do
+      nil -> {:error, :repo_not_configured}
+      repo -> {:ok, repo}
+    end
+  end
+
+  # Extract primary key values for get operation (returns just values)
+  defp extract_pk_for_get(schema_module, params) do
+    introspection = SchemaIntrospection.analyze(schema_module)
+    pk_fields = introspection.primary_key
+
+    case extract_primary_key(params, pk_fields) do
+      {:ok, pk_values} -> {:ok, pk_values}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Extract primary key for update/destroy operations (returns fields and values)
+  defp extract_pk_for_mutation(schema_module, params) do
     introspection = SchemaIntrospection.analyze(schema_module)
     pk_fields = introspection.primary_key
 
@@ -289,13 +222,31 @@ defmodule Ectomancer.Repo do
     end
   end
 
-  defp fetch_record_for_destroy(repo, schema_module, pk_fields, pk_values) do
-    query = build_pk_query(schema_module, pk_fields, pk_values)
+  defp fetch_single_record(repo, schema_module, pk_values) do
+    query = build_pk_query(schema_module, pk_values)
 
     case repo.one(query) do
       nil -> {:error, :not_found}
       record -> {:ok, record}
     end
+  end
+
+  defp perform_update(repo, schema_module, record, params, pk_fields) do
+    update_attrs =
+      params
+      |> normalize_params()
+      |> Enum.reject(fn {k, _v} -> k in pk_fields end)
+      |> Enum.into(%{})
+
+    writable =
+      schema_module
+      |> writable_fields()
+      |> Enum.reject(fn f -> f in pk_fields end)
+
+    changeset = Ecto.Changeset.cast(record, update_attrs, writable)
+    repo.update(changeset)
+  rescue
+    e -> {:error, Exception.message(e)}
   end
 
   defp perform_destroy(repo, record) do
@@ -304,7 +255,11 @@ defmodule Ectomancer.Repo do
     e -> {:error, Exception.message(e)}
   end
 
-  # Helper functions
+  defp normalize_params(params) do
+    params
+    |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
+    |> Enum.into(%{})
+  end
 
   defp writable_fields(schema_module) do
     introspection = SchemaIntrospection.analyze(schema_module)
@@ -345,7 +300,15 @@ defmodule Ectomancer.Repo do
   defp extract_primary_key(_params, []), do: {:error, :no_primary_key}
 
   defp extract_primary_key(params, pk_fields) when is_list(pk_fields) do
-    values = extract_pk_values(params, pk_fields)
+    values =
+      Enum.map(pk_fields, fn pk_field ->
+        key = Atom.to_string(pk_field)
+
+        case Map.get(params, key) do
+          nil -> {:error, {:missing_primary_key, pk_field}}
+          value -> {:ok, {pk_field, value}}
+        end
+      end)
 
     case Enum.filter(values, fn {status, _} -> status == :error end) do
       [] ->
@@ -357,18 +320,7 @@ defmodule Ectomancer.Repo do
     end
   end
 
-  defp extract_pk_values(params, pk_fields) do
-    Enum.map(pk_fields, fn pk_field ->
-      key = Atom.to_string(pk_field)
-
-      case Map.get(params, key) do
-        nil -> {:error, {:missing_primary_key, pk_field}}
-        value -> {:ok, {pk_field, value}}
-      end
-    end)
-  end
-
-  defp build_pk_query(schema_module, _pk_fields, pk_values) do
+  defp build_pk_query(schema_module, pk_values) do
     import Ecto.Query
 
     base_query = from(r in schema_module)
