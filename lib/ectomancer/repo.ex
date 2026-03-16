@@ -130,35 +130,30 @@ defmodule Ectomancer.Repo do
   """
   @spec get(module(), map()) :: {:ok, struct() | nil} | {:error, any()}
   def get(schema_module, params) do
-    repo = repo()
+    with {:ok, repo} <- get_repo(),
+         {:ok, pk_values} <- extract_pk_values_for_get(schema_module, params) do
+      fetch_record(repo, schema_module, pk_values)
+    end
+  rescue
+    e -> {:error, "GET failed: #{Exception.message(e)}"}
+  end
 
-    if is_nil(repo) do
-      {:error, :repo_not_configured}
-    else
-      introspection = SchemaIntrospection.analyze(schema_module)
-      pk_fields = introspection.primary_key
+  defp extract_pk_values_for_get(schema_module, params) do
+    introspection = SchemaIntrospection.analyze(schema_module)
+    pk_fields = introspection.primary_key
 
-      case extract_primary_key(params, pk_fields) do
-        {:ok, pk_values} ->
-          query =
-            schema_module
-            |> build_pk_query(pk_fields, pk_values)
+    case extract_primary_key(params, pk_fields) do
+      {:ok, pk_values} -> {:ok, pk_values}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-          try do
-            record = repo.one(query)
+  defp fetch_record(repo, schema_module, pk_values) do
+    query = build_pk_query(schema_module, [], pk_values)
 
-            if record do
-              {:ok, record}
-            else
-              {:error, :not_found}
-            end
-          rescue
-            e -> {:error, Exception.message(e)}
-          end
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+    case repo.one(query) do
+      nil -> {:error, :not_found}
+      record -> {:ok, record}
     end
   end
 
@@ -191,13 +186,10 @@ defmodule Ectomancer.Repo do
         |> Enum.into(%{})
 
       changeset = Ecto.Changeset.cast(struct, attrs, writable_fields(schema_module))
-
-      try do
-        repo.insert(changeset)
-      rescue
-        e -> {:error, Exception.message(e)}
-      end
+      repo.insert(changeset)
     end
+  rescue
+    e -> {:error, "CREATE failed: #{Exception.message(e)}"}
   end
 
   @doc """
@@ -219,6 +211,8 @@ defmodule Ectomancer.Repo do
          {:ok, record} <- fetch_record_for_update(repo, schema_module, pk_fields, pk_values) do
       perform_update(repo, schema_module, record, params, pk_fields)
     end
+  rescue
+    e -> {:error, "UPDATE failed: #{Exception.message(e)}"}
   end
 
   defp get_repo do
@@ -281,6 +275,8 @@ defmodule Ectomancer.Repo do
          {:ok, record} <- fetch_record_for_destroy(repo, schema_module, pk_fields, pk_values) do
       perform_destroy(repo, record)
     end
+  rescue
+    e -> {:error, "DESTROY failed: #{Exception.message(e)}"}
   end
 
   defp extract_pk_for_destroy(schema_module, params) do

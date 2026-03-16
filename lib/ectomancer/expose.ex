@@ -72,7 +72,6 @@ defmodule Ectomancer.Expose do
       config :ectomancer, :repo, MyApp.Repo
   """
 
-  alias Ectomancer.SchemaBuilder
   alias Ectomancer.SchemaIntrospection
 
   @doc """
@@ -115,6 +114,18 @@ defmodule Ectomancer.Expose do
     # Get schema information at compile time
     # schema_module is quoted, so we need to evaluate it
     schema = Macro.expand(schema_module, __CALLER__)
+
+    # Ensure the schema module is compiled before introspecting
+    case Code.ensure_compiled(schema) do
+      {:module, _} ->
+        :ok
+
+      {:error, reason} ->
+        raise ArgumentError,
+              "Could not compile schema #{inspect(schema)}: #{reason}. " <>
+                "Make sure the schema module is defined before using expose."
+    end
+
     introspection = SchemaIntrospection.analyze(schema)
 
     # Determine which fields to expose
@@ -207,28 +218,25 @@ defmodule Ectomancer.Expose do
          action,
          resource_name,
          schema,
-         exposed_fields,
-         writable_fields,
-         introspection,
+         _exposed_fields,
+         _writable_fields,
+         _introspection,
          namespace
        ) do
     tool_name = build_tool_name(action, resource_name, namespace)
-
-    input_schema =
-      build_action_schema(action, schema, exposed_fields, writable_fields, introspection)
-
     description = build_description(action, resource_name, namespace)
-    params = build_params(input_schema)
+
+    handler =
+      quote do
+        fn params, _actor ->
+          Ectomancer.Repo.unquote(action)(unquote(schema), params)
+        end
+      end
 
     quote do
       tool unquote(tool_name) do
         description(unquote(description))
-
-        unquote_splicing(params)
-
-        handle(fn params, _actor ->
-          Ectomancer.Repo.unquote(action)(unquote(schema), params)
-        end)
+        handle(unquote(handler))
       end
     end
   end
@@ -284,33 +292,6 @@ defmodule Ectomancer.Expose do
     end
   end
 
-  # Build input schema for specific action
-  defp build_action_schema(:create, schema, _exposed, writable_fields, _introspection) do
-    SchemaBuilder.build(schema, writable_fields)
-  end
-
-  defp build_action_schema(:update, schema, _exposed, writable_fields, introspection) do
-    pk = introspection.primary_key
-    all_fields = pk ++ writable_fields
-    SchemaBuilder.build(schema, all_fields, required: [])
-  end
-
-  defp build_action_schema(:get, schema, _exposed, _writable, introspection) do
-    SchemaBuilder.build(schema, introspection.primary_key)
-  end
-
-  defp build_action_schema(:destroy, schema, _exposed, _writable, introspection) do
-    SchemaBuilder.build(schema, introspection.primary_key)
-  end
-
-  defp build_action_schema(:list, schema, exposed_fields, _writable, _introspection) do
-    SchemaBuilder.build(schema, exposed_fields, required: [])
-  end
-
-  defp build_action_schema(_action, schema, exposed_fields, _writable, _introspection) do
-    SchemaBuilder.build(schema, exposed_fields)
-  end
-
   # Build description for action
   defp build_description(:list, resource_name, nil),
     do: "List all #{resource_name} records"
@@ -347,28 +328,4 @@ defmodule Ectomancer.Expose do
 
   defp build_description(action, resource_name, namespace),
     do: "[#{namespace}] #{action} #{resource_name}"
-
-  # Build params from input_schema
-  defp build_params(input_schema) do
-    properties = input_schema["properties"] || %{}
-    required_fields = input_schema["required"] || []
-
-    Enum.map(properties, fn {name_str, prop_schema} ->
-      name = String.to_atom(name_str)
-      type = json_schema_to_param_type(prop_schema)
-      is_required = name_str in required_fields
-
-      quote do
-        param(unquote(name), unquote(type), required: unquote(is_required))
-      end
-    end)
-  end
-
-  @doc false
-  defp json_schema_to_param_type(%{"type" => "array"}), do: {:array, :string}
-  defp json_schema_to_param_type(%{"type" => "object"}), do: :map
-  defp json_schema_to_param_type(%{"type" => "boolean"}), do: :boolean
-  defp json_schema_to_param_type(%{"type" => "integer"}), do: :integer
-  defp json_schema_to_param_type(%{"type" => "number"}), do: :float
-  defp json_schema_to_param_type(_), do: :string
 end

@@ -85,7 +85,8 @@ defmodule Ectomancer.ToolTest do
       frame = %{assigns: %{ectomancer_actor: nil}}
       result = Hello.execute(%{"name" => "Alice"}, frame)
 
-      assert result == {:ok, "Hello, Alice!"}
+      assert {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} = result
+      assert text =~ "Hello, Alice!"
     end
 
     test "executes tool with actor" do
@@ -95,14 +96,16 @@ defmodule Ectomancer.ToolTest do
       # The handler receives the actor as second argument
       # (we're testing that frame.assigns is accessible)
       result = Hello.execute(%{"name" => "Bob"}, frame)
-      assert result == {:ok, "Hello, Bob!"}
+      assert {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} = result
+      assert text =~ "Hello, Bob!"
     end
 
     test "executes tool with multiple params" do
       frame = %{assigns: %{}}
       result = Add.execute(%{"a" => 3, "b" => 5}, frame)
 
-      assert result == {:ok, 8}
+      assert {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} = result
+      assert text =~ "8"
     end
 
     test "handles optional params" do
@@ -110,11 +113,13 @@ defmodule Ectomancer.ToolTest do
 
       # Without optional param
       result = GreetOptional.execute(%{}, frame)
-      assert result == {:ok, "Hello, World!"}
+      assert {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} = result
+      assert text =~ "Hello, World!"
 
       # With optional param
       result = GreetOptional.execute(%{"name" => "Charlie"}, frame)
-      assert result == {:ok, "Hello, Charlie!"}
+      assert {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} = result
+      assert text =~ "Hello, Charlie!"
     end
   end
 

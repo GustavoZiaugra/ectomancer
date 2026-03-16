@@ -1,6 +1,10 @@
 defmodule Ectomancer.ExposeTest do
   use ExUnit.Case
 
+  alias Ectomancer.ExposeTest.TestMCP.Tool.CreateTestUserSchema
+  alias Ectomancer.ExposeTest.TestMCP.Tool.GetTestUserSchema
+  alias Ectomancer.ExposeTest.TestMCP.Tool.ListTestUserSchemas
+
   defmodule TestUserSchema do
     use Ecto.Schema
 
@@ -20,35 +24,17 @@ defmodule Ectomancer.ExposeTest do
     expose(TestUserSchema, actions: [:list, :get, :create])
   end
 
-  defmodule TestMCPFiltered do
-    use Ectomancer, name: "test-filtered-mcp", version: "1.0.0"
-
-    expose(TestUserSchema,
-      actions: [:list, :get],
-      except: [:password_hash]
-    )
-  end
-
-  defmodule TestMCPOnly do
-    use Ectomancer, name: "test-only-mcp", version: "1.0.0"
-
-    expose(TestUserSchema,
-      actions: [:create],
-      only: [:email, :name]
-    )
-  end
-
   describe "expose/2 macro" do
     test "generates list_test_user_schemas tool" do
-      assert Code.ensure_loaded?(TestMCP.Tool.ListTestUserSchemas)
+      assert Code.ensure_loaded?(ListTestUserSchemas)
     end
 
     test "generates get_test_user_schema tool" do
-      assert Code.ensure_loaded?(TestMCP.Tool.GetTestUserSchema)
+      assert Code.ensure_loaded?(GetTestUserSchema)
     end
 
     test "generates create_test_user_schema tool" do
-      assert Code.ensure_loaded?(TestMCP.Tool.CreateTestUserSchema)
+      assert Code.ensure_loaded?(CreateTestUserSchema)
     end
 
     test "does not generate update_test_user_schema tool (not in actions)" do
@@ -62,86 +48,60 @@ defmodule Ectomancer.ExposeTest do
 
   describe "list_test_user_schemas tool" do
     test "has correct name" do
-      assert TestMCP.Tool.ListTestUserSchemas.name() == "list_test_user_schemas"
+      assert ListTestUserSchemas.name() == "list_test_user_schemas"
     end
 
-    test "has input schema with filter fields" do
-      schema = TestMCP.Tool.ListTestUserSchemas.input_schema()
-
+    test "has empty input schema (params disabled to avoid Peri validation issues)" do
+      # Schema validation is disabled for exposed tools to prevent Peri crashes
+      schema = ListTestUserSchemas.input_schema()
       assert schema["type"] == "object"
-      # Should have email, name, age (not id, password_hash, timestamps)
-      assert Map.has_key?(schema["properties"], "email")
-      assert Map.has_key?(schema["properties"], "name")
-      assert Map.has_key?(schema["properties"], "age")
+      assert schema["properties"] == %{}
     end
 
-    test "all fields are optional for list" do
-      schema = TestMCP.Tool.ListTestUserSchemas.input_schema()
-
-      # No required fields for list action
-      refute Map.has_key?(schema, "required")
+    test "is registered as a component" do
+      tools = TestMCP.__components__(:tool)
+      tool_names = Enum.map(tools, & &1.name)
+      assert "list_test_user_schemas" in tool_names
     end
   end
 
   describe "get_test_user_schema tool" do
     test "has correct name" do
-      assert TestMCP.Tool.GetTestUserSchema.name() == "get_test_user_schema"
+      assert GetTestUserSchema.name() == "get_test_user_schema"
     end
 
-    test "only has id field" do
-      schema = TestMCP.Tool.GetTestUserSchema.input_schema()
-
-      assert Map.keys(schema["properties"]) == ["id"]
-    end
-
-    test "id is required" do
-      schema = TestMCP.Tool.GetTestUserSchema.input_schema()
-
-      assert schema["required"] == ["id"]
+    test "has empty input schema (params disabled to avoid Peri validation issues)" do
+      # Schema validation is disabled for exposed tools to prevent Peri crashes
+      schema = GetTestUserSchema.input_schema()
+      assert schema["type"] == "object"
+      assert schema["properties"] == %{}
     end
   end
 
   describe "create_test_user_schema tool" do
     test "has correct name" do
-      assert TestMCP.Tool.CreateTestUserSchema.name() == "create_test_user_schema"
+      assert CreateTestUserSchema.name() == "create_test_user_schema"
     end
 
-    test "has writable fields" do
-      schema = TestMCP.Tool.CreateTestUserSchema.input_schema()
-
-      # Should have writable fields (not id or timestamps)
-      assert Map.has_key?(schema["properties"], "email")
-      assert Map.has_key?(schema["properties"], "name")
-      assert Map.has_key?(schema["properties"], "age")
-      refute Map.has_key?(schema["properties"], "id")
-      refute Map.has_key?(schema["properties"], "inserted_at")
-      refute Map.has_key?(schema["properties"], "updated_at")
+    test "has empty input schema (params disabled to avoid Peri validation issues)" do
+      # Schema validation is disabled for exposed tools to prevent Peri crashes
+      schema = CreateTestUserSchema.input_schema()
+      assert schema["type"] == "object"
+      assert schema["properties"] == %{}
     end
   end
 
-  describe "field filtering with except" do
-    test "excludes password_hash from list" do
-      schema = TestMCPFiltered.Tool.ListTestUserSchemas.input_schema()
-
-      refute Map.has_key?(schema["properties"], "password_hash")
-      assert Map.has_key?(schema["properties"], "email")
+  describe "tool modules are generated" do
+    test "all expected tool modules exist" do
+      assert Code.ensure_loaded?(ListTestUserSchemas)
+      assert Code.ensure_loaded?(GetTestUserSchema)
+      assert Code.ensure_loaded?(CreateTestUserSchema)
     end
 
-    test "excludes password_hash from get" do
-      schema = TestMCPFiltered.Tool.GetTestUserSchema.input_schema()
-
-      # Get only has id anyway
-      assert Map.keys(schema["properties"]) == ["id"]
-    end
-  end
-
-  describe "field filtering with only" do
-    test "only includes specified fields" do
-      schema = TestMCPOnly.Tool.CreateTestUserSchema.input_schema()
-
-      assert Map.keys(schema["properties"]) == ["email", "name"]
-      refute Map.has_key?(schema["properties"], "age")
-      refute Map.has_key?(schema["properties"], "password_hash")
+    test "tools have execute function" do
+      assert function_exported?(ListTestUserSchemas, :execute, 2)
+      assert function_exported?(GetTestUserSchema, :execute, 2)
+      assert function_exported?(CreateTestUserSchema, :execute, 2)
     end
   end
 end

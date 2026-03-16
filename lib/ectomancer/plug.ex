@@ -2,14 +2,25 @@ defmodule Ectomancer.Plug do
   @moduledoc """
   Phoenix Plug for MCP server integration.
 
-  Provides one-line router integration:
+  ## Prerequisites
 
-      forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
+  Before using this plug, you must start the Anubis MCP server in your application:
 
-  This plug:
-  1. Extracts the current user (actor) from the connection using the configured `actor_from` function
-  2. Injects the actor into connection assigns
-  3. Delegates to the Anubis MCP transport layer
+      # In your application.ex
+      children = [
+        # ... other children ...
+        {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+        MyAppWeb.Endpoint
+      ]
+
+  ## Router Integration
+
+  Add to your router:
+
+      scope "/mcp" do
+        pipe_through :api
+        forward "/", Ectomancer.Plug, server: MyApp.MCP
+      end
 
   ## Actor Extraction
 

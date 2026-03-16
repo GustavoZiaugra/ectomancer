@@ -23,6 +23,14 @@ defmodule Ectomancer.PlugIntegrationTest do
         {:ok, %{message: msg, actor_id: actor && actor.id}}
       end)
     end
+
+    tool :system_status do
+      description("Get system status information")
+
+      handle(fn _params, _actor ->
+        {:ok, %{status: "healthy", version: Ectomancer.version()}}
+      end)
+    end
   end
 
   setup do

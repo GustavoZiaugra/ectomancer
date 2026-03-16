@@ -21,25 +21,73 @@ def deps do
 end
 ```
 
-## Quick Start (3 lines)
+## Quick Start
+
+### 1. Create your MCP module
 
 ```elixir
-# In your router — one line
-forward "/mcp", Ectomancer.Plug
-
-# In a dedicated module — describe what to expose
 defmodule MyApp.MCP do
-  use Ectomancer
+  use Ectomancer,
+    name: "myapp-mcp",
+    version: "0.1.0"
 
   # Custom tools
   tool :send_password_reset do
     description "Send a password reset email to a user"
     param :email, :string, required: true
-    handle fn %{email: email}, actor ->
+
+    handle fn %{"email" => email}, actor ->
       MyApp.Accounts.send_reset_email(email, actor)
+      {:ok, %{sent: true}}
     end
   end
 end
+```
+
+### 2. Add to your Application supervisor
+
+```elixir
+defmodule MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+    children = [
+      # ... other children ...
+      
+      # Start Anubis MCP server with your module
+      {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+      
+      MyAppWeb.Endpoint
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one)
+  end
+end
+```
+
+### 3. Add the route to your router
+
+```elixir
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+
+  scope "/mcp" do
+    pipe_through :api
+    forward "/", Ectomancer.Plug, server: MyApp.MCP
+  end
+end
+```
+
+### 4. Configure Ectomancer (optional)
+
+```elixir
+# config/config.exs
+config :ectomancer,
+  repo: MyApp.Repo,
+  actor_from: fn conn ->
+    # Extract current user from conn
+    conn.assigns.current_user
+  end
 ```
 
 ## What Claude gains access to
