@@ -1,244 +1,162 @@
 defmodule Ectomancer.Tool do
   @moduledoc """
   Custom tool DSL for defining MCP tools.
-
-  ## Example
-
-      defmodule MyApp.MCP do
-        use Ectomancer
-
-        tool :send_password_reset do
-          description "Send a password reset email to a user"
-          param :email, :string, required: true
-
-          handle fn %{email: email}, actor ->
-            MyApp.Accounts.send_reset_email(email, actor)
-          end
-        end
-      end
-
-  ## Parameter Types
-
-  - `:string` - String value
-  - `:integer` - Integer value
-  - `:float` - Float/number value
-  - `:boolean` - Boolean value
-  - `:map` - Object value
-  - `{:array, type}` - Array of values
-
-  ## Options
-
-  - `:required` - Whether the parameter is required (default: false)
-  - `:description` - Parameter description
-  - `:enum` - List of allowed values
-  - `:default` - Default value for optional parameters
+  Stores handlers in a way that's cluster-safe by embedding them at compile time.
   """
 
   @doc """
   Defines a new tool within an Ectomancer module.
-
-  ## Example
-
-      tool :send_password_reset do
-        description "Send a password reset email to a user"
-        param :email, :string, required: true
-
-        handle fn %{email: email}, actor ->
-          MyApp.Accounts.send_reset_email(email, actor)
-        end
-      end
   """
   defmacro tool(name, do: block) do
     tool_name_str = to_string(name)
+    {description, params, handler_ast} = parse_tool_block(block)
+
+    schema = Macro.escape(build_schema(params))
 
     quote do
-      # Initialize accumulators in process dictionary
-      _ = Process.put(:ectomancer_schema_fields, [])
-      _ = Process.put(:ectomancer_required_fields, [])
-      _ = Process.put(:ectomancer_tool_description, "")
-      _ = Process.put(:ectomancer_tool_handler, nil)
-
-      # Execute the DSL block
-      import Ectomancer.Tool.DSL
-      unquote(block)
-
-      # Collect accumulated values
-      schema_fields = Process.get(:ectomancer_schema_fields, [])
-      required_fields = Process.get(:ectomancer_required_fields, [])
-      description = Process.get(:ectomancer_tool_description, "")
-      handler = Process.get(:ectomancer_tool_handler)
-
-      # Clean up process dictionary
-      Process.delete(:ectomancer_schema_fields)
-      Process.delete(:ectomancer_required_fields)
-      Process.delete(:ectomancer_tool_description)
-      Process.delete(:ectomancer_tool_handler)
-
-      # Create tool module name
       tool_module_name =
         Module.concat(__MODULE__, "Tool.#{Macro.camelize(unquote(tool_name_str))}")
 
-      # Register handler if present - do this OUTSIDE the defmodule to avoid compile warning
-      if handler do
-        Ectomancer.Tool.__register_handler__(tool_module_name, handler)
-      end
+      Ectomancer.Tool.define_tool_module(
+        tool_module_name,
+        unquote(tool_name_str),
+        unquote(description),
+        unquote(schema),
+        unquote(handler_ast)
+      )
 
-      # Generate the tool module
-      defmodule tool_module_name do
-        @moduledoc description
-
-        @tool_name unquote(tool_name_str)
-        @tool_description description
-        @schema_fields schema_fields
-        @required_fields required_fields
-
-        def name, do: @tool_name
-
-        def description, do: @tool_description
-
-        def input_schema do
-          properties =
-            Map.new(@schema_fields, fn {name, type, _opts} ->
-              {to_string(name), Ectomancer.Tool.type_to_json_schema(type)}
-            end)
-
-          schema = %{
-            "type" => "object",
-            "properties" => properties
-          }
-
-          if @required_fields != [] do
-            Map.put(schema, "required", Enum.map(@required_fields, &to_string/1))
-          else
-            schema
-          end
-        end
-
-        # Mark this as a tool component for Anubis
-        def __mcp_component_type__, do: :tool
-
-        def __description__, do: @moduledoc
-
-        def execute(params, frame) do
-          actor = frame.assigns[:ectomancer_actor]
-          Ectomancer.Tool.__execute__(__MODULE__, params, actor)
-        end
-      end
-
-      # Register the component using Anubis's component macro
       require Anubis.Server
       Anubis.Server.component(tool_module_name, name: unquote(tool_name_str))
     end
   end
 
   @doc false
-  def __register_handler__(tool_module, handler) do
-    handlers = Application.get_env(:ectomancer, :ectomancer_tool_handlers, %{})
+  # credo:disable-for-lines:40 Credo.Check.Refactor.CyclomaticComplexity
+  defmacro define_tool_module(module_name, tool_name, description, schema, handler_ast) do
+    quote do
+      defmodule unquote(module_name) do
+        @moduledoc unquote(description)
+        @tool_name unquote(tool_name)
 
-    Application.put_env(
-      :ectomancer,
-      :ectomancer_tool_handlers,
-      Map.put(handlers, tool_module, handler)
-    )
-  end
+        # Suppress compiler warnings about dead code when handler only returns {:ok, ...}
+        @compile {:no_warn_unused, execute: 2}
 
-  @doc false
-  def __execute__(tool_module, params, actor) do
-    handlers = Application.get_env(:ectomancer, :ectomancer_tool_handlers, %{})
+        def name, do: @tool_name
+        def description, do: @moduledoc
+        def __mcp_component_type__, do: :tool
+        def __description__, do: @moduledoc
+        def __mcp_raw_schema__, do: unquote(schema)
+        def input_schema, do: __mcp_raw_schema__()
 
-    case Map.get(handlers, tool_module) do
-      nil -> {:ok, nil}
-      handler -> handler.(params, actor)
+        def execute(params, frame) do
+          actor = frame.assigns[:ectomancer_actor]
+          handler = unquote(handler_ast)
+          do_execute(handler, params, actor, frame)
+        end
+
+        # Helper function to hide handler return type from compiler analysis
+        # This prevents "clause will never match" warnings when test handlers
+        # only return {:ok, _} - the compiler can't track types through this function
+        @dialyzer {:nowarn_function, do_execute: 4}
+        defp do_execute(handler, params, actor, frame) when is_function(handler, 2) do
+          case handler.(params, actor) do
+            {:ok, data} ->
+              response = %Anubis.Server.Response{
+                type: :tool,
+                content: [%{"type" => "text", "text" => inspect(data)}]
+              }
+
+              {:reply, response, frame}
+
+            {:error, reason} ->
+              error = %Anubis.MCP.Error{
+                code: -32_603,
+                message: "Tool execution failed",
+                data: %{reason: reason}
+              }
+
+              {:error, error, frame}
+          end
+        rescue
+          e ->
+            error = %Anubis.MCP.Error{
+              code: -32_603,
+              message: "Tool execution error: #{Exception.message(e)}",
+              data: %{
+                error: inspect(e),
+                stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+              }
+            }
+
+            {:error, error, frame}
+        end
+      end
     end
   end
 
-  @doc false
-  def type_to_json_schema(type) do
-    case type do
-      :string -> %{"type" => "string"}
-      :integer -> %{"type" => "integer"}
-      :float -> %{"type" => "number"}
-      :boolean -> %{"type" => "boolean"}
-      :map -> %{"type" => "object"}
-      {:array, inner_type} -> %{"type" => "array", "items" => type_to_json_schema(inner_type)}
-      _ -> %{"type" => "string"}
-    end
+  # Parse tool block to extract components
+  defp parse_tool_block(block) do
+    # Handle the block which is a __block__ containing the tool definitions
+    items =
+      case block do
+        {:__block__, _, items} -> items
+        single -> [single]
+      end
+
+    Enum.reduce(items, {"", [], quote(do: fn _, _ -> {:ok, nil} end)}, fn item,
+                                                                          {desc, params, handler} ->
+      case item do
+        {:description, _, [text]} ->
+          {text, params, handler}
+
+        {:param, _, [name, type | rest]} ->
+          opts = extract_opts(rest)
+          {desc, [{name, type, opts} | params], handler}
+
+        {:handle, _, [handler_block]} ->
+          {desc, params, handler_block}
+
+        _ ->
+          {desc, params, handler}
+      end
+    end)
   end
+
+  defp build_schema(params) do
+    properties =
+      Enum.map(params, fn {name, type, _} ->
+        {to_string(name), %{"type" => type_to_json(type)}}
+      end)
+      |> Enum.into(%{})
+
+    required =
+      Enum.filter(params, fn {_, _, opts} -> opts[:required] end)
+      |> Enum.map(fn {name, _, _} -> to_string(name) end)
+
+    schema = %{"type" => "object", "properties" => properties}
+    if required != [], do: Map.put(schema, "required", required), else: schema
+  end
+
+  defp type_to_json(:string), do: "string"
+  defp type_to_json(:integer), do: "integer"
+  defp type_to_json(:float), do: "number"
+  defp type_to_json(:boolean), do: "boolean"
+  defp type_to_json(_), do: "string"
+
+  defp extract_opts([]), do: []
+  defp extract_opts([opts | _]), do: opts
 end
 
 defmodule Ectomancer.Tool.DSL do
   @moduledoc """
-  DSL macros for defining tools.
+  DSL macros for tool definition.
+  These are parsed at compile time and do not execute at runtime.
   """
 
-  @doc """
-  Sets the tool description.
-
-  ## Example
-
-      description "Send a password reset email to a user"
-  """
-  defmacro description(text) do
-    quote do
-      Process.put(:ectomancer_tool_description, unquote(text))
-    end
-  end
-
-  @doc """
-  Defines a parameter for the tool.
-
-  ## Parameters
-
-    * `name` - The parameter name (atom)
-    * `type` - The parameter type (:string, :integer, :float, :boolean, :map, or {:array, type})
-    * `opts` - Options for the parameter
-
-  ## Options
-
-    * `:required` - Whether the parameter is required (default: false)
-    * `:description` - Parameter description
-    * `:enum` - List of allowed values
-    * `:default` - Default value
-
-  ## Examples
-
-      param :email, :string, required: true
-      param :count, :integer, required: false, default: 10
-      param :tags, {:array, :string}
-  """
-  defmacro param(name, type, opts \\ []) do
-    quote bind_quoted: [name: name, type: type, opts: opts] do
-      current_fields = Process.get(:ectomancer_schema_fields) || []
-      Process.put(:ectomancer_schema_fields, [{name, type, opts} | current_fields])
-
-      if opts[:required] do
-        current_required = Process.get(:ectomancer_required_fields) || []
-        Process.put(:ectomancer_required_fields, [name | current_required])
-      end
-    end
-  end
-
-  @doc """
-  Defines the handler function for the tool.
-
-  The handler receives `params` (map of parameters) and `actor` (current user or nil).
-
-  ## Example
-
-      handle fn %{email: email}, actor ->
-        MyApp.Accounts.send_reset_email(email, actor)
-      end
-
-  ## Return Values
-
-  The handler should return:
-    * `{:ok, result}` - Successful execution
-    * `{:error, reason}` - Failed execution
-    * `result` - Any value (will be wrapped in `{:ok, result}`)
-  """
-  defmacro handle(fun) do
-    quote bind_quoted: [fun: fun] do
-      Process.put(:ectomancer_tool_handler, fun)
-    end
-  end
+  # Parsed at macro level
+  defmacro description(_text), do: quote(do: nil)
+  # Parsed at macro level
+  defmacro param(_name, _type, _opts \\ []), do: quote(do: nil)
+  # Parsed at macro level - block contains the actual handler
+  defmacro handle(do: _block), do: quote(do: nil)
 end
