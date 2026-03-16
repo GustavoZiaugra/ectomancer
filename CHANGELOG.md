@@ -7,10 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-03-15
+## [0.1.0-rc.1] - 2026-03-16
 
 ### Added
-- Initial working release with fully functional CRUD operations
+- First release candidate with fully functional CRUD operations
 - Core MCP server implementation via `Ectomancer` module
 - `expose/2` macro for auto-generating CRUD tools from Ecto schemas (list, get, create, update, destroy)
 - `tool/2` macro for custom tool definitions with param validation
@@ -35,5 +35,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.1...HEAD
+[0.1.0-rc.1]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.1
