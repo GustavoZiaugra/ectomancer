@@ -74,6 +74,19 @@ defmodule Ectomancer.Expose do
 
   alias Ectomancer.SchemaIntrospection
 
+  # Action configurations for data-driven generation
+  @action_configs %{
+    list: %{prefix: "list", suffix: "s", description_template: "List all %{resource}s"},
+    get: %{prefix: "get", suffix: "", description_template: "Get a %{resource} by ID"},
+    create: %{prefix: "create", suffix: "", description_template: "Create a new %{resource}"},
+    update: %{
+      prefix: "update",
+      suffix: "",
+      description_template: "Update an existing %{resource}"
+    },
+    destroy: %{prefix: "destroy", suffix: "", description_template: "Delete a %{resource}"}
+  }
+
   @doc """
   Exposes an Ecto schema as MCP tools.
 
@@ -105,17 +118,79 @@ defmodule Ectomancer.Expose do
       # Generates: list_admin_users, get_admin_users, etc.
   """
   defmacro expose(schema_module, opts \\ []) do
-    actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
-    only_fields = Keyword.get(opts, :only)
-    except_fields = Keyword.get(opts, :except, [])
-    namespace = Keyword.get(opts, :namespace)
-    as_name = Keyword.get(opts, :as)
-
-    # Get schema information at compile time
-    # schema_module is quoted, so we need to evaluate it
     schema = Macro.expand(schema_module, __CALLER__)
 
-    # Ensure the schema module is compiled before introspecting
+    # Compile-time validations and data extraction
+    validate_schema_compiled!(schema)
+
+    config = build_expose_config(schema, opts)
+
+    # Generate tool definitions for each action
+    tool_definitions =
+      Enum.map(config.actions, fn action ->
+        tool_name = build_tool_name(action, config.resource_name, config.namespace)
+        check_collision!(__CALLER__.module, tool_name)
+        generate_tool(action, config, tool_name)
+      end)
+
+    quote do
+      (unquote_splicing(tool_definitions))
+    end
+  end
+
+  # Configuration building
+
+  defp build_expose_config(schema, opts) do
+    introspection = SchemaIntrospection.analyze(schema)
+
+    %{
+      schema: schema,
+      actions: Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy]),
+      exposed_fields: filter_fields(introspection, opts),
+      writable_fields: filter_writable_fields(introspection, opts),
+      resource_name: determine_resource_name(schema, opts[:as]),
+      namespace: opts[:namespace],
+      introspection: introspection
+    }
+  end
+
+  defp filter_fields(introspection, opts) do
+    only = Keyword.get(opts, :only)
+    except = Keyword.get(opts, :except, [])
+
+    case only do
+      nil ->
+        Enum.reject(introspection.fields, fn f ->
+          f in except or f in [:inserted_at, :updated_at]
+        end)
+
+      whitelist ->
+        Enum.filter(whitelist, fn f -> f in introspection.fields end)
+    end
+  end
+
+  defp filter_writable_fields(introspection, opts) do
+    filter_fields(introspection, opts)
+    |> Enum.reject(fn f -> f in introspection.primary_key end)
+  end
+
+  defp determine_resource_name(schema, as_name) do
+    base_name =
+      schema
+      |> Module.split()
+      |> List.last()
+      |> Macro.underscore()
+
+    case as_name do
+      nil -> base_name
+      name when is_atom(name) -> Atom.to_string(name)
+      name when is_binary(name) -> name
+    end
+  end
+
+  # Validation functions
+
+  defp validate_schema_compiled!(schema) do
     case Code.ensure_compiled(schema) do
       {:module, _} ->
         :ok
@@ -125,72 +200,9 @@ defmodule Ectomancer.Expose do
               "Could not compile schema #{inspect(schema)}: #{reason}. " <>
                 "Make sure the schema module is defined before using expose."
     end
-
-    introspection = SchemaIntrospection.analyze(schema)
-
-    # Determine which fields to expose
-    exposed_fields =
-      case only_fields do
-        nil ->
-          # Exclude blacklisted fields and internal fields
-          introspection.fields
-          |> Enum.reject(fn field ->
-            field in except_fields or field in [:inserted_at, :updated_at]
-          end)
-
-        whitelist ->
-          # Use only whitelisted fields (and ensure they exist)
-          whitelist
-          |> Enum.filter(fn field -> field in introspection.fields end)
-      end
-
-    # Get writable fields (exclude primary key)
-    writable_fields =
-      exposed_fields
-      |> Enum.reject(fn field -> field in introspection.primary_key end)
-
-    # Get resource name from module
-    base_resource_name =
-      schema
-      |> Module.split()
-      |> List.last()
-      |> Macro.underscore()
-
-    # Apply 'as' option if provided
-    resource_name =
-      case as_name do
-        nil -> base_resource_name
-        name when is_atom(name) -> Atom.to_string(name)
-        name when is_binary(name) -> name
-      end
-
-    # Generate tool definitions for each action
-    tool_definitions =
-      Enum.map(actions, fn action ->
-        tool_name = build_tool_name(action, resource_name, namespace)
-
-        # Check for potential collisions by examining already defined modules
-        check_collision(__CALLER__.module, tool_name)
-
-        generate_tool_definition(
-          action,
-          resource_name,
-          schema,
-          exposed_fields,
-          writable_fields,
-          introspection,
-          namespace
-        )
-      end)
-
-    # Return all tool definitions
-    quote do
-      (unquote_splicing(tool_definitions))
-    end
   end
 
-  # Check if a tool with this name might collide with existing tools
-  defp check_collision(caller_module, tool_name) do
+  defp check_collision!(caller_module, tool_name) do
     tool_module = Module.concat(caller_module, "Tool.#{Macro.camelize(to_string(tool_name))}")
 
     if Code.ensure_loaded?(tool_module) do
@@ -213,23 +225,15 @@ defmodule Ectomancer.Expose do
     end
   end
 
-  # Generate a single tool definition
-  defp generate_tool_definition(
-         action,
-         resource_name,
-         schema,
-         _exposed_fields,
-         _writable_fields,
-         _introspection,
-         namespace
-       ) do
-    tool_name = build_tool_name(action, resource_name, namespace)
-    description = build_description(action, resource_name, namespace)
+  # Tool generation
+
+  defp generate_tool(action, config, tool_name) do
+    description = build_description(action, config.resource_name, config.namespace)
 
     handler =
       quote do
         fn params, _actor ->
-          Ectomancer.Repo.unquote(action)(unquote(schema), params)
+          Ectomancer.Repo.unquote(action)(unquote(config.schema), params)
         end
       end
 
@@ -241,49 +245,28 @@ defmodule Ectomancer.Expose do
     end
   end
 
-  # Build tool name based on action and optional namespace
-  defp build_tool_name(:list, resource_name, nil) do
+  # Tool name building - data-driven approach
+
+  defp build_tool_name(action, resource_name, namespace) do
+    config = @action_configs[action]
     singular = singularize_resource(resource_name)
-    String.to_atom("list_#{singular}s")
+    base = "#{config.prefix}_#{singular}#{config.suffix}"
+
+    full_name = if namespace, do: "#{namespace}_#{base}", else: base
+    String.to_atom(full_name)
   end
 
-  defp build_tool_name(:list, resource_name, namespace) do
-    singular = singularize_resource(resource_name)
-    String.to_atom("#{namespace}_list_#{singular}s")
+  defp build_description(action, resource_name, namespace) do
+    config = @action_configs[action]
+    description = String.replace(config.description_template, "%{resource}", resource_name)
+
+    if namespace do
+      "[#{namespace}] #{description}"
+    else
+      description
+    end
   end
 
-  defp build_tool_name(:get, resource_name, nil),
-    do: String.to_atom("get_#{resource_name}")
-
-  defp build_tool_name(:get, resource_name, namespace),
-    do: String.to_atom("#{namespace}_get_#{resource_name}")
-
-  defp build_tool_name(:create, resource_name, nil),
-    do: String.to_atom("create_#{resource_name}")
-
-  defp build_tool_name(:create, resource_name, namespace),
-    do: String.to_atom("#{namespace}_create_#{resource_name}")
-
-  defp build_tool_name(:update, resource_name, nil),
-    do: String.to_atom("update_#{resource_name}")
-
-  defp build_tool_name(:update, resource_name, namespace),
-    do: String.to_atom("#{namespace}_update_#{resource_name}")
-
-  defp build_tool_name(:destroy, resource_name, nil),
-    do: String.to_atom("destroy_#{resource_name}")
-
-  defp build_tool_name(:destroy, resource_name, namespace),
-    do: String.to_atom("#{namespace}_destroy_#{resource_name}")
-
-  defp build_tool_name(action, resource_name, nil),
-    do: String.to_atom("#{action}_#{resource_name}")
-
-  defp build_tool_name(action, resource_name, namespace),
-    do: String.to_atom("#{namespace}_#{action}_#{resource_name}")
-
-  # Helper to ensure resource name is singular for pluralization
-  # Simple heuristic: if it ends with 's', remove it
   defp singularize_resource(name) when is_binary(name) do
     if String.ends_with?(name, "s") do
       String.slice(name, 0..-2//1)
@@ -291,41 +274,4 @@ defmodule Ectomancer.Expose do
       name
     end
   end
-
-  # Build description for action
-  defp build_description(:list, resource_name, nil),
-    do: "List all #{resource_name} records"
-
-  defp build_description(:list, resource_name, namespace),
-    do: "[#{namespace}] List all #{resource_name} records"
-
-  defp build_description(:get, resource_name, nil),
-    do: "Get a #{resource_name} by ID"
-
-  defp build_description(:get, resource_name, namespace),
-    do: "[#{namespace}] Get a #{resource_name} by ID"
-
-  defp build_description(:create, resource_name, nil),
-    do: "Create a new #{resource_name}"
-
-  defp build_description(:create, resource_name, namespace),
-    do: "[#{namespace}] Create a new #{resource_name}"
-
-  defp build_description(:update, resource_name, nil),
-    do: "Update an existing #{resource_name}"
-
-  defp build_description(:update, resource_name, namespace),
-    do: "[#{namespace}] Update an existing #{resource_name}"
-
-  defp build_description(:destroy, resource_name, nil),
-    do: "Delete a #{resource_name}"
-
-  defp build_description(:destroy, resource_name, namespace),
-    do: "[#{namespace}] Delete a #{resource_name}"
-
-  defp build_description(action, resource_name, nil),
-    do: "#{action} #{resource_name}"
-
-  defp build_description(action, resource_name, namespace),
-    do: "[#{namespace}] #{action} #{resource_name}"
 end
