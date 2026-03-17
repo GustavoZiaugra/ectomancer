@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.2] - 2026-03-17
+
+### Added
+
+#### Authorization System (Phase 2)
+- **Inline function authorization** - Simple auth checks with inline functions
+  ```elixir
+  authorize fn actor, action -> actor.role == :admin end
+  ```
+- **Policy module authorization** - Reusable authorization logic via behavior
+  ```elixir
+  authorize with: MyApp.Policies.UserPolicy
+  ```
+- **Public access** - `:none` authorization for public endpoints
+  ```elixir
+  authorize :none
+  ```
+- **Per-schema authorization** - Global auth rules for all actions on a schema
+- **Per-action authorization** - Fine-grained control with action-specific rules
+- **Authorization cascade** - Multiple auth levels work together
+
+#### Binary ID / UUID Support
+- Full support for `binary_id` primary keys
+- Automatic UUID string casting
+- Works with all CRUD operations
+
+#### Enhanced Error Messages
+- Descriptive error messages (e.g., "Missing required parameter: User id")
+- Proper MCP error codes (-32602 for validation, -32603 for internal)
+- Field identification in error responses
+
+### Changed
+- Updated README.md with comprehensive authorization documentation
+- Improved error handling with better error categorization
+
+### Fixed
+- Fixed binary_id primary key handling in get/update/destroy operations
+- Fixed Peri validation compatibility with JSON Schema format
+- Fixed tool parameter generation for nested blocks
+- Fixed atom vs string key handling in normalize_params
+
+### Security
+- SQL injection prevention via parameterized queries
+- Row limits to prevent memory exhaustion (100 records default)
+- Authorization checks before tool execution
+- Proper error messages without exposing internal details
+
+### Testing
+- **172 tests** (up from 128)
+- **35 authorization-specific tests**
+- All authorization strategies tested
+- Full integration tested with sweetcorn Phoenix app
+
+### Issues Closed
+- [#10](https://github.com/GustavoZiaugra/ectomancer/issues/10) - Design and implement authorization hook system
+- [#11](https://github.com/GustavoZiaugra/ectomancer/issues/11) - Add per-schema and per-action authorization granularity
+- [#35](https://github.com/GustavoZiaugra/ectomancer/issues/35) - Fix critical bugs in binary ID handling and tool parameter schemas
+
 ## [0.1.0-rc.1] - 2026-03-16
 
 ### Added
@@ -35,5 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.2...HEAD
+[0.1.0-rc.2]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.1
