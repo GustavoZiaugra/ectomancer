@@ -51,11 +51,11 @@ defmodule Ectomancer.ExposeTest do
       assert ListTestUserSchemas.name() == "list_test_user_schemas"
     end
 
-    test "has empty input schema (params disabled to avoid Peri validation issues)" do
-      # Schema validation is disabled for exposed tools to prevent Peri crashes
+    test "has JSON Schema format" do
       schema = ListTestUserSchemas.input_schema()
+      # JSON Schema format for external communication
       assert schema["type"] == "object"
-      assert schema["properties"] == %{}
+      assert is_map(schema["properties"])
     end
 
     test "is registered as a component" do
@@ -70,11 +70,12 @@ defmodule Ectomancer.ExposeTest do
       assert GetTestUserSchema.name() == "get_test_user_schema"
     end
 
-    test "has empty input schema (params disabled to avoid Peri validation issues)" do
-      # Schema validation is disabled for exposed tools to prevent Peri crashes
+    test "has JSON Schema with required id param" do
       schema = GetTestUserSchema.input_schema()
+      # JSON Schema format
       assert schema["type"] == "object"
-      assert schema["properties"] == %{}
+      assert schema["properties"]["id"]["type"] == "integer"
+      assert "id" in schema["required"]
     end
   end
 
@@ -83,11 +84,13 @@ defmodule Ectomancer.ExposeTest do
       assert CreateTestUserSchema.name() == "create_test_user_schema"
     end
 
-    test "has empty input schema (params disabled to avoid Peri validation issues)" do
-      # Schema validation is disabled for exposed tools to prevent Peri crashes
+    test "has JSON Schema format" do
       schema = CreateTestUserSchema.input_schema()
+      # JSON Schema format
       assert schema["type"] == "object"
-      assert schema["properties"] == %{}
+      assert is_map(schema["properties"])
+      # Should NOT have id, timestamps
+      refute schema["properties"]["id"]
     end
   end
 
