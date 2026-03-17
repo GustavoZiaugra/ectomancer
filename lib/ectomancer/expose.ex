@@ -26,6 +26,7 @@ defmodule Ectomancer.Expose do
     * `:except` - Blacklist of fields to exclude
     * `:namespace` - Prefix tools with namespace (e.g., `:accounts` → `accounts_list_users`)
     * `:as` - Alternative name for the resource (e.g., `:admin_users` → `list_admin_users`)
+    * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
 
   ## Generated Tools
 
@@ -64,6 +65,27 @@ defmodule Ectomancer.Expose do
     * `:create` - Creates new record with provided attributes
     * `:update` - Updates existing record by primary key
     * `:destroy` - Deletes record by primary key
+
+  ## Authorization
+
+  You can add authorization to exposed schemas using the `:authorize` option:
+
+      # Global authorization for all actions
+      expose MyApp.Accounts.User,
+        authorize: fn actor, action -> actor.role == :admin end
+
+      # Policy module
+      expose MyApp.Accounts.User,
+        authorize: with: MyApp.Policies.UserPolicy
+
+      # Action-specific authorization
+      expose MyApp.Accounts.User,
+        actions: [:list, :get, :create],
+        authorize: [
+          list: :public,
+          get: :public,
+          create: fn actor, _action -> actor.role == :admin end
+        ]
 
   ## Repo Configuration
 
@@ -142,6 +164,7 @@ defmodule Ectomancer.Expose do
 
   defp build_expose_config(schema, opts) do
     introspection = SchemaIntrospection.analyze(schema)
+    auth_config = parse_authorization_config(Keyword.get(opts, :authorize))
 
     %{
       schema: schema,
@@ -150,8 +173,57 @@ defmodule Ectomancer.Expose do
       writable_fields: filter_writable_fields(introspection, opts),
       resource_name: determine_resource_name(schema, opts[:as]),
       namespace: opts[:namespace],
-      introspection: introspection
+      introspection: introspection,
+      authorization: auth_config
     }
+  end
+
+  defp parse_authorization_config(nil), do: nil
+  defp parse_authorization_config(:none), do: nil
+
+  defp parse_authorization_config(handler) when is_function(handler, 2) do
+    %{global: handler, actions: %{}}
+  end
+
+  defp parse_authorization_config(module) when is_atom(module) do
+    %{global: module, actions: %{}}
+  end
+
+  defp parse_authorization_config({:with, _, [module]}) do
+    %{global: module, actions: %{}}
+  end
+
+  # Handle inline function AST
+  defp parse_authorization_config({:fn, _, _} = fn_ast) do
+    %{global: fn_ast, actions: %{}}
+  end
+
+  # Handle function capture AST
+  defp parse_authorization_config({:&, _, _} = capture_ast) do
+    %{global: capture_ast, actions: %{}}
+  end
+
+  # Handle [with: Module] syntax for policy modules
+  defp parse_authorization_config(with: module) when is_atom(module) do
+    %{global: module, actions: %{}}
+  end
+
+  defp parse_authorization_config(action_rules) when is_list(action_rules) do
+    global = Keyword.get(action_rules, :all) || Keyword.get(action_rules, :global)
+
+    # Convert action rules to map, preserving AST nodes
+    actions =
+      action_rules
+      |> Keyword.drop([:all, :global])
+      |> Map.new()
+
+    %{global: global, actions: actions}
+  end
+
+  defp parse_authorization_config(invalid) do
+    raise ArgumentError,
+          "Invalid authorization configuration: #{inspect(invalid)}. " <>
+            "Expected: function, module, or keyword list of action rules"
   end
 
   defp filter_fields(introspection, opts) do
@@ -232,6 +304,7 @@ defmodule Ectomancer.Expose do
   defp generate_tool(action, config, tool_name) do
     description = build_description(action, config.resource_name, config.namespace)
     params = generate_params(action, config)
+    auth_block = generate_authorization_block(action, config)
 
     handler =
       quote do
@@ -244,9 +317,76 @@ defmodule Ectomancer.Expose do
       tool unquote(tool_name) do
         description(unquote(description))
         unquote(params)
+        unquote(auth_block)
         handle(unquote(handler))
       end
     end
+  end
+
+  defp generate_authorization_block(action, config) do
+    auth_config = config.authorization
+
+    case auth_config do
+      nil ->
+        # No authorization configured
+        quote do
+          authorize(:none)
+        end
+
+      %{global: global, actions: actions} when map_size(actions) > 0 ->
+        # Check for action-specific authorization
+        action_auth = Map.get(actions, action)
+
+        if action_auth do
+          # Use action-specific auth
+          parse_auth_handler(action_auth)
+        else
+          # Fall back to global auth
+          case global do
+            nil -> quote(do: authorize(:none))
+            handler -> parse_auth_handler(handler)
+          end
+        end
+
+      %{global: global} ->
+        case global do
+          nil -> quote(do: authorize(:none))
+          handler -> parse_auth_handler(handler)
+        end
+    end
+  end
+
+  defp parse_auth_handler(:none), do: quote(do: authorize(:none))
+  defp parse_auth_handler(:public), do: quote(do: authorize(:none))
+  defp parse_auth_handler(nil), do: quote(do: authorize(:none))
+
+  defp parse_auth_handler(module) when is_atom(module) do
+    quote do
+      authorize(with: unquote(module))
+    end
+  end
+
+  defp parse_auth_handler(handler) when is_function(handler) do
+    quote do
+      authorize(unquote(handler))
+    end
+  end
+
+  defp parse_auth_handler({:fn, _, _} = fn_ast) do
+    quote do
+      authorize(unquote(fn_ast))
+    end
+  end
+
+  defp parse_auth_handler({:&, _, _} = capture_ast) do
+    quote do
+      authorize(unquote(capture_ast))
+    end
+  end
+
+  defp parse_auth_handler(handler) do
+    raise ArgumentError,
+          "Invalid authorization handler: #{inspect(handler)}"
   end
 
   # Generate param declarations based on action type

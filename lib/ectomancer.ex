@@ -65,7 +65,7 @@ defmodule Ectomancer do
         version: Keyword.get(unquote(opts), :version, "0.1.0"),
         capabilities: [:tools]
 
-      import Ectomancer.Tool, only: [tool: 2]
+      import Ectomancer.Tool, only: [tool: 2, authorize: 1]
       import Ectomancer.Expose, only: [expose: 1, expose: 2]
     end
   end

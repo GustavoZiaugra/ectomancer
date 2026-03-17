@@ -26,15 +26,52 @@ defmodule Ectomancer.Tool do
           {:ok, "Hello, \#{name}!"}
         end)
       end
+
+  ## Authorization
+
+  Tools can have authorization to control access:
+
+      # Inline function
+      tool :admin_only do
+        description("Admin only action")
+        authorize(fn actor, _action -> actor.role == :admin end)
+
+        handle(fn _params, _actor ->
+          {:ok, "Secret data"}
+        end)
+      end
+
+      # Policy module
+      tool :with_policy do
+        description("Uses policy module")
+        authorize(with: MyApp.Policies.MyPolicy)
+
+        handle(fn _params, _actor ->
+          {:ok, "Protected data"}
+        end)
+      end
+
+      # No authorization (public)
+      tool :public do
+        description("Public endpoint")
+        authorize(:none)
+
+        handle(fn _params, _actor ->
+          {:ok, "Public data"}
+        end)
+      end
   """
   defmacro tool(name, do: block) do
     tool_name_str = to_string(name)
-    {description, params, handler_ast} = parse_tool_block(block)
+    {description, params, auth_handler, handler_ast} = parse_tool_block(block)
 
     # Build Peri schema for Anubis validation (atom keys)
     peri_schema = build_peri_schema(params)
     # Build JSON Schema for external clients (string keys)
     json_schema = build_json_schema(params)
+
+    # Infer action name from tool name for authorization
+    action = tool_action_from_name(tool_name_str)
 
     quote do
       tool_module_name =
@@ -43,9 +80,11 @@ defmodule Ectomancer.Tool do
       Ectomancer.Tool.define_tool_module(
         tool_module_name,
         unquote(tool_name_str),
+        unquote(action),
         unquote(description),
         unquote(Macro.escape(peri_schema)),
         unquote(Macro.escape(json_schema)),
+        unquote(auth_handler),
         unquote(handler_ast)
       )
 
@@ -59,15 +98,18 @@ defmodule Ectomancer.Tool do
   defmacro define_tool_module(
              module_name,
              tool_name,
+             action,
              description,
              peri_schema,
              json_schema_for_clients,
+             auth_handler,
              handler_ast
            ) do
     quote do
       defmodule unquote(module_name) do
         @moduledoc unquote(description)
         @tool_name unquote(tool_name)
+        @action unquote(action)
 
         # Suppress compiler warnings about dead code when handler only returns {:ok, ...}
         @compile {:no_warn_unused, execute: 2}
@@ -84,8 +126,31 @@ defmodule Ectomancer.Tool do
 
         def execute(params, frame) do
           actor = frame.assigns[:ectomancer_actor]
-          handler = unquote(handler_ast)
-          do_execute(handler, params, actor, frame)
+
+          # Check authorization before executing
+          with :ok <- check_authorization(actor, @action) do
+            handler = unquote(handler_ast)
+            do_execute(handler, params, actor, frame)
+          else
+            {:error, reason} ->
+              error = %Anubis.MCP.Error{
+                code: -32_001,
+                message: "Unauthorized: #{reason}",
+                data: %{}
+              }
+
+              {:error, error, frame}
+          end
+        end
+
+        defp check_authorization(actor, action) do
+          auth_handler = unquote(auth_handler)
+
+          if auth_handler do
+            Ectomancer.Authorization.check(actor, action, handler: auth_handler)
+          else
+            :ok
+          end
         end
 
         # Helper function to hide handler return type from compiler analysis
@@ -136,23 +201,56 @@ defmodule Ectomancer.Tool do
         single -> [single]
       end
 
-    Enum.reduce(items, {"", [], quote(do: fn _, _ -> {:ok, nil} end)}, fn item,
-                                                                          {desc, params, handler} ->
-      case item do
-        {:description, _, [text]} ->
-          {text, params, handler}
+    Enum.reduce(
+      items,
+      {"", [], nil, quote(do: fn _, _ -> {:ok, nil} end)},
+      fn item, {desc, params, auth_handler, handler} ->
+        case item do
+          {:description, _, [text]} ->
+            {text, params, auth_handler, handler}
 
-        {:param, _, [name, type | rest]} ->
-          opts = extract_opts(rest)
-          {desc, [{name, type, opts} | params], handler}
+          {:param, _, [name, type | rest]} ->
+            opts = extract_opts(rest)
+            {desc, [{name, type, opts} | params], auth_handler, handler}
 
-        {:handle, _, [handler_block]} ->
-          {desc, params, handler_block}
+          {:authorize, _, [handler]} ->
+            auth_handler = parse_authorize_handler(handler)
+            {desc, params, auth_handler, handler}
 
-        _ ->
-          {desc, params, handler}
+          {:handle, _, [handler_block]} ->
+            {desc, params, auth_handler, handler_block}
+
+          _ ->
+            {desc, params, auth_handler, handler}
+        end
       end
-    end)
+    )
+  end
+
+  defp parse_authorize_handler(handler) do
+    case handler do
+      :none ->
+        nil
+
+      [with: module] ->
+        module
+
+      {:with, _, [module]} ->
+        module
+
+      {:fn, _, _} = fn_ast ->
+        fn_ast
+
+      {:&, _, _} = capture_ast ->
+        capture_ast
+
+      handler when is_function(handler) ->
+        handler
+
+      _ ->
+        raise ArgumentError,
+              "Invalid authorization handler. Use: authorize(fn actor, action -> ...), authorize(with: Module), or authorize(:none)"
+    end
   end
 
   # Flatten nested __block__ items
@@ -210,6 +308,42 @@ defmodule Ectomancer.Tool do
 
   defp extract_opts([]), do: []
   defp extract_opts([opts | _]), do: opts
+
+  @doc """
+  Defines authorization for a tool.
+
+  ## Examples
+
+      # Inline function
+      authorize fn actor, action ->
+        actor.role == :admin or action in [:list, :get]
+      end
+
+      # Policy module
+      authorize with: MyApp.Policies.UserPolicy
+
+      # No authorization (public)
+      authorize :none
+  """
+  defmacro authorize(handler) do
+    quote do
+      authorize(unquote(handler))
+    end
+  end
+
+  # Infer action type from tool name for authorization
+  defp tool_action_from_name(tool_name) do
+    tool_name
+    |> String.downcase()
+    |> case do
+      name when name in ["list", "index", "all"] -> :list
+      name when name in ["get", "find", "show"] -> :get
+      name when name in ["create", "new", "add"] -> :create
+      name when name in ["update", "edit", "modify"] -> :update
+      name when name in ["destroy", "delete", "remove"] -> :destroy
+      _ -> :execute
+    end
+  end
 
   @doc """
   Formats error reasons into proper MCP error format with descriptive messages.
