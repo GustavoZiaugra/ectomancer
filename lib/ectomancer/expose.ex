@@ -225,10 +225,13 @@ defmodule Ectomancer.Expose do
     end
   end
 
-  # Tool generation
+  # Tool generation with proper param support
+  # Params are now fully enabled with JSON Schema format for external communication
+  # Validation is handled internally in Ectomancer.Repo
 
   defp generate_tool(action, config, tool_name) do
     description = build_description(action, config.resource_name, config.namespace)
+    params = generate_params(action, config)
 
     handler =
       quote do
@@ -240,10 +243,92 @@ defmodule Ectomancer.Expose do
     quote do
       tool unquote(tool_name) do
         description(unquote(description))
+        unquote(params)
         handle(unquote(handler))
       end
     end
   end
+
+  # Generate param declarations based on action type
+  defp generate_params(:list, _config) do
+    # List action typically doesn't require specific params
+    # but can accept filter params
+    quote do
+      # List supports optional filter params
+    end
+  end
+
+  defp generate_params(:get, config) do
+    # Get action requires the primary key
+    pk_field = hd(config.introspection.primary_key)
+    pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+    quote do
+      param(unquote(pk_field), unquote(pk_type), required: true)
+    end
+  end
+
+  defp generate_params(:create, config) do
+    # Create action requires all writable fields
+    build_param_block(config.writable_fields, config.introspection.types)
+  end
+
+  defp generate_params(:update, config) do
+    # Update action requires primary key + writable fields
+    pk_field = hd(config.introspection.primary_key)
+    pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+    writable_params = build_param_block(config.writable_fields, config.introspection.types)
+
+    quote do
+      param(unquote(pk_field), unquote(pk_type), required: true)
+      unquote(writable_params)
+    end
+  end
+
+  defp generate_params(:destroy, config) do
+    # Destroy action requires the primary key
+    pk_field = hd(config.introspection.primary_key)
+    pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+    quote do
+      param(unquote(pk_field), unquote(pk_type), required: true)
+    end
+  end
+
+  defp build_param_block(fields, types) do
+    fields
+    |> Enum.map(fn field ->
+      type = Map.get(types, field)
+      param_type = get_ecto_type_for_param(type)
+
+      quote do
+        param(unquote(field), unquote(param_type))
+      end
+    end)
+    |> case do
+      [] -> quote(do: :ok)
+      [single] -> single
+      multiple -> {:__block__, [], multiple}
+    end
+  end
+
+  # Map Ecto types to Peri/MCP types
+  defp get_ecto_type_for_param(:string), do: :string
+  defp get_ecto_type_for_param(:integer), do: :integer
+  defp get_ecto_type_for_param(:float), do: :float
+  defp get_ecto_type_for_param(:decimal), do: :float
+  defp get_ecto_type_for_param(:boolean), do: :boolean
+  defp get_ecto_type_for_param(:date), do: :string
+  defp get_ecto_type_for_param(:time), do: :string
+  defp get_ecto_type_for_param(:naive_datetime), do: :string
+  defp get_ecto_type_for_param(:utc_datetime), do: :string
+  defp get_ecto_type_for_param(:binary_id), do: :string
+  defp get_ecto_type_for_param(:id), do: :integer
+  defp get_ecto_type_for_param(Ecto.UUID), do: :string
+  defp get_ecto_type_for_param({:array, _}), do: :list
+  defp get_ecto_type_for_param(:map), do: :map
+  defp get_ecto_type_for_param(_), do: :string
 
   # Tool name building - data-driven approach
 

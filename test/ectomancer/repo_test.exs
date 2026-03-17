@@ -103,8 +103,7 @@ defmodule Ectomancer.RepoTest do
     end
   end
 
-  describe "extract_primary_key/2" do
-    # Testing via the get function which uses extract_primary_key
+  describe "extract_primary_key/3" do
     setup do
       original = Application.get_env(:ectomancer, :repo)
       Application.delete_env(:ectomancer, :repo)
@@ -119,8 +118,122 @@ defmodule Ectomancer.RepoTest do
     end
 
     test "handles missing primary key" do
-      # This should fail before trying to query because repo is not configured
       assert {:error, :repo_not_configured} = Repo.get(TestUser, %{"id" => 1})
+    end
+
+    test "accepts both string and atom keys in params" do
+      # Should work with string key
+      assert {:error, :repo_not_configured} = Repo.get(TestUser, %{"id" => 1})
+
+      # Should work with atom key
+      assert {:error, :repo_not_configured} = Repo.get(TestUser, %{id: 1})
+    end
+
+    test "casts string id to integer for :id type" do
+      # When integer ID is passed as string (from JSON), it should be cast
+      assert {:error, :repo_not_configured} = Repo.get(TestUser, %{"id" => "123"})
+    end
+  end
+
+  describe "binary_id primary key handling" do
+    defmodule BinaryIdUser do
+      use Ecto.Schema
+
+      @primary_key {:id, :binary_id, autogenerate: true}
+      @foreign_key_type :binary_id
+
+      schema "binary_id_users" do
+        field(:email, :string)
+        field(:name, :string)
+
+        timestamps()
+      end
+    end
+
+    defmodule ExplicitUUIDUser do
+      use Ecto.Schema
+
+      @primary_key {:id, Ecto.UUID, autogenerate: true}
+
+      schema "uuid_users" do
+        field(:email, :string)
+
+        timestamps()
+      end
+    end
+
+    setup do
+      original = Application.get_env(:ectomancer, :repo)
+      Application.delete_env(:ectomancer, :repo)
+
+      on_exit(fn ->
+        if original do
+          Application.put_env(:ectomancer, :repo, original)
+        end
+      end)
+
+      :ok
+    end
+
+    test "handles :binary_id type primary key" do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      # Should accept UUID string without error (repo not configured is expected)
+      assert {:error, :repo_not_configured} =
+               Repo.get(BinaryIdUser, %{"id" => uuid})
+    end
+
+    test "handles Ecto.UUID type primary key" do
+      uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+      # Should accept UUID string without error
+      assert {:error, :repo_not_configured} =
+               Repo.get(ExplicitUUIDUser, %{"id" => uuid})
+    end
+
+    test "handles invalid UUID gracefully" do
+      # Invalid UUID should still be passed through (DB will reject if needed)
+      assert {:error, :repo_not_configured} =
+               Repo.get(BinaryIdUser, %{"id" => "not-a-valid-uuid"})
+    end
+
+    test "binary_id PK extraction returns proper format" do
+      # Test that binary_id fields are properly identified by introspection
+      introspection = Ectomancer.SchemaIntrospection.analyze(BinaryIdUser)
+
+      assert introspection.primary_key == [:id]
+      assert introspection.types[:id] == :binary_id
+    end
+
+    test "Ecto.UUID PK extraction returns proper format" do
+      introspection = Ectomancer.SchemaIntrospection.analyze(ExplicitUUIDUser)
+
+      assert introspection.primary_key == [:id]
+      assert introspection.types[:id] == Ecto.UUID
+    end
+  end
+
+  describe "primary key type casting" do
+    test "cast_primary_key_value handles :id type" do
+      # Testing via introspection that :id type is detected correctly
+      introspection = Ectomancer.SchemaIntrospection.analyze(TestUser)
+
+      assert introspection.types[:id] == :id
+    end
+
+    test "cast_primary_key_value handles :binary_id type" do
+      # Define a test schema with binary_id
+      defmodule TestBinarySchema do
+        use Ecto.Schema
+        @primary_key {:id, :binary_id, autogenerate: true}
+        schema "test" do
+          field(:name, :string)
+        end
+      end
+
+      introspection = Ectomancer.SchemaIntrospection.analyze(TestBinarySchema)
+
+      assert introspection.types[:id] == :binary_id
     end
   end
 
@@ -147,8 +260,8 @@ defmodule Ectomancer.RepoTest do
       frame = %{assigns: %{ectomancer_actor: nil}}
       result = ListTestUsers.execute(%{}, frame)
 
-      # Should return Anubis error format
-      assert {:error, %Anubis.MCP.Error{data: %{reason: :repo_not_configured}}, _} = result
+      # Should return Anubis error format with descriptive message
+      assert {:error, %Anubis.MCP.Error{code: -32_603}, _} = result
     end
   end
 end

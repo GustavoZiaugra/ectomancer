@@ -111,14 +111,18 @@ defmodule Ectomancer.Repo do
   def create(schema_module, params) do
     with_repo(fn repo ->
       struct = struct(schema_module)
-      attrs = normalize_params(params)
+      attrs = normalize_params(params || %{}, schema_module)
       writable = writable_fields(schema_module)
 
       changeset = Ecto.Changeset.cast(struct, attrs, writable)
-      repo.insert(changeset)
+
+      case repo.insert(changeset) do
+        {:ok, record} -> {:ok, record}
+        {:error, changeset} -> {:error, changeset}
+      end
     end)
   rescue
-    e -> {:error, "CREATE failed: #{Exception.message(e)}"}
+    e -> {:error, "Database error: #{Exception.message(e)}"}
   end
 
   @doc """
@@ -136,12 +140,10 @@ defmodule Ectomancer.Repo do
   @spec update(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t() | :not_found}
   def update(schema_module, params) do
     with {:ok, repo} <- get_repo(),
-         {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+         {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params || %{}),
          {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
-      perform_update(repo, schema_module, record, params, pk_fields)
+      perform_update(repo, schema_module, record, params || %{}, pk_fields)
     end
-  rescue
-    e -> {:error, "UPDATE failed: #{Exception.message(e)}"}
   end
 
   @doc """
@@ -204,8 +206,9 @@ defmodule Ectomancer.Repo do
   defp extract_pk_for_get(schema_module, params) do
     introspection = SchemaIntrospection.analyze(schema_module)
     pk_fields = introspection.primary_key
+    field_types = introspection.types
 
-    case extract_primary_key(params, pk_fields) do
+    case extract_primary_key(params, pk_fields, field_types) do
       {:ok, pk_values} -> {:ok, pk_values}
       {:error, reason} -> {:error, reason}
     end
@@ -215,8 +218,9 @@ defmodule Ectomancer.Repo do
   defp extract_pk_for_mutation(schema_module, params) do
     introspection = SchemaIntrospection.analyze(schema_module)
     pk_fields = introspection.primary_key
+    field_types = introspection.types
 
-    case extract_primary_key(params, pk_fields) do
+    case extract_primary_key(params, pk_fields, field_types) do
       {:ok, pk_values} -> {:ok, pk_fields, pk_values}
       {:error, reason} -> {:error, reason}
     end
@@ -234,7 +238,7 @@ defmodule Ectomancer.Repo do
   defp perform_update(repo, schema_module, record, params, pk_fields) do
     update_attrs =
       params
-      |> normalize_params()
+      |> normalize_params(schema_module)
       |> Enum.reject(fn {k, _v} -> k in pk_fields end)
       |> Enum.into(%{})
 
@@ -245,21 +249,47 @@ defmodule Ectomancer.Repo do
 
     changeset = Ecto.Changeset.cast(record, update_attrs, writable)
     repo.update(changeset)
-  rescue
-    e -> {:error, Exception.message(e)}
   end
 
   defp perform_destroy(repo, record) do
     repo.delete(record)
-  rescue
-    e -> {:error, Exception.message(e)}
   end
 
-  defp normalize_params(params) do
+  defp normalize_params(params, schema_module) do
+    introspection = SchemaIntrospection.analyze(schema_module)
+    types = introspection.types
+
     params
-    |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
+    |> Enum.map(fn
+      {k, v} when is_atom(k) ->
+        type = Map.get(types, k)
+        value = cast_param_value(v, type)
+        {k, value}
+
+      {k, v} when is_binary(k) ->
+        field = String.to_atom(k)
+        type = Map.get(types, field)
+        value = cast_param_value(v, type)
+        {field, value}
+    end)
     |> Enum.into(%{})
   end
+
+  defp cast_param_value(value, :binary_id) when is_binary(value) do
+    case Ecto.UUID.cast(value) do
+      {:ok, uuid} -> uuid
+      :error -> value
+    end
+  end
+
+  defp cast_param_value(value, Ecto.UUID) when is_binary(value) do
+    case Ecto.UUID.cast(value) do
+      {:ok, uuid} -> uuid
+      :error -> value
+    end
+  end
+
+  defp cast_param_value(value, _), do: value
 
   defp writable_fields(schema_module) do
     introspection = SchemaIntrospection.analyze(schema_module)
@@ -297,16 +327,27 @@ defmodule Ectomancer.Repo do
     |> offset(^offset)
   end
 
-  defp extract_primary_key(_params, []), do: {:error, :no_primary_key}
+  defp extract_primary_key(_params, [], _field_types), do: {:error, :no_primary_key}
 
-  defp extract_primary_key(params, pk_fields) when is_list(pk_fields) do
+  defp extract_primary_key(params, pk_fields, field_types) when is_list(pk_fields) do
     values =
       Enum.map(pk_fields, fn pk_field ->
-        key = Atom.to_string(pk_field)
+        # Try both string and atom keys
+        value =
+          case Map.get(params, Atom.to_string(pk_field)) do
+            nil -> Map.get(params, pk_field)
+            v -> v
+          end
 
-        case Map.get(params, key) do
-          nil -> {:error, {:missing_primary_key, pk_field}}
-          value -> {:ok, {pk_field, value}}
+        case value do
+          nil ->
+            {:error, {:missing_primary_key, pk_field}}
+
+          raw_value ->
+            # Cast the value based on field type
+            field_type = Map.get(field_types, pk_field)
+            cast_value = cast_primary_key_value(raw_value, field_type)
+            {:ok, {pk_field, cast_value}}
         end
       end)
 
@@ -319,6 +360,33 @@ defmodule Ectomancer.Repo do
         {:error, :missing_primary_key}
     end
   end
+
+  # Cast primary key values based on their Ecto type
+  defp cast_primary_key_value(value, :binary_id) when is_binary(value) do
+    # binary_id fields need to be cast to Ecto.UUID format
+    case Ecto.UUID.cast(value) do
+      {:ok, casted} -> casted
+      :error -> value
+    end
+  end
+
+  defp cast_primary_key_value(value, :id) when is_binary(value) do
+    # Integer ID passed as string (from JSON)
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ -> value
+    end
+  end
+
+  defp cast_primary_key_value(value, Ecto.UUID) when is_binary(value) do
+    # Explicit UUID type
+    case Ecto.UUID.cast(value) do
+      {:ok, casted} -> casted
+      :error -> value
+    end
+  end
+
+  defp cast_primary_key_value(value, _type), do: value
 
   defp build_pk_query(schema_module, pk_values) do
     import Ecto.Query

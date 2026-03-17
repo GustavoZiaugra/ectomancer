@@ -54,15 +54,16 @@ defmodule Ectomancer.ToolTest do
       assert Hello.__description__() == "Say hello to someone"
     end
 
-    test "tool has input schema" do
+    test "tool has JSON Schema input format" do
       schema = Hello.input_schema()
 
+      # JSON Schema format for external communication
       assert schema["type"] == "object"
       assert schema["properties"]["name"]["type"] == "string"
       assert "name" in schema["required"]
     end
 
-    test "tool with multiple params has correct schema" do
+    test "tool with multiple params has correct JSON Schema" do
       schema = Add.input_schema()
 
       assert schema["properties"]["a"]["type"] == "integer"
