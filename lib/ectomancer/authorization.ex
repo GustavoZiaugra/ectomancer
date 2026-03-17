@@ -57,9 +57,8 @@ defmodule Ectomancer.Authorization do
     parent_auth = Keyword.get(opts, :parent_auth)
 
     # First check parent authorization (cascade)
-    with :ok <- check_parent(parent_auth, actor, action),
-         :ok <- do_check(handler, actor, action) do
-      :ok
+    with :ok <- check_parent(parent_auth, actor, action) do
+      do_check(handler, actor, action)
     end
   end
 
