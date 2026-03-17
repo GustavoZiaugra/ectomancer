@@ -49,7 +49,7 @@ defmodule Ectomancer.ToolAuthorizationTest do
     end
   end
 
-  alias TestMCP.Tool.{AdminOnly, PublicAction, WithPolicy, DefaultAuth}
+  alias TestMCP.Tool.{AdminOnly, DefaultAuth, PublicAction, WithPolicy}
 
   describe "tool with inline authorization" do
     test "allows access for admin" do

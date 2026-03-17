@@ -128,10 +128,11 @@ defmodule Ectomancer.Tool do
           actor = frame.assigns[:ectomancer_actor]
 
           # Check authorization before executing
-          with :ok <- check_authorization(actor, @action) do
-            handler = unquote(handler_ast)
-            do_execute(handler, params, actor, frame)
-          else
+          case check_authorization(actor, @action) do
+            :ok ->
+              handler = unquote(handler_ast)
+              do_execute(handler, params, actor, frame)
+
             {:error, reason} ->
               error = %Anubis.MCP.Error{
                 code: -32_001,
