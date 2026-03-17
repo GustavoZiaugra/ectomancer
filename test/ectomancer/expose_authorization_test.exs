@@ -29,7 +29,7 @@ defmodule Ectomancer.ExposeAuthorizationTest do
       )
     end
 
-    alias GlobalAuthMCP.Tool.{ListTestUsers, GetTestUser}
+    alias GlobalAuthMCP.Tool.{GetTestUser, ListTestUsers}
 
     test "allows access for admin" do
       frame = %{assigns: %{ectomancer_actor: %{role: :admin}}}
@@ -62,7 +62,7 @@ defmodule Ectomancer.ExposeAuthorizationTest do
       )
     end
 
-    alias PolicyAuthMCP.Tool.{ListTestUsers, GetTestUser}
+    alias PolicyAuthMCP.Tool.{GetTestUser, ListTestUsers}
 
     test "allows access with policy" do
       frame = %{assigns: %{ectomancer_actor: %{role: :moderator}}}
@@ -100,7 +100,7 @@ defmodule Ectomancer.ExposeAuthorizationTest do
       )
     end
 
-    alias ActionAuthMCP.Tool.{ListTestUsers, GetTestUser, CreateTestUser}
+    alias ActionAuthMCP.Tool.{CreateTestUser, GetTestUser, ListTestUsers}
 
     test "list is public" do
       frame = %{assigns: %{ectomancer_actor: nil}}
