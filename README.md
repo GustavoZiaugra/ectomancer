@@ -6,17 +6,18 @@
 
 ## What it does
 
-Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and provides two killer features:
+Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and provides three killer features:
 
 1. **Auto-generates MCP tools** from your Ecto schemas — no hand-writing tool definitions
-2. **Threads the current user (actor)** through every tool call automatically — auth just works
+2. **Authorization system** — fine-grained control with inline functions or policy modules
+3. **Threads the current user (actor)** through every tool call automatically — auth just works
 
 ## Installation
 
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 0.1.0-rc.1"}
+    {:ectomancer, "~> 0.1.0-rc.2"}
   ]
 end
 ```
@@ -31,10 +32,18 @@ defmodule MyApp.MCP do
     name: "myapp-mcp",
     version: "0.1.0"
 
-  # Custom tools
+  # Expose Ecto schemas as MCP tools
+  expose MyApp.Accounts.User,
+    actions: [:list, :get, :create, :update]
+
+  # Custom tools with authorization
   tool :send_password_reset do
     description "Send a password reset email to a user"
     param :email, :string, required: true
+    
+    authorize fn actor, _action ->
+      actor != nil  # Must be authenticated
+    end
 
     handle fn %{"email" => email}, actor ->
       MyApp.Accounts.send_reset_email(email, actor)
@@ -90,6 +99,152 @@ config :ectomancer,
   end
 ```
 
+## Features
+
+### Expose Ecto Schemas
+
+Automatically generate CRUD tools from your schemas:
+
+```elixir
+# Basic usage - exposes all CRUD actions
+expose MyApp.Accounts.User
+
+# Limit actions
+expose MyApp.Blog.Post, actions: [:list, :get]
+
+# Filter fields
+expose MyApp.Accounts.User, only: [:email, :name]
+expose MyApp.Accounts.User, except: [:password_hash]
+
+# Namespace to avoid collisions
+expose MyApp.Accounts.User, namespace: :accounts
+```
+
+### Custom Tools
+
+Define custom tools with parameters:
+
+```elixir
+tool :search_users do
+  description "Search users by email"
+  param :query, :string, required: true
+  param :limit, :integer
+  
+  handle fn params, _actor ->
+    users = MyApp.Accounts.search_users(params["query"], limit: params["limit"])
+    {:ok, %{users: users}}
+  end
+end
+```
+
+### Authorization
+
+Ectomancer provides flexible authorization with three strategies:
+
+#### 1. Inline Function
+
+Simple authorization with a function:
+
+```elixir
+tool :admin_stats do
+  description "Get admin statistics"
+  
+  authorize fn actor, _action ->
+    actor != nil && actor.role == :admin
+  end
+  
+  handle fn _params, _actor ->
+    {:ok, %{stats: calculate_stats()}}
+  end
+end
+```
+
+#### 2. Policy Module
+
+Complex authorization with reusable policy modules:
+
+```elixir
+defmodule MyApp.Policies.UserPolicy do
+  @behaviour Ectomancer.Authorization.Policy
+  
+  @impl true
+  def authorize(actor, action, _opts) do
+    case action do
+      :list -> :ok  # Public
+      :get when actor != nil -> :ok  # Authenticated only
+      :create when actor.role == :admin -> :ok  # Admin only
+      _ -> {:error, "Unauthorized"}
+    end
+  end
+end
+
+# Use in tool
+tool :user_action do
+  authorize with: MyApp.Policies.UserPolicy
+  # ...
+end
+```
+
+#### 3. Public Access
+
+No authorization required:
+
+```elixir
+tool :public_status do
+  description "Get system status"
+  authorize :none
+  
+  handle fn _params, _actor ->
+    {:ok, %{status: "operational"}}
+  end
+end
+```
+
+### Schema-Level Authorization
+
+Apply authorization to all actions of a schema:
+
+```elixir
+# Global authorization for all actions
+expose MyApp.Accounts.User,
+  actions: [:list, :get, :create],
+  authorize: fn actor, _action -> actor.role == :admin end
+```
+
+### Action-Specific Authorization
+
+Fine-grained control per action:
+
+```elixir
+expose MyApp.Accounts.User,
+  actions: [:list, :get, :create, :update],
+  authorize: [
+    list: :none,           # Public
+    get: fn actor, _ -> actor != nil end,  # Authenticated
+    create: :admin_only,    # Admin only
+    update: with: MyApp.Policies.UserPolicy  # Policy module
+  ]
+```
+
+### Binary ID / UUID Support
+
+Ectomancer automatically handles binary_id and UUID primary keys:
+
+```elixir
+defmodule MyApp.Accounts.User do
+  use Ecto.Schema
+  
+  @primary_key {:id, :binary_id, autogenerate: true}
+  schema "users" do
+    field :email, :string
+    # ...
+  end
+end
+
+# Works seamlessly with expose
+expose MyApp.Accounts.User  # get_user, create_user, etc. all work with UUIDs
+```
+
 ## What Claude gains access to
 
 Once connected, Claude can:
@@ -103,13 +258,27 @@ Once connected, Claude can:
 ## Documentation
 
 - [HexDocs](https://hexdocs.pm/ectomancer)
-- Full documentation and examples coming soon
+- Full documentation and examples at [GitHub](https://github.com/GustavoZiaugra/ectomancer)
+
+## Testing
+
+Ectomancer includes comprehensive test coverage:
+
+- **172 tests** covering all features
+- **35 authorization-specific tests**
+- Full integration tested with Phoenix apps
+- Zero compiler warnings
+- Full Credo and Dialyzer compliance
+
+Run tests:
+```bash
+mix test
+```
 
 ## Status
 
-This project is in active development. Phase 0 (Foundation) is currently being implemented.
+This project is in active development. Phase 2 (Authorization) is complete.
 
 ## License
 
 MIT License - see LICENSE file for details.
-

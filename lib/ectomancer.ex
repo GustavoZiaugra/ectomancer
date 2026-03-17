@@ -14,8 +14,22 @@ defmodule Ectomancer do
           name: "my-app-mcp",
           version: "1.0.0"
 
-        # Tools are defined as Anubis.Server.Component.Tool modules
-        # See anubis_mcp documentation for details
+        # Expose Ecto schemas as MCP tools
+        expose MyApp.Accounts.User,
+          actions: [:list, :get, :create, :update]
+
+        # Custom tools with authorization
+        tool :admin_stats do
+          description "Get admin statistics"
+          
+          authorize fn actor, _action ->
+            actor != nil && actor.role == :admin
+          end
+
+          handle fn _params, _actor ->
+            {:ok, %{users: 100, revenue: 5000}}
+          end
+        end
       end
 
   2. Add to your router:
@@ -36,13 +50,32 @@ defmodule Ectomancer do
           end
         end
 
+  ## Available Macros
+
+  - `tool/2` - Define custom MCP tools with params and authorization
+  - `expose/2` - Auto-generate CRUD tools from Ecto schemas
+  - `authorize/1` - Add authorization to tools (use inside tool block)
+
+  ## Authorization
+
+  Ectomancer provides flexible authorization:
+
+  ### Inline Function
+      authorize fn actor, action ->
+        actor != nil && actor.role == :admin
+      end
+
+  ### Policy Module
+      authorize with: MyApp.Policies.UserPolicy
+
+  ### Public Access
+      authorize :none
+
   ## Actor Access in Tools
 
   Tools receive the actor via frame.assigns:
 
       defmodule MyApp.MCP.MyTool do
-        @behaviour Anubis.Server.Behaviour.Tool
-
         def execute(params, frame) do
           actor = frame.assigns[:ectomancer_actor]
           # Use actor for authorization...
