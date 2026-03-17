@@ -325,36 +325,30 @@ defmodule Ectomancer.Expose do
 
   defp generate_authorization_block(action, config) do
     auth_config = config.authorization
+    do_generate_authorization_block(auth_config, action)
+  end
 
-    case auth_config do
-      nil ->
-        # No authorization configured
-        quote do
-          authorize(:none)
-        end
-
-      %{global: global, actions: actions} when map_size(actions) > 0 ->
-        # Check for action-specific authorization
-        action_auth = Map.get(actions, action)
-
-        if action_auth do
-          # Use action-specific auth
-          parse_auth_handler(action_auth)
-        else
-          # Fall back to global auth
-          case global do
-            nil -> quote(do: authorize(:none))
-            handler -> parse_auth_handler(handler)
-          end
-        end
-
-      %{global: global} ->
-        case global do
-          nil -> quote(do: authorize(:none))
-          handler -> parse_auth_handler(handler)
-        end
+  defp do_generate_authorization_block(nil, _action) do
+    quote do
+      authorize(:none)
     end
   end
+
+  defp do_generate_authorization_block(%{global: global, actions: actions}, action)
+       when map_size(actions) > 0 do
+    # Check for action-specific authorization first
+    case Map.get(actions, action) do
+      nil -> resolve_global_auth(global)
+      action_auth -> parse_auth_handler(action_auth)
+    end
+  end
+
+  defp do_generate_authorization_block(%{global: global}, _action) do
+    resolve_global_auth(global)
+  end
+
+  defp resolve_global_auth(nil), do: quote(do: authorize(:none))
+  defp resolve_global_auth(handler), do: parse_auth_handler(handler)
 
   defp parse_auth_handler(:none), do: quote(do: authorize(:none))
   defp parse_auth_handler(:public), do: quote(do: authorize(:none))
