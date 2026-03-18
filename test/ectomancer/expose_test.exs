@@ -107,4 +107,44 @@ defmodule Ectomancer.ExposeTest do
       assert function_exported?(CreateTestUserSchema, :execute, 2)
     end
   end
+
+  describe "readonly mode" do
+    defmodule ReadonlyTestMCP do
+      use Ectomancer, name: "readonly-test-mcp", version: "1.0.0"
+
+      expose(TestUserSchema, readonly: true)
+    end
+
+    alias ReadonlyTestMCP.Tool.GetTestUserSchema, as: ReadonlyGet
+    alias ReadonlyTestMCP.Tool.ListTestUserSchemas, as: ReadonlyList
+
+    test "generates list_test_user_schemas tool" do
+      assert Code.ensure_loaded?(ReadonlyList)
+    end
+
+    test "generates get_test_user_schema tool" do
+      assert Code.ensure_loaded?(ReadonlyGet)
+    end
+
+    test "does not generate create tool in readonly mode" do
+      refute Code.ensure_loaded?(ReadonlyTestMCP.Tool.CreateTestUserSchema)
+    end
+
+    test "does not generate update tool in readonly mode" do
+      refute Code.ensure_loaded?(ReadonlyTestMCP.Tool.UpdateTestUserSchema)
+    end
+
+    test "does not generate destroy tool in readonly mode" do
+      refute Code.ensure_loaded?(ReadonlyTestMCP.Tool.DestroyTestUserSchema)
+    end
+
+    test "readonly mode generates exactly 2 tools" do
+      tools = ReadonlyTestMCP.__components__(:tool)
+      assert length(tools) == 2
+
+      tool_names = Enum.map(tools, & &1.name)
+      assert "list_test_user_schemas" in tool_names
+      assert "get_test_user_schema" in tool_names
+    end
+  end
 end
