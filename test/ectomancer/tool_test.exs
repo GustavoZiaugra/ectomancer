@@ -134,4 +134,92 @@ defmodule Ectomancer.ToolTest do
       assert "greet_optional" in tool_names
     end
   end
+
+  describe "changeset error mapping" do
+    test "format_error maps changeset errors properly" do
+      changeset = %Ecto.Changeset{
+        errors: [email: {"can't be blank", []}, name: {"has invalid format", []}],
+        valid?: false
+      }
+
+      {code, message, data} = Ectomancer.Tool.format_error(changeset)
+
+      assert code == -32_602
+      assert message == "Missing required field(s)"
+      assert data[:count] == 2
+      assert is_list(data[:errors])
+    end
+
+    test "map_changeset_errors formats errors into readable messages" do
+      changeset = %Ecto.Changeset{
+        errors: [
+          email: {"can't be blank", []},
+          age: {"must be at least %{count}", [count: 18]}
+        ],
+        valid?: false
+      }
+
+      errors = Ectomancer.Tool.map_changeset_errors(changeset)
+
+      assert errors.email == ["can't be blank"]
+      assert errors.age == ["must be at least 18"]
+    end
+
+    test "format_field_name converts snake_case to Title Case" do
+      assert Ectomancer.Tool.format_field_name(:email) == "Email"
+      assert Ectomancer.Tool.format_field_name(:first_name) == "First name"
+      assert Ectomancer.Tool.format_field_name("last_name") == "Last name"
+    end
+
+    test "infer_validation_type detects presence errors" do
+      errors = %{email: ["can't be blank"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :presence
+    end
+
+    test "infer_validation_type detects format errors" do
+      errors = %{email: ["has invalid format"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :format
+    end
+
+    test "infer_validation_type detects inclusion errors" do
+      errors = %{status: ["is invalid"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :inclusion
+    end
+
+    test "infer_validation_type detects length errors" do
+      errors = %{password: ["string too short"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :length
+    end
+
+    test "infer_validation_type detects comparison errors" do
+      errors = %{age: ["must be greater than 0"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :comparison
+    end
+
+    test "infer_validation_type defaults to other for unknown errors" do
+      errors = %{field: ["some random error"]}
+      assert Ectomancer.Tool.infer_validation_type(errors) == :other
+    end
+
+    test "changeset errors include field names in structured format" do
+      changeset = %Ecto.Changeset{
+        errors: [email_address: {"can't be blank", []}],
+        valid?: false
+      }
+
+      {_, _, data} = Ectomancer.Tool.format_error(changeset)
+
+      [first_error | _] = data[:errors]
+      assert first_error[:field] == "Email address"
+      assert first_error[:message] == "can't be blank"
+    end
+
+    test "flatten_errors combines multiple messages into single string" do
+      errors = %{email: ["can't be blank", "is invalid"], name: ["is too short"]}
+      flattened = Ectomancer.Tool.flatten_errors(errors)
+
+      assert flattened.email == "can't be blank, is invalid"
+      assert flattened.name == "is too short"
+    end
+  end
 end

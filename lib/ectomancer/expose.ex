@@ -26,6 +26,7 @@ defmodule Ectomancer.Expose do
     * `:except` - Blacklist of fields to exclude
     * `:namespace` - Prefix tools with namespace (e.g., `:accounts` → `accounts_list_users`)
     * `:as` - Alternative name for the resource (e.g., `:admin_users` → `list_admin_users`)
+    * `:readonly` - Enable read-only mode (disables `:create`, `:update`, `:destroy`)
     * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
 
   ## Generated Tools
@@ -122,22 +123,25 @@ defmodule Ectomancer.Expose do
       * `:namespace` - Prefix tools with namespace
       * `:as` - Alternative resource name
 
-  ## Examples
+   ## Examples
 
-      expose MyApp.Accounts.User
-      # Generates: list_users, get_user, create_user, update_user, destroy_user
+       expose MyApp.Accounts.User
+       # Generates: list_users, get_user, create_user, update_user, destroy_user
 
-      expose MyApp.Accounts.User, actions: [:list, :get]
-      # Generates: list_users, get_user
+       expose MyApp.Accounts.User, actions: [:list, :get]
+       # Generates: list_users, get_user
 
-      expose MyApp.Accounts.User, only: [:email, :name]
-      # All tools only expose email and name fields
+       expose MyApp.Accounts.User, readonly: true
+       # Generates: list_users, get_user (mutation operations disabled)
 
-      expose MyApp.Accounts.User, namespace: :accounts
-      # Generates: accounts_list_users, accounts_get_user, etc.
+       expose MyApp.Accounts.User, only: [:email, :name]
+       # All tools only expose email and name fields
 
-      expose MyApp.Accounts.User, as: :admin_users
-      # Generates: list_admin_users, get_admin_users, etc.
+       expose MyApp.Accounts.User, namespace: :accounts
+       # Generates: accounts_list_users, accounts_get_user, etc.
+
+       expose MyApp.Accounts.User, as: :admin_users
+       # Generates: list_admin_users, get_admin_users, etc.
   """
   defmacro expose(schema_module, opts \\ []) do
     schema = Macro.expand(schema_module, __CALLER__)
@@ -165,18 +169,29 @@ defmodule Ectomancer.Expose do
   defp build_expose_config(schema, opts) do
     introspection = SchemaIntrospection.analyze(schema)
     auth_config = parse_authorization_config(Keyword.get(opts, :authorize))
+    readonly = Keyword.get(opts, :readonly, false)
+
+    base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
+    actions = filter_actions_for_readonly(base_actions, readonly)
 
     %{
       schema: schema,
-      actions: Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy]),
+      actions: actions,
       exposed_fields: filter_fields(introspection, opts),
       writable_fields: filter_writable_fields(introspection, opts),
       resource_name: determine_resource_name(schema, opts[:as]),
       namespace: opts[:namespace],
       introspection: introspection,
-      authorization: auth_config
+      authorization: auth_config,
+      readonly: readonly
     }
   end
+
+  defp filter_actions_for_readonly(actions, true) do
+    Enum.filter(actions, fn action -> action in [:list, :get] end)
+  end
+
+  defp filter_actions_for_readonly(actions, _), do: actions
 
   defp parse_authorization_config(nil), do: nil
   defp parse_authorization_config(:none), do: nil

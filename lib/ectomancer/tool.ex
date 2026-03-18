@@ -371,40 +371,50 @@ defmodule Ectomancer.Tool do
   end
 
   def format_error(%Ecto.Changeset{} = changeset) do
-    errors =
-      Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-        Enum.reduce(opts, msg, fn {key, value}, acc ->
-          String.replace(acc, "%{#{key}}", to_string(value))
-        end)
+    errors = map_changeset_errors(changeset)
+    validation_type = infer_validation_type(errors)
+
+    field_errors =
+      errors
+      |> Enum.map(fn {field, messages} ->
+        %{
+          field: format_field_name(field),
+          message: Enum.join(messages, ", ")
+        }
       end)
 
-    {-32_602, "Validation failed", %{errors: errors}}
+    data = %{errors: field_errors, count: length(field_errors)}
+
+    message =
+      case validation_type do
+        :presence -> "Missing required field(s)"
+        :format -> "Invalid format for field(s)"
+        :inclusion -> "Invalid value for field(s)"
+        :confirmation -> "Confirmation does not match"
+        :length -> "Invalid length for field(s)"
+        :comparison -> "Invalid value for field(s)"
+        _ -> "Validation failed"
+      end
+
+    {-32_602, message, data}
   end
 
   def format_error(reason) when is_binary(reason) do
-    # Try to extract field name from database error messages
-    # PostgreSQL errors often contain "null value in column ... violates not-null constraint"
-    field_pattern = ~r/null value in column "([^"]+)"/
-    field_match = Regex.run(field_pattern, reason)
-
-    # Check if it's a database error
     cond do
-      field_match ->
-        # Extract field name from error message
-        field_name = Enum.at(field_match, 1)
-        formatted_field = field_name |> String.replace("_", " ") |> String.capitalize()
+      field_match = extract_null_violation_field(reason) ->
+        format_null_violation_error(field_match, reason)
 
-        {-32_602, "Missing required parameter: #{formatted_field}",
-         %{field: field_name, details: reason}}
-
-      String.contains?(reason, "not found") ->
+      not_found_error?(reason) ->
         {-32_002, "Resource not found", %{details: reason}}
 
-      String.contains?(reason, "violates foreign key") ->
+      foreign_key_error?(reason) ->
         {-32_602, "Invalid reference: Related record does not exist", %{details: reason}}
 
-      String.contains?(reason, "duplicate key") ->
+      unique_constraint_error?(reason) ->
         {-32_602, "Duplicate value: Record with this value already exists", %{details: reason}}
+
+      not_null_error?(reason) ->
+        {-32_602, "Missing required value", %{details: reason}}
 
       true ->
         {-32_603, "Tool execution failed", %{reason: reason}}
@@ -413,5 +423,119 @@ defmodule Ectomancer.Tool do
 
   def format_error(reason) do
     {-32_603, "Tool execution failed", %{reason: inspect(reason)}}
+  end
+
+  # Helper functions for format_error/1
+
+  defp extract_null_violation_field(reason) when is_binary(reason) do
+    ~r/null value in column "([^"]+)"/i
+    |> Regex.run(reason)
+  end
+
+  defp format_null_violation_error(field_match, reason) when is_list(field_match) do
+    field_name = Enum.at(field_match, 1)
+    formatted_field = format_field_name(field_name)
+
+    {-32_602, "Missing required parameter: #{formatted_field}",
+     %{field: field_name, details: reason}}
+  end
+
+  defp not_found_error?(reason) when is_binary(reason) do
+    String.contains?(reason, "not found")
+  end
+
+  defp foreign_key_error?(reason) when is_binary(reason) do
+    String.contains?(reason, "violates foreign key") ||
+      String.contains?(reason, "foreign_key_violation")
+  end
+
+  defp unique_constraint_error?(reason) when is_binary(reason) do
+    String.contains?(reason, "duplicate key") ||
+      String.contains?(reason, "unique_violation") ||
+      String.contains?(reason, "23505")
+  end
+
+  defp not_null_error?(reason) when is_binary(reason) do
+    String.contains?(reason, "not_null_violation") ||
+      String.contains?(reason, "23502")
+  end
+
+  @doc """
+  Maps Ecto changeset errors to a structured format suitable for MCP responses.
+
+  Returns a map where keys are field names (atoms) and values are lists of error strings.
+
+  ## Examples
+
+      changeset = %Ecto.Changeset{
+        errors: [email: {"can't be blank", []}],
+        ...
+      }
+
+      Ectomancer.Tool.map_changeset_errors(changeset)
+      # %{email: ["can't be blank"]}
+  """
+  @spec map_changeset_errors(Ecto.Changeset.t()) :: %{atom() => [String.t()]}
+  def map_changeset_errors(%Ecto.Changeset{} = changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+  end
+
+  @doc """
+  Flattens mapped changeset errors into a single map with concatenated messages.
+
+  ## Examples
+
+      errors = %{email: ["can't be blank"], name: ["is invalid"]}
+      Ectomancer.Tool.flatten_errors(errors)
+      # %{email: "can't be blank", name: "is invalid"}
+  """
+  @spec flatten_errors(%{atom() => [String.t()]}) :: %{atom() => String.t()}
+  def flatten_errors(errors) when is_map(errors) do
+    errors
+    |> Enum.map(fn {field, messages} ->
+      {field, Enum.join(messages, ", ")}
+    end)
+    |> Enum.into(%{})
+  end
+
+  @doc """
+  Formats a field name for display in error messages.
+  Converts snake_case to Title Case.
+  """
+  @spec format_field_name(atom() | String.t()) :: String.t()
+  def format_field_name(field) do
+    field
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
+
+  @doc """
+  Infers the validation type from changeset errors.
+
+  Accepts either a map with list values (from traverse_errors) or a map with string values.
+  """
+  @spec infer_validation_type(%{atom() => String.t()} | %{atom() => [String.t()]}) :: atom()
+  def infer_validation_type(errors) when is_map(errors) do
+    # Normalize errors to a single string for pattern matching
+    error_messages =
+      errors
+      |> Map.values()
+      |> List.flatten()
+      |> Enum.join(" ")
+
+    cond do
+      String.contains?(error_messages, "can't be blank") -> :presence
+      String.contains?(error_messages, "has invalid format") -> :format
+      String.contains?(error_messages, "is invalid") -> :inclusion
+      String.contains?(error_messages, "doesn't match confirmation") -> :confirmation
+      String.contains?(error_messages, "string too") -> :length
+      String.contains?(error_messages, "must be") -> :comparison
+      true -> :other
+    end
   end
 end
