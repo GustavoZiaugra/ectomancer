@@ -17,7 +17,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and p
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 0.1.0-rc.2"}
+    {:ectomancer, "~> 0.1.0-rc.3"}
   ]
 end
 ```
@@ -111,6 +111,9 @@ expose MyApp.Accounts.User
 
 # Limit actions
 expose MyApp.Blog.Post, actions: [:list, :get]
+
+# Read-only mode (disables create, update, destroy)
+expose MyApp.Blog.Post, readonly: true
 
 # Filter fields
 expose MyApp.Accounts.User, only: [:email, :name]
@@ -226,6 +229,46 @@ expose MyApp.Accounts.User,
   ]
 ```
 
+### Error Handling
+
+Ectomancer provides structured error responses for better debugging:
+
+#### Changeset Validation Errors
+
+When `create` or `update` operations fail validation, you get detailed error information:
+
+```elixir
+# Example error response
+{
+  code: -32602,
+  message: "Missing required field(s)",
+  data: {
+    errors: [
+      %{field: "Email", message: "can't be blank"},
+      %{field: "Name", message: "has invalid format"}
+    ],
+    count: 2
+  }
+}
+```
+
+Error messages are automatically categorized:
+- **presence**: Missing required fields
+- **format**: Invalid format (e.g., email regex)
+- **inclusion**: Value not in allowed set
+- **confirmation**: Confirmation doesn't match
+- **length**: String length issues
+- **comparison**: Numeric comparison failures
+
+#### Database Errors
+
+Common database errors are mapped to descriptive messages:
+
+- `null value in column` → "Missing required parameter: Field Name"
+- `violates foreign key` → "Invalid reference: Related record does not exist"
+- `duplicate key` → "Duplicate value: Record with this value already exists"
+- `not found` → "Resource not found"
+
 ### Binary ID / UUID Support
 
 Ectomancer automatically handles binary_id and UUID primary keys:
@@ -264,8 +307,10 @@ Once connected, Claude can:
 
 Ectomancer includes comprehensive test coverage:
 
-- **172 tests** covering all features
+- **189 tests** covering all features
 - **35 authorization-specific tests**
+- **16 changeset error mapping tests**
+- **6 read-only mode tests**
 - Full integration tested with Phoenix apps
 - Zero compiler warnings
 - Full Credo and Dialyzer compliance
@@ -277,7 +322,13 @@ mix test
 
 ## Status
 
-This project is in active development. Phase 2 (Authorization) is complete.
+This project is in active development. Phase 2 (Authorization) is complete, including:
+
+- ✅ Authorization system with inline functions, policy modules, and action-specific rules
+- ✅ Read-only mode for schemas
+- ✅ Ecto changeset error mapping to MCP error responses
+
+Current version: 0.1.0-rc.3
 
 ## License
 

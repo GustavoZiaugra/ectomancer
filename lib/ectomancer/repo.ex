@@ -112,9 +112,15 @@ defmodule Ectomancer.Repo do
     with_repo(fn repo ->
       struct = struct(schema_module)
       attrs = normalize_params(params || %{}, schema_module)
-      writable = writable_fields(schema_module)
 
-      changeset = Ecto.Changeset.cast(struct, attrs, writable)
+      # Use the schema's changeset function if available, otherwise fallback to cast
+      changeset =
+        if function_exported?(schema_module, :changeset, 2) do
+          schema_module.changeset(struct, attrs)
+        else
+          writable = writable_fields(schema_module)
+          Ecto.Changeset.cast(struct, attrs, writable)
+        end
 
       case repo.insert(changeset) do
         {:ok, record} -> {:ok, record}
@@ -242,12 +248,19 @@ defmodule Ectomancer.Repo do
       |> Enum.reject(fn {k, _v} -> k in pk_fields end)
       |> Enum.into(%{})
 
-    writable =
-      schema_module
-      |> writable_fields()
-      |> Enum.reject(fn f -> f in pk_fields end)
+    # Use the schema's changeset function if available, otherwise fallback to cast
+    changeset =
+      if function_exported?(schema_module, :changeset, 2) do
+        schema_module.changeset(record, update_attrs)
+      else
+        writable =
+          schema_module
+          |> writable_fields()
+          |> Enum.reject(fn f -> f in pk_fields end)
 
-    changeset = Ecto.Changeset.cast(record, update_attrs, writable)
+        Ecto.Changeset.cast(record, update_attrs, writable)
+      end
+
     repo.update(changeset)
   end
 

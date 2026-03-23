@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.3] - 2026-03-23
+
+### Added
+
+#### Read-Only Mode (Phase 2)
+- **Read-only schema exposure** - Disable mutations with `readonly: true`
+  ```elixir
+  expose MyApp.Blog.Post, readonly: true
+  ```
+- Only generates `:list` and `:get` tools
+- Prevents create, update, destroy operations
+- Useful for public-facing schemas or reference data
+
+#### Changeset Error Mapping (Phase 2)
+- **Detailed validation error responses** - MCP error format for changeset errors
+  ```json
+  {
+    code: -32602,
+    message: "Missing required field(s)",
+    data: { errors: [{field: "Email", message: "can't be blank"}] }
+  }
+  ```
+- **Error categorization** - Auto-categorize validation types:
+  - `presence` - Missing required fields
+  - `format` - Invalid format (email regex, etc.)
+  - `inclusion` - Value not in allowed set
+  - `confirmation` - Confirmation doesn't match
+  - `length` - String length issues
+  - `comparison` - Numeric comparison failures
+
+#### Schema Changeset Integration
+- Uses schema's custom `changeset/2` function when available
+- Ensures unique_constraint validations are properly applied
+- Returns structured errors instead of raw Postgrex exceptions
+
+### Changed
+- Updated README.md with read-only mode and error handling documentation
+- Enhanced error handling with better categorization
+- Updated test count to 193 tests
+
+### Fixed
+- Fixed constraint violation handling - uses schema changesets
+- Fixed error messages for validation failures
+
+### Testing
+- **193 tests** (up from 172)
+- **6 read-only mode tests**
+- **16 changeset error mapping tests**
+- Full integration tested
+- Zero compiler warnings
+- Full Credo and Dialyzer compliance
+
+### Issues Closed
+- [#12](https://github.com/GustavoZiaugra/ectomancer/issues/12) - Implement read-only mode
+- [#13](https://github.com/GustavoZiaugra/ectomancer/issues/13) - Map Ecto changeset errors to MCP error responses
+
 ## [0.1.0-rc.2] - 2026-03-17
 
 ### Added
@@ -93,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.2...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.3...HEAD
+[0.1.0-rc.3]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.1

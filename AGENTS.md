@@ -73,12 +73,54 @@ iex -S mix
 - Tests are in `test/` directory matching `lib/` structure
 - Use `mix test.watch` (if installed) for continuous testing during development
 
-## Important Notes
+## Release Process
 
-- This is a library, not an application (no `config/runtime.exs`)
-- Optional dependencies are loaded only if parent app uses them
-- The library provides macros and utilities, not a standalone service
-- Always maintain backward compatibility when possible
+To create a new release:
+
+1. **Create release branch**
+   ```bash
+   git checkout -b release/vX.Y.Z
+   ```
+
+2. **Update version in `mix.exs`** (line 5)
+   - Change `@version "old_version"` to new version
+
+3. **Update `CHANGELOG.md`**
+   - Add new release section under `[Unreleased]`
+   - Include: Added, Changed, Fixed, Testing, Issues Closed
+   - Update `[Unreleased]` URL to point to new tag
+
+4. **Update `README.md`**
+   - Line 17: Update version in installation example
+   - Update current version note at end of file
+
+5. **Commit changes**
+   ```bash
+   git add .
+   git commit -m "Release vX.Y.Z: Brief description"
+   ```
+
+6. **Create pull request**
+   - Create PR from release branch to main
+   - Wait for review/approval
+
+7. **After merge - Create git tag and push**
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+8. **Create GitHub release**
+   ```bash
+   gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "..."
+   ```
+
+9. **(Optional) Publish to Hex.pm**
+   ```bash
+   mix hex.publish
+   ```
+
+## Important Notes
 
 ## MCP Context
 
