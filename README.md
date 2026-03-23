@@ -17,7 +17,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and p
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 0.1.0-rc.2"}
+    {:ectomancer, "~> 0.1.0-rc.3"}
   ]
 end
 ```

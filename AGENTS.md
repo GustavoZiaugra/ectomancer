@@ -83,3 +83,50 @@ iex -S mix
 ## MCP Context
 
 Ectomancer is a meta-project - it's a library for building MCP servers. When working on this codebase, you're building tools that enable AI assistants (like Claude) to interact with Phoenix/Ecto applications conversationally.
+
+## Release Process
+
+To create a new release:
+
+1. **Create release branch**
+   ```bash
+   git checkout -b release/vX.Y.Z
+   ```
+
+2. **Update version in `mix.exs`** (line 5)
+   - Change `@version "old_version"` to new version
+
+3. **Update `CHANGELOG.md`**
+   - Add new release section under `[Unreleased]`
+   - Include: Added, Changed, Fixed, Testing, Issues Closed
+   - Update `[Unreleased]` URL to point to new tag
+
+4. **Update `README.md`**
+   - Line 17: Update version in installation example
+   - Update current version note at end of file
+
+5. **Commit changes**
+   ```bash
+   git add .
+   git commit -m "Release vX.Y.Z: Brief description"
+   ```
+
+6. **Create pull request**
+   - Create PR from release branch to main
+   - Wait for review/approval
+
+7. **After merge - Create git tag and push**
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+8. **Create GitHub release**
+   ```bash
+   gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "..."
+   ```
+
+9. **(Optional) Publish to Hex.pm**
+   ```bash
+   mix hex.publish
+   ```

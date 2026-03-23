@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.3] - 2026-03-18
+
+### Added
+
+#### Read-Only Mode (Issue #12)
+- New `:readonly` option for `expose/2` macro
+- When `readonly: true`, only generates `:list` and `:get` tools
+- Prevents create, update, destroy operations
+- Perfect for public read-only access to data
+
+```elixir
+expose MyApp.Blog.Post, readonly: true
+# Generates only: list_posts, get_post
+```
+
+#### Changeset Error Mapping (Issue #13)
+- Enhanced error messages from Ecto changeset validations
+- Automatic categorization of validation errors:
+  - **presence**: Missing required fields
+  - **format**: Invalid format (email regex, etc.)
+  - **inclusion**: Value not in allowed set
+  - **confirmation**: Confirmation doesn't match
+  - **length**: String length issues
+  - **comparison**: Numeric comparison failures
+
+- Improved database error detection:
+  - **unique_violation**: "Duplicate value: Record with this value already exists"
+  - **foreign_key_violation**: "Invalid reference: Related record does not exist"
+  - **not_null_violation**: "Missing required parameter: Field Name"
+
+- Schema changeset integration
+  - Uses schema's `changeset/2` function when available
+  - Ensures unique_constraint validations work properly
+  - Returns structured error responses instead of binary strings
+
+### Changed
+- Updated README.md with read-only mode and error handling documentation
+- Enhanced error categorization in `format_error/1`
+
+### Fixed
+- Fixed unique constraint violations to return proper error responses
+- Fixed foreign key violations to show descriptive messages
+- Fixed changeset validation errors to show field names and messages
+
+### Testing
+- **193 tests** (up from 172)
+- **21 new tests**: 16 for read-only mode, 6 for error mapping
+- Full integration tested with sweetcorn Phoenix app
+- All authorization strategies still working
+
+### Issues Closed
+- [#12](https://github.com/GustavoZiaugra/ectomancer/issues/12) - Implement read-only mode for expose macro
+- [#13](https://github.com/GustavoZiaugra/ectomancer/issues/13) - Map Ecto changeset errors to MCP error responses
+
 ## [0.1.0-rc.2] - 2026-03-17
 
 ### Added
@@ -93,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.2...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.3...HEAD
+[0.1.0-rc.3]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.1
