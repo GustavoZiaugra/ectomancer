@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.4] - 2026-03-25
+
 ### Added
 
-#### Phoenix Route Introspection (Issue #14)
+#### Phoenix Route Introspection (Issue #14) - Phase 3 Complete!
 - New `expose_routes/1` macro to auto-generate MCP tools from Phoenix router
 - Support for all HTTP methods: GET, POST, PUT, PATCH, DELETE
 - Smart tool naming with automatic singularization:
@@ -175,7 +177,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.4...HEAD
+[0.1.0-rc.4]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.1
