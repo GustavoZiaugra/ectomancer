@@ -101,6 +101,36 @@ config :ectomancer,
 
 ## Features
 
+### Expose Phoenix Routes (New!)
+
+Auto-discover and expose Phoenix routes as callable MCP tools:
+
+```elixir
+defmodule MyApp.MCP do
+  use Ectomancer
+
+  # Expose all routes from your router
+  expose_routes MyAppWeb.Router
+  # Generates: get_users, post_users, get_user, put_user, delete_user, etc.
+  
+  # Filter specific routes
+  expose_routes MyAppWeb.Router, 
+    only: ["/api/users", "/api/posts"],
+    namespace: :api
+  
+  # Filter by HTTP methods
+  expose_routes MyAppWeb.Router, 
+    methods: ["GET", "POST"],
+    except: ["/admin"]
+end
+```
+
+Tool naming:
+- `/users` (GET) → `get_users`
+- `/users/:id` (GET) → `get_user` (singularized)
+- `/users` (POST) → `post_users`
+- `/users/:id` (DELETE) → `delete_user`
+
 ### Expose Ecto Schemas
 
 Automatically generate CRUD tools from your schemas:
@@ -322,8 +352,15 @@ mix test
 
 ## Status
 
-This project is in active development. Phase 2 (Authorization) is complete, including:
+This project is in active development.
 
+**Phase 3 (Power Features) is complete**, including:
+- ✅ Phoenix route introspection via `expose_routes`
+- ✅ Auto-generation of tools from Phoenix router routes
+- ✅ Smart tool naming with path parameter handling
+- ✅ Route filtering and namespace support
+
+**Phase 2 (Authorization) is complete**, including:
 - ✅ Authorization system with inline functions, policy modules, and action-specific rules
 - ✅ Read-only mode for schemas
 - ✅ Ecto changeset error mapping to MCP error responses

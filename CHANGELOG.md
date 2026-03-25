@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Phoenix Route Introspection (Issue #14)
+- New `expose_routes/1` macro to auto-generate MCP tools from Phoenix router
+- Support for all HTTP methods: GET, POST, PUT, PATCH, DELETE
+- Smart tool naming with automatic singularization:
+  - `/users` → `get_users`, `post_users`
+  - `/users/:id` → `get_user`, `put_user`, `delete_user`
+- Route filtering options:
+  - `:only` - Include only specific paths
+  - `:except` - Exclude specific paths  
+  - `:methods` - Filter by HTTP methods
+  - `:namespace` - Prefix tool names (e.g., `api_get_users`)
+- Automatic path parameter mapping to tool parameters
+- Direct controller action execution via `Plug.Test.conn`
+- Proper handling of `Plug.Conn.AlreadySentError`
+
+```elixir
+# Expose all routes
+expose_routes MyAppWeb.Router
+
+# With filtering
+expose_routes MyAppWeb.Router,
+  only: ["/api/users"],
+  namespace: :api,
+  methods: ["GET", "POST"]
+```
+
 ## [0.1.0-rc.3] - 2026-03-18
 
 ### Added
