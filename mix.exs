@@ -68,6 +68,7 @@ defmodule Ectomancer.MixProject do
       {:phoenix, ">= 1.7.0", optional: true},
       {:ecto, "~> 3.12", optional: true},
       {:plug, "~> 1.16", optional: true},
+      {:oban, "~> 2.18", optional: true},
 
       # Development and testing
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

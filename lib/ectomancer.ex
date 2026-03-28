@@ -59,6 +59,7 @@ defmodule Ectomancer do
   - `tool/2` - Define custom MCP tools with params and authorization
   - `expose/2` - Auto-generate CRUD tools from Ecto schemas
   - `expose_routes/1` - Auto-generate tools from Phoenix router routes
+  - `expose_oban_jobs/0` - Auto-generate Oban job management tools (requires Oban)
   - `authorize/1` - Add authorization to tools (use inside tool block)
 
   ## Authorization
@@ -106,6 +107,7 @@ defmodule Ectomancer do
       import Ectomancer.Tool, only: [tool: 2, authorize: 1]
       import Ectomancer.Expose, only: [expose: 1, expose: 2]
       import Ectomancer.RouteIntrospection, only: [expose_routes: 1, expose_routes: 2]
+      import Ectomancer.ObanBridge, only: [expose_oban_jobs: 0, expose_oban_jobs: 1]
     end
   end
 end
