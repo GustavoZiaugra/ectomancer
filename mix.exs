@@ -2,7 +2,7 @@ defmodule Ectomancer.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GustavoZiaugra/ectomancer"
-  @version "0.1.0-rc.4"
+  @version "1.0.0"
 
   def project do
     [
@@ -49,8 +49,13 @@ defmodule Ectomancer.MixProject do
       source_ref: "v#{@version}",
       groups_for_modules: [
         Core: [Ectomancer, Ectomancer.Tool, Ectomancer.Expose],
-        Integration: [Ectomancer.Plug, Ectomancer.Repo],
-        Utilities: [Ectomancer.SQLTool, Ectomancer.SchemaBuilder, Ectomancer.SchemaIntrospection]
+        Integration: [
+          Ectomancer.Plug,
+          Ectomancer.Repo,
+          Ectomancer.RouteIntrospection,
+          Ectomancer.ObanBridge
+        ],
+        Utilities: [Ectomancer.SchemaBuilder, Ectomancer.SchemaIntrospection]
       ]
     ]
   end
