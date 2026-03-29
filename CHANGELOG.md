@@ -7,9 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0-rc.4] - 2026-03-25
+## [1.0.0] - 2026-03-29
+
+### 🎉 Official v1.0.0 Release - Production Ready!
+
+Ectomancer is now officially stable and ready for production use! Three phases of development complete.
 
 ### Added
+
+#### Optional Oban Bridge (Issue #15) - Phase 3 Final Feature!
+- New `expose_oban_jobs/0` and `expose_oban_jobs/1` macros for Oban integration
+- Automatically generates 5 MCP tools for job queue management:
+  - `list_oban_queues` - List all queues with job statistics (total, executing, available, retryable, discarded)
+  - `get_queue_depth` - Get detailed counts for a specific queue
+  - `list_stuck_jobs` - Find executing jobs with optional filters (queue, worker, min_age, limit)
+  - `retry_job` - Retry failed or discarded jobs by ID
+  - `cancel_job` - Cancel or delete jobs by ID
+- Only activates when Oban is in dependencies (optional dependency support)
+- Supports `:namespace` option for tool naming (e.g., `background_list_oban_queues`)
+- Comprehensive test coverage (13 tests)
+
+```elixir
+# Expose all Oban job management tools
+expose_oban_jobs
+
+# With namespace prefix
+expose_oban_jobs(namespace: :background)
+# Generates: background_list_oban_queues, background_get_queue_depth, etc.
+```
 
 #### Phoenix Route Introspection (Issue #14) - Phase 3 Complete!
 - New `expose_routes/1` macro to auto-generate MCP tools from Phoenix router
@@ -36,6 +61,18 @@ expose_routes MyAppWeb.Router,
   namespace: :api,
   methods: ["GET", "POST"]
 ```
+
+### Testing
+- **223 tests** (up from 193)
+- **30 new tests**: 13 for Oban bridge, 17 for route introspection
+- Full integration tested with sweetcorn Phoenix app including:
+  - Oban job insertion, retry, and cancellation via MCP tools
+  - Route tool execution through Phoenix controllers
+  - All authorization strategies working with new features
+
+### Issues Closed
+- [#15](https://github.com/GustavoZiaugra/ectomancer/issues/15) - Create optional Oban bridge for job queue management
+- [#14](https://github.com/GustavoZiaugra/ectomancer/issues/14) - Implement Phoenix route introspection for MCP tools
 
 ## [0.1.0-rc.3] - 2026-03-18
 
@@ -177,7 +214,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v0.1.0-rc.4...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v1.0.0
 [0.1.0-rc.4]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.2

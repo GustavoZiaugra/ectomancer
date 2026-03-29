@@ -93,7 +93,7 @@ defmodule Ectomancer do
   Returns the version of Ectomancer.
   """
   def version do
-    "0.1.0"
+    "1.0.0"
   end
 
   @doc false
