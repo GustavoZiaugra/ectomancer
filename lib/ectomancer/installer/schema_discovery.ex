@@ -38,6 +38,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
           })
   def discover do
     (module_introspection() ++ file_discovery())
+    # Filter out modules without tables (like Ecto.Schema)
+    |> Enum.filter(& &1.table)
     |> Enum.uniq_by(& &1.module)
   end
 
@@ -49,7 +51,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   @spec module_introspection() :: list(map())
   def module_introspection do
     modules =
-      Code.all_loaded()
+      :code.all_loaded()
+      |> Enum.map(&elem(&1, 0))
       |> Enum.filter(&ecto_schema_module?/1)
 
     Enum.map(modules, fn module ->
@@ -120,62 +123,22 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   end
 
   defp contains_ecto_schema?(file_path) do
-    with {:ok, content} <- File.read(file_path),
-         {:ok, ast} <- Code.string_to_quoted(content) do
-      ast
-      |> Macro.prewarn()
-      |> case do
-        {:module, _module, _env} ->
-          # Check if any module in the file uses Ecto.Schema
-          modules_in_file = get_modules_from_file(content)
-          modules_in_file |> Enum.any?(&str_contains_ecto_schema?/1)
+    case File.read(file_path) do
+      {:ok, content} ->
+        # Simple check for Ecto.Schema usage
+        String.contains?(content, "use Ecto.Schema") or
+          String.contains?(content, "use Ecto.Schema,")
 
-        _ ->
-          false
-      end
-    else
-      _ -> false
+      _ ->
+        false
     end
-  end
-
-  defp get_modules_from_file(content) do
-    content
-    |> String.split("defmodule ")
-    |> Enum.map(&String.trim_leading(&1, "defmodule "))
-    |> Enum.map(&String.trim_trailing(&1, " = "))
-    |> Enum.map(fn mod ->
-      try do
-        Module.eval_string(Elixir.Code, mod)
-      rescue
-        _ -> nil
-      end
-    end)
-    |> Enum.filter(&(&1 != nil))
-  end
-
-  defp str_contains_ecto_schema?(mod) do
-    mod
-    |> Macro.expand(nil, %{})
-    |> case do
-      {:module, mod_ast, _} ->
-        mod_ast
-        |> Macro.prewalk(fn
-          {:__using__, [_meta, {Ecto.Schema, _meta2}], _} -> true
-          {:__using__, [_meta, {_, _meta2}], _} -> false
-          _ -> false
-        end)
-        |> elem(1)
-    end
-    |> Kernel.==(true)
   end
 
   defp extract_schemas_from_file(file_path) do
     with {:ok, content} <- File.read(file_path),
          {:ok, ast} <- Code.string_to_quoted(content) do
-      ast
-      |> Macro.prewarn()
-      |> case do
-        {:module, {module_name, _module_meta}, _env} ->
+      case ast do
+        {:defmodule, {module_name, _module_meta}, _env} ->
           # Extract module name and attributes
           module_name
           |> extract_module_info(file_path)
@@ -256,22 +219,23 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     end
   end
 
-  defp extract_context(full_module_name) do
-    # MyApp.Accounts.User -> "Accounts"
-    # MyApp.Blog.Post -> "Blog"
+  @doc false
+  def extract_context(full_module_name) when is_atom(full_module_name) do
+    full_module_name
+    |> Module.split()
+    |> extract_context_from_parts()
+  end
+
+  @doc false
+  def extract_context(full_module_name) when is_binary(full_module_name) do
     parts = String.split(full_module_name, ".")
+    extract_context_from_parts(parts)
+  end
 
+  defp extract_context_from_parts(parts) do
     case parts do
-      [_, context, _] ->
-        context
-
-      [_, _, _] ->
-        # Handle cases like MyApp.Accounts.User where User is the schema
-        # but context is still Accounts
-        parts |> Enum.at(1)
-
-      _ ->
-        nil
+      [_, context, _] -> context
+      _ -> nil
     end
   end
 end

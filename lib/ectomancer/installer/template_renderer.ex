@@ -65,7 +65,7 @@ defmodule Ectomancer.Installer.TemplateRenderer do
 
     # Ectomancer MCP Server Configuration
     config :ectomancer,
-      repo: #{inspect(repo)}
+      repo: #{repo}
 
     """
   end
@@ -74,13 +74,21 @@ defmodule Ectomancer.Installer.TemplateRenderer do
   Generates router route for Ectomancer.
   """
   @spec generate_router_entry(keyword()) :: String.t()
-  def generate_router_entry(opts \\ []) do
+  def generate_router_entry(_opts \\ []) do
     """
 
     # Ectomancer MCP
     forward "/mcp", Ectomancer.Plug
 
     """
+  end
+
+  @doc """
+  Generates complete MCP module content with default namespace and no oban.
+  """
+  @spec generate_mcp_module_content(list(map()), String.t(), String.t()) :: String.t()
+  def generate_mcp_module_content(schemas, mcp_name, mcp_version) do
+    generate_mcp_module_content(schemas, mcp_name, mcp_version, nil, false)
   end
 
   @doc """
@@ -163,7 +171,7 @@ defmodule Ectomancer.Installer.TemplateRenderer do
     # Extract table name for tool name
     table_name =
       module
-      |> :module.split()
+      |> Module.split()
       |> List.last()
       |> Macro.underscore()
 
@@ -177,12 +185,13 @@ defmodule Ectomancer.Installer.TemplateRenderer do
 
   defp generate_example_tools(schema, namespace) do
     module = schema.module
+    table_name = schema.table || "records"
 
     """
 
       # Example custom tool for #{inspect(module)}
       #{(namespace && "  ") || ""}tool :#{format_tool_name(module)} do
-        #{(namespace && "  ") || ""}description "List #{module.table_name() || "records"}"
+        #{(namespace && "  ") || ""}description "List #{table_name}"
         #{(namespace && "  ") || ""}authorize :public
         #{(namespace && "  ") || ""}handle fn _params, _actor ->
         #{(namespace && "    ") || "  "}{:ok, []}
@@ -193,9 +202,8 @@ defmodule Ectomancer.Installer.TemplateRenderer do
 
   defp format_tool_name(module) do
     module
-    |> :module.split()
+    |> Module.split()
     |> List.last()
-    |> String.to_atom()
     |> Macro.underscore()
     |> String.to_atom()
   end

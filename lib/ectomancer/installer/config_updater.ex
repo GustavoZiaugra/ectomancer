@@ -55,11 +55,11 @@ defmodule Ectomancer.Installer.ConfigUpdater do
         :not_modified
       else
         # Find deps section and add dependency
-        updated_content = content |> add_to_deps_section()
+        updated_content = add_to_deps_section(content)
 
         if updated_content != content do
           File.write!(path, updated_content)
-          {:ok, "Added {:ectomancer, \\\"~> 1.0\\\"} to mix.exs"}
+          {:ok, "Added {:ectomancer, \"~> 1.0\"} to mix.exs"}
         else
           :not_modified
         end
@@ -81,8 +81,8 @@ defmodule Ectomancer.Installer.ConfigUpdater do
       if String.contains?(content, "config :ectomancer,") do
         :not_modified
       else
-        # Add config entry
-        updated_content = content |> add_ectomancer_config()
+        # Add config entry at the end
+        updated_content = add_ectomancer_config(content)
 
         if updated_content != content do
           File.write!(path, updated_content)
@@ -109,7 +109,7 @@ defmodule Ectomancer.Installer.ConfigUpdater do
         :not_modified
       else
         # Add forward route
-        updated_content = content |> add_ectomancer_route()
+        updated_content = add_ectomancer_route(content)
 
         if updated_content != content do
           File.write!(path, updated_content)
@@ -124,64 +124,62 @@ defmodule Ectomancer.Installer.ConfigUpdater do
   # Private functions
 
   defp add_to_deps_section(content) do
-    # Look for deps: [...] section
-    ~r/defp deps\(\) do\s+\[(.*?)\]/s
-    |> Regex.run(content)
-    |> case do
-      [_, deps_content] ->
-        # Add ectomancer dependency
-        new_deps =
-          deps_content
-          |> String.replace_trailing("]", ")")
-          |> String.replace("]", ")")
-          |> String.replace(",)", ",\n      {:ectomancer, \\\"~> 1.0\\\"},\n      )")
-
-        "defp deps() do\n      [\n#{new_deps}"
+    # Look for deps: [...] section (with or without parentheses)
+    case Regex.run(~r/defp deps[(]?[)]? do\s+\[(.*?)\]/s, content) do
+      [full_match, deps_content] ->
+        # Add ectomancer dependency before the closing bracket
+        new_deps = deps_content <> "\n      {:ectomancer, \"~> 1.0\"},"
+        String.replace(content, full_match, "defp deps() do\n      [" <> new_deps)
 
       _ ->
-        # If deps section not found, append to end of file
+        # If deps section not found, return unchanged
         content
-        |> String.trim_trailing()
-        |> String.concat("\n\n      # Ectomancer\n      {:ectomancer, \\\"~> 1.0\\\"}\n    ]")
     end
   end
 
   defp add_ectomancer_config(content) do
-    # Look for config sections and add ectomancer config
-    # Insert after existing configs or at end
+    ectomancer_config = """
+
+    # Ectomancer MCP Server Configuration
+    config :ectomancer,
+      repo: MyApp.Repo
+    """
+
+    # Add at the end of the file
     content
-    |> String.replace_trailing("\n", "\n")
-    |> String.replace(
-      ~r/(config :.*?,\s*\{)/,
-      "#{elem(Regexp.last_capture(), 1)}\n    # Ectomancer MCP Server\n    config :ectomancer,\n      repo: MyApp.Repo\n    ,"
-    )
-    |> String.replace(
-      ~r/(\}\s*$)/,
-      "#{elem(Regexp.last_capture(), 1)}\n    # Ectomancer MCP Server\n    config :ectomancer,\n      repo: MyApp.Repo\n    ,"
-    )
+    |> String.trim_trailing()
+    |> Kernel.<>(ectomancer_config)
   end
 
   defp add_ectomancer_route(content) do
-    # Look for forward patterns in router
-    # Add before pipeline or at end
+    route_line = "\n    # Ectomancer MCP\n    forward \"/mcp\", Ectomancer.Plug"
 
-    # Try to find existing forward calls
-    if Regex.run(~r/forward\s*\([^)]+\)/, content) do
-      # Replace existing forward or add after
-      content
-      |> String.replace(
-        ~r/(forward\s+\["\/[^\"]+",\s+[^,]+,\s+[^"]+"\s*\))/,
-        "#{elem(Regexp.last_capture(), 1)}\n    forward \"/mcp\", Ectomancer.Plug"
-      )
-      |> String.replace(
-        ~r/(pipeline\s+\([^)]+\)\s+do)/,
-        "#{elem(Regexp.last_capture(), 1)}\n    forward \"/mcp\", Ectomancer.Plug"
-      )
-    else
-      # No forward found, add to end
-      content
-      |> String.replace_trailing("\n", "\n")
-      |> String.concat("\n    # Ectomancer MCP\n    forward \"/mcp\", Ectomancer.Plug")
+    # Try to find a good place to insert - after existing forwards or before pipelines
+    cond do
+      # If there's already a forward, add after the last one
+      Regex.match?(~r/forward\s+"/, content) ->
+        # Find the last forward and add after it
+        Regex.replace(
+          ~r/(forward\s+"[^"]+",\s+[^\n]+)(\n)(?!\s*forward)/,
+          content,
+          "\\1\\2#{route_line}\\2"
+        )
+
+      # If there's a pipeline, add before it
+      Regex.match?(~r/pipeline\s+:/, content) ->
+        Regex.replace(
+          ~r/(\n)(\s*pipeline\s+:)/,
+          content,
+          "\\1#{route_line}\\1\\2"
+        )
+
+      # Otherwise add before the closing end of the router module
+      true ->
+        Regex.replace(
+          ~r/(\nend\s*)$/,
+          content,
+          "#{route_line}\\1"
+        )
     end
   end
 end

@@ -99,7 +99,7 @@ defmodule Ectomancer.Installer.TemplateRendererTest do
   describe "generate_router_entry/1" do
     test "generates router forward route" do
       content = TemplateRenderer.generate_router_entry()
-      assert String.contains?(content, 'forward "/mcp", Ectomancer.Plug')
+      assert String.contains?(content, ~s|forward "/mcp", Ectomancer.Plug|)
     end
   end
 end
