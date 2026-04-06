@@ -1,0 +1,3 @@
+# Ectomancer MCP Server Configuration
+config :ectomancer,
+  repo: <%= repo %>
