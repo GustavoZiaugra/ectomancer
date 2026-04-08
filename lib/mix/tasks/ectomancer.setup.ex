@@ -17,6 +17,28 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
   3. Asks about optional features (Oban bridge, custom namespace)
   4. Generates MCP module and updates configuration files
   5. Provides next steps for the user
+
+  ## Examples
+
+      $ mix ectomancer.setup
+      🔍 Scanning for Ecto schemas...
+      Found 3 schemas:
+        ✓ MyApp.Accounts.User
+        ✓ MyApp.Blog.Post
+        ✓ MyApp.Blog.Comment
+
+      ? Select schemas to expose (comma-separated numbers, e.g., 1,2,3)
+      > 1,2
+      ? Include Oban bridge? (y/N)
+      > n
+      ? Tool namespace? (e.g., 'MyApp', leave empty for none)
+      >
+
+  ## Return Codes
+
+  - `0` - Success
+  - `1` - No schemas found or no schemas selected
+  - `2` - File generation error
   """
 
   use Mix.Task
@@ -41,7 +63,7 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
       )
 
       Mix.shell().info("   Exiting...")
-      System.halt(1)
+      exit({:shutdown, 1})
     end
 
     Mix.shell().info("\n📦 Found #{length(schemas)} schema(s):")
@@ -57,7 +79,7 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
     unless length(selected_schemas) > 0 do
       Mix.shell().error("\n❌ No schemas selected!")
       Mix.shell().info("   Exiting...")
-      System.halt(1)
+      exit({:shutdown, 1})
     end
 
     # Step 3: Get optional configurations
@@ -118,6 +140,8 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
     Mix.shell().info("   3. Test at: http://localhost:4000/mcp")
 
     Mix.shell().info("\n💡 Tip: You can modify #{mcp_path} to customize the exposed schemas.")
+
+    :ok
   end
 
   # Private functions
@@ -144,24 +168,31 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
     input = get_input()
 
-    # Parse comma-separated numbers
+    # Parse comma-separated numbers with validation
     input
     |> String.trim()
     |> String.split(",")
     |> Enum.map(&String.trim/1)
     |> Enum.filter(&(&1 != ""))
-    |> Enum.map(&String.to_integer/1)
-    # Convert to 0-based index
-    |> Enum.map(&(&1 - 1))
+    |> Enum.map(&parse_selection/1)
+    |> Enum.filter(&(&1 != nil))
+    |> Enum.uniq()
     |> Enum.filter(fn index ->
       index >= 0 and index < length(schemas)
     end)
   end
 
+  defp parse_selection(input) do
+    case Integer.parse(input) do
+      {num, ""} -> num - 1
+      _ -> nil
+    end
+  end
+
   defp prompt_for_oban_bridge do
     Mix.shell().info("? Include Oban bridge? (y/N)")
 
-    input = get_input() |> String.downcase()
+    input = get_input() |> String.downcase() |> String.trim()
 
     case input do
       input when input in ["y", "yes"] -> true
@@ -172,7 +203,7 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
   defp prompt_for_namespace do
     Mix.shell().info("? Tool namespace? (e.g., 'MyApp', leave empty for none)")
 
-    get_input()
+    get_input() |> String.trim()
   end
 
   defp get_input do
