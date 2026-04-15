@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mix test*)",
+      "Bash(mix format*)",
+      "Bash(mix credo*)",
+      "Bash(mix compile*)",
+      "Bash(mix deps*)",
+      "Bash(mix dialyzer*)",
+      "Bash(mix docs*)",
+      "Bash(mix hex*)",
+      "Bash(git checkout -b *)",
+      "Bash(git push origin *)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git status*)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(gh pr create*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh api*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mix format"
+          }
+        ]
+      }
+    ]
+  }
+}
