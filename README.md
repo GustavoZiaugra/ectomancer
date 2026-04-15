@@ -24,7 +24,19 @@ end
 
 ## Quick Start
 
-### 1. Create your MCP module
+### Option 1: Interactive Setup (Recommended)
+
+Run the interactive setup wizard that auto-discovers your schemas:
+
+```bash
+mix ectomancer.setup
+```
+
+This will scan for Ecto schemas, prompt you to select which to expose, ask about optional features, generate the MCP module, and update config files automatically.
+
+### Option 2: Manual Setup
+
+#### 1. Create your MCP module
 
 ```elixir
 defmodule MyApp.MCP do
@@ -53,7 +65,7 @@ defmodule MyApp.MCP do
 end
 ```
 
-### 2. Add to your Application supervisor
+#### 2. Add to your Application supervisor
 
 ```elixir
 defmodule MyApp.Application do
@@ -74,7 +86,7 @@ defmodule MyApp.Application do
 end
 ```
 
-### 3. Add the route to your router
+#### 3. Add the route to your router
 
 ```elixir
 defmodule MyAppWeb.Router do
@@ -87,7 +99,7 @@ defmodule MyAppWeb.Router do
 end
 ```
 
-### 4. Configure Ectomancer (optional)
+#### 4. Configure Ectomancer (optional)
 
 ```elixir
 # config/config.exs
@@ -354,21 +366,22 @@ mix test
 
 This project is in active development.
 
+**Phase 4 (Setup & Deployment) is complete**, including:
+- ✅ Interactive setup tool (`mix ectomancer.setup`)
+- ✅ Auto-discovery of Ecto schemas
+- ✅ Automatic configuration of project files
+
 **Phase 3 (Power Features) is complete**, including:
 - ✅ Phoenix route introspection via `expose_routes`
 - ✅ Auto-generation of tools from Phoenix router routes
 - ✅ Smart tool naming with path parameter handling
 - ✅ Route filtering and namespace support
+- ✅ Optional Oban bridge for job queue management
 
 **Phase 2 (Authorization) is complete**, including:
 - ✅ Authorization system with inline functions, policy modules, and action-specific rules
 - ✅ Read-only mode for schemas
 - ✅ Ecto changeset error mapping to MCP error responses
-
-**Phase 3 (Power Features) is complete**, including:
-- ✅ Phoenix route introspection
-- ✅ Optional Oban bridge for job queue management
-- ✅ Full production readiness
 
 Current version: 1.0.0
 

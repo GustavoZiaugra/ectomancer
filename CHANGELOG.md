@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Interactive setup tool (`mix ectomancer.setup`) for automatic project configuration
+- Schema discovery module to automatically find Ecto schemas in your project
+- Config updater for automatic updates to mix.exs, config.exs, and router files
+
 ## [1.0.0] - 2026-03-29
 
 ### 🎉 Official v1.0.0 Release - Production Ready!
