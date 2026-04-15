@@ -98,19 +98,17 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
           writable_fields: [atom()]
         }
   def analyze_module(module) do
-    try do
-      table = module.__schema__(:table) || nil
-      associations = module.__schema__(:associations)
-      writable_fields = Ectomancer.SchemaIntrospection.writable_fields(module)
+    table = module.__schema__(:table) || nil
+    associations = module.__schema__(:associations)
+    writable_fields = Ectomancer.SchemaIntrospection.writable_fields(module)
 
-      %{
-        table: table,
-        associations: associations,
-        writable_fields: writable_fields
-      }
-    rescue
-      _ -> %{table: nil, associations: [], writable_fields: []}
-    end
+    %{
+      table: table,
+      associations: associations,
+      writable_fields: writable_fields
+    }
+  rescue
+    _ -> %{table: nil, associations: [], writable_fields: []}
   end
 
   # Private functions

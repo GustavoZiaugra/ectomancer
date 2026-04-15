@@ -96,10 +96,7 @@ defmodule Ectomancer.Installer.TemplateRenderer do
   @spec generate_mcp_module_content(list(map()), String.t(), String.t(), atom() | nil, boolean()) ::
           String.t()
   def generate_mcp_module_content(schemas, mcp_name, mcp_version, namespace, include_oban) do
-    expose_annotations =
-      schemas
-      |> Enum.map(&generate_expose_annotation/1)
-      |> Enum.join("\n")
+    expose_annotations = Enum.map_join(schemas, "\n", &generate_expose_annotation/1)
 
     example_tools =
       case Enum.at(schemas, 0) do
@@ -173,16 +170,19 @@ defmodule Ectomancer.Installer.TemplateRenderer do
   defp generate_example_tools(schema, namespace) do
     module = schema.module
     table_name = schema.table || "records"
+    indent = if namespace, do: "  ", else: ""
+    body_indent = if namespace, do: "    ", else: "  "
+    handle_close = if namespace, do: "  ", else: "end"
 
     """
 
       # Example custom tool for #{inspect(module)}
-      #{(namespace && "  ") || ""}tool :#{format_tool_name(module)} do
-        #{(namespace && "  ") || ""}description "List #{table_name}"
-        #{(namespace && "  ") || ""}authorize :public
-        #{(namespace && "  ") || ""}handle fn _params, _actor ->
-        #{(namespace && "    ") || "  "}{:ok, []}
-        #{(namespace && "  ") || "end"}
+      #{indent}tool :#{format_tool_name(module)} do
+        #{indent}description "List #{table_name}"
+        #{indent}authorize :public
+        #{indent}handle fn _params, _actor ->
+        #{body_indent}{:ok, []}
+        #{handle_close}
       end
     """
   end

@@ -45,22 +45,24 @@ defmodule Ectomancer.Installer.ConfigUpdater do
   """
   @spec update_mix_exs(String.t()) :: {:ok, String.t()} | :not_modified | :error
   def update_mix_exs(path) do
-    unless File.exists?(path) do
-      :error
+    if File.exists?(path) do
+      do_update_mix_exs(File.read!(path), path)
     else
-      content = File.read!(path)
+      :error
+    end
+  end
 
-      if String.contains?(content, "{:ectomancer,") do
-        :not_modified
+  defp do_update_mix_exs(content, path) do
+    if String.contains?(content, "{:ectomancer,") do
+      :not_modified
+    else
+      updated_content = add_to_deps_section(content)
+
+      if updated_content != content do
+        File.write!(path, updated_content)
+        {:ok, "Added {:ectomancer, \"~> 1.0\"} to mix.exs"}
       else
-        updated_content = add_to_deps_section(content)
-
-        if updated_content != content do
-          File.write!(path, updated_content)
-          {:ok, "Added {:ectomancer, \"~> 1.0\"} to mix.exs"}
-        else
-          :not_modified
-        end
+        :not_modified
       end
     end
   end
@@ -70,22 +72,24 @@ defmodule Ectomancer.Installer.ConfigUpdater do
   """
   @spec update_config_exs(String.t()) :: {:ok, String.t()} | :not_modified | :error
   def update_config_exs(path) do
-    unless File.exists?(path) do
-      :error
+    if File.exists?(path) do
+      do_update_config_exs(File.read!(path), path)
     else
-      content = File.read!(path)
+      :error
+    end
+  end
 
-      if String.contains?(content, "config :ectomancer,") do
-        :not_modified
+  defp do_update_config_exs(content, path) do
+    if String.contains?(content, "config :ectomancer,") do
+      :not_modified
+    else
+      updated_content = add_ectomancer_config(content)
+
+      if updated_content != content do
+        File.write!(path, updated_content)
+        {:ok, "Added Ectomancer config to config/config.exs"}
       else
-        updated_content = add_ectomancer_config(content)
-
-        if updated_content != content do
-          File.write!(path, updated_content)
-          {:ok, "Added Ectomancer config to config/config.exs"}
-        else
-          :not_modified
-        end
+        :not_modified
       end
     end
   end
@@ -95,22 +99,24 @@ defmodule Ectomancer.Installer.ConfigUpdater do
   """
   @spec update_router_exs(String.t()) :: {:ok, String.t()} | :not_modified | :error
   def update_router_exs(path) do
-    unless File.exists?(path) do
-      :error
+    if File.exists?(path) do
+      do_update_router_exs(File.read!(path), path)
     else
-      content = File.read!(path)
+      :error
+    end
+  end
 
-      if String.contains?(content, "Ectomancer.Plug") do
-        :not_modified
+  defp do_update_router_exs(content, path) do
+    if String.contains?(content, "Ectomancer.Plug") do
+      :not_modified
+    else
+      updated_content = add_ectomancer_route(content)
+
+      if updated_content != content do
+        File.write!(path, updated_content)
+        {:ok, "Added MCP route to router"}
       else
-        updated_content = add_ectomancer_route(content)
-
-        if updated_content != content do
-          File.write!(path, updated_content)
-          {:ok, "Added MCP route to router"}
-        else
-          :not_modified
-        end
+        :not_modified
       end
     end
   end

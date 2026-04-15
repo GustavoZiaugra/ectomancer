@@ -43,9 +43,9 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
   use Mix.Task
 
+  alias Ectomancer.Installer.ConfigUpdater
   alias Ectomancer.Installer.SchemaDiscovery
   alias Ectomancer.Installer.TemplateRenderer
-  alias Ectomancer.Installer.ConfigUpdater
 
   @impl Mix.Task
   def run(_args) do
@@ -73,7 +73,7 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
     selected_schemas = prompt_for_schema_selection(schemas)
 
-    unless length(selected_schemas) > 0 do
+    if selected_schemas == [] do
       Mix.shell().error("\n❌ No schemas selected!")
       Mix.shell().info("   Exiting...")
       exit({:shutdown, 1})
@@ -108,15 +108,7 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
     }
 
     results = ConfigUpdater.update_files(config)
-
-    Enum.each(results, fn {file, result} ->
-      case result do
-        {:ok, message} -> Mix.shell().info("   ✓ #{message}")
-        :not_modified -> Mix.shell().info("   ℹ️  #{file} already up to date")
-        :error -> Mix.shell().error("   ❌ Failed to update #{file}")
-        nil -> :ok
-      end
-    end)
+    print_config_update_results(results)
 
     Mix.shell().info("\n✅ Setup complete!")
     Mix.shell().info("\n📋 Summary:")
@@ -136,9 +128,22 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
     :ok
   end
 
+  defp print_config_update_results(results) do
+    Enum.each(results, fn {file, result} ->
+      case result do
+        {:ok, message} -> Mix.shell().info("   ✓ #{message}")
+        :not_modified -> Mix.shell().info("   ℹ️  #{file} already up to date")
+        :error -> Mix.shell().error("   ❌ Failed to update #{file}")
+        nil -> :ok
+      end
+    end)
+  end
+
   defp prompt_for_schema_selection(schemas) do
-    Enum.with_index(schemas, fn schema, index ->
-      Mix.shell().info("   [#{index + 1}] #{schema.module}")
+    schemas
+    |> Enum.with_index(1)
+    |> Enum.each(fn {schema, index} ->
+      Mix.shell().info("   [#{index}] #{schema.module}")
     end)
 
     Mix.shell().info("")
