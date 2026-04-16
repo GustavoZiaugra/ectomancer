@@ -101,11 +101,11 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
     Mix.shell().info("\n⚙️  Updating configuration files...")
 
-    config = %{
+    config = [
       mix_path: "mix.exs",
       config_path: "config/config.exs",
       router_path: find_router_path()
-    }
+    ]
 
     results = ConfigUpdater.update_files(config)
     print_config_update_results(results)

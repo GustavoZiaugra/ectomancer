@@ -36,7 +36,7 @@ defmodule Ectomancer.Installer.ConfigUpdater do
     %{
       mix_exs: update_mix_exs(mix_path),
       config_exs: update_config_exs(config_path),
-      router_exs: router_path && update_router_exs(router_path)
+      router_exs: if(router_path, do: update_router_exs(router_path))
     }
   end
 

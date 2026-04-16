@@ -134,8 +134,9 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     with {:ok, content} <- File.read(file_path),
          {:ok, ast} <- Code.string_to_quoted(content) do
       case ast do
-        {:defmodule, {module_name, _module_meta}, _env} ->
-          module_name
+        {:defmodule, _meta, [{:__aliases__, _, module_parts}, _]} ->
+          module_parts
+          |> Module.concat()
           |> extract_module_info(file_path)
           |> case do
             nil -> []
@@ -150,18 +151,10 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     end
   end
 
-  defp extract_module_info(module_name, file_path) do
-    full_module_name = module_name
-
-    try do
-      module = Module.concat(full_module_name)
-
-      unless function_exported?(module, :__schema__, 1) do
-        nil
-      end
-
+  defp extract_module_info(module, file_path) do
+    if function_exported?(module, :__schema__, 1) do
       table = extract_table_from_file(file_path)
-      context = extract_context(full_module_name)
+      context = extract_context(module)
 
       associations =
         try do
@@ -184,9 +177,9 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
         associations: associations,
         writable_fields: writable_fields
       }
-    rescue
-      _ -> nil
     end
+  rescue
+    _ -> nil
   end
 
   defp extract_table_from_file(file_path) do
