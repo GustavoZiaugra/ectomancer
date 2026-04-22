@@ -1,4 +1,4 @@
-defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
+defmodule Mix.Tasks.Ectomancer.Setup do
   @moduledoc """
   Interactive setup tool for Ectomancer.
 
