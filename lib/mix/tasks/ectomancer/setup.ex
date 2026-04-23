@@ -1,4 +1,4 @@
-defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
+defmodule Mix.Tasks.Ectomancer.Setup do
   @moduledoc """
   Interactive setup tool for Ectomancer.
 
@@ -12,11 +12,12 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
   ## Workflow
 
-  1. Scans for Ecto schemas in the project
-  2. Prompts user to select which schemas to expose
-  3. Asks about optional features (Oban bridge, custom namespace)
-  4. Generates MCP module and updates configuration files
-  5. Provides next steps for the user
+  1. Checks for required dependencies (ecto, plug)
+  2. Scans for Ecto schemas in the project
+  3. Prompts user to select which schemas to expose
+  4. Asks about optional features (Oban bridge, custom namespace)
+  5. Generates MCP module and updates configuration files
+  6. Provides next steps for the user
 
   ## Examples
 
@@ -39,11 +40,13 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
   - `0` - Success
   - `1` - No schemas found or no schemas selected
   - `2` - File generation error
+  - `3` - Missing required dependencies
   """
 
   use Mix.Task
 
   alias Ectomancer.Installer.ConfigUpdater
+  alias Ectomancer.Installer.DependencyChecker
   alias Ectomancer.Installer.SchemaDiscovery
   alias Ectomancer.Installer.TemplateRenderer
 
@@ -51,6 +54,35 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
   def run(_args) do
     Mix.shell().info("\n🚀 Setting up Ectomancer...")
 
+    check_dependencies!()
+    schemas = discover_schemas!()
+    selected_schemas = select_schemas!(schemas)
+
+    optional_deps = DependencyChecker.check_optional()
+    include_oban = if :oban in optional_deps, do: prompt_for_oban_bridge(), else: false
+    namespace = prompt_for_namespace()
+
+    mcp_path = generate_mcp_module(selected_schemas, include_oban, namespace)
+    update_configuration_files()
+    print_summary(selected_schemas, include_oban, namespace, mcp_path)
+
+    :ok
+  end
+
+  defp check_dependencies! do
+    case DependencyChecker.check_required() do
+      :ok ->
+        Mix.shell().info("   ✓ Required dependencies found")
+
+      {:error, missing} ->
+        Mix.shell().error("\n❌ Missing required dependencies!")
+        Mix.shell().error(DependencyChecker.missing_deps_message(missing))
+        Mix.shell().info("   Exiting...")
+        exit({:shutdown, 3})
+    end
+  end
+
+  defp discover_schemas! do
     Mix.shell().info("\n🔍 Scanning for Ecto schemas...")
     schemas = SchemaDiscovery.discover()
 
@@ -71,6 +103,10 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
       Mix.shell().info("   ✓ #{inspect(schema.module)}")
     end)
 
+    schemas
+  end
+
+  defp select_schemas!(schemas) do
     selected_schemas = prompt_for_schema_selection(schemas)
 
     if selected_schemas == [] do
@@ -79,9 +115,10 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
       exit({:shutdown, 1})
     end
 
-    include_oban = prompt_for_oban_bridge()
-    namespace = prompt_for_namespace()
+    selected_schemas
+  end
 
+  defp generate_mcp_module(selected_schemas, include_oban, namespace) do
     Mix.shell().info("\n📝 Generating MCP module...")
 
     mcp_path = get_mcp_module_path()
@@ -99,6 +136,10 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
         Mix.shell().info("   ℹ️  MCP module already exists and is up to date")
     end
 
+    mcp_path
+  end
+
+  defp update_configuration_files do
     Mix.shell().info("\n⚙️  Updating configuration files...")
 
     config = [
@@ -109,7 +150,9 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
 
     results = ConfigUpdater.update_files(config)
     print_config_update_results(results)
+  end
 
+  defp print_summary(selected_schemas, include_oban, namespace, mcp_path) do
     Mix.shell().info("\n✅ Setup complete!")
     Mix.shell().info("\n📋 Summary:")
     Mix.shell().info("   • Added #{length(selected_schemas)} schema(s)")
@@ -124,8 +167,6 @@ defmodule Ectomancer.Mix.Tasks.Ectomancer.Setup do
     Mix.shell().info("   3. Test at: http://localhost:4000/mcp")
 
     Mix.shell().info("\n💡 Tip: You can modify #{mcp_path} to customize the exposed schemas.")
-
-    :ok
   end
 
   defp print_config_update_results(results) do
