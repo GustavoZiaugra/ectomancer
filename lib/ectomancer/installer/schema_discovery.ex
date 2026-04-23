@@ -49,10 +49,14 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   """
   @spec module_introspection() :: list(map())
   def module_introspection do
+    app_prefix = detect_app_module_prefix()
+
     modules =
       :code.all_loaded()
       |> Enum.map(&elem(&1, 0))
-      |> Enum.filter(&ecto_schema_module?/1)
+      |> Enum.filter(fn mod ->
+        ecto_schema_module?(mod) && app_module?(mod, app_prefix)
+      end)
 
     Enum.map(modules, fn module ->
       schema_info = analyze_module(module)
@@ -76,17 +80,13 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   def file_discovery do
     lib_path = Path.join([File.cwd!(), "lib"])
 
-    unless File.exists?(lib_path) do
-      []
-    end
-
-    schema_files =
+    if File.exists?(lib_path) do
       Path.wildcard(Path.join([lib_path, "**/*.ex"]))
       |> Enum.filter(&contains_ecto_schema?/1)
-
-    Enum.flat_map(schema_files, fn file_path ->
-      extract_schemas_from_file(file_path)
-    end)
+      |> Enum.flat_map(&extract_schemas_from_file/1)
+    else
+      []
+    end
   end
 
   @doc """
@@ -112,6 +112,28 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   end
 
   # Private functions
+
+  defp detect_app_module_prefix do
+    case File.read("mix.exs") do
+      {:ok, content} ->
+        case Regex.run(~r/app:\s*:(\w+)/, content) do
+          [_, app_name] -> Macro.camelize(app_name)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp app_module?(_module, nil), do: true
+
+  defp app_module?(module, prefix) do
+    module
+    |> Module.split()
+    |> List.first()
+    |> Kernel.==(prefix)
+  end
 
   defp ecto_schema_module?(module) do
     Code.ensure_loaded?(module) and
@@ -152,6 +174,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
   end
 
   defp extract_module_info(module, file_path) do
+    Code.ensure_loaded(module)
+
     if function_exported?(module, :__schema__, 1) do
       table = extract_table_from_file(file_path)
       context = extract_context(module)
@@ -192,8 +216,10 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
         table_name
 
       _ ->
-        module_name = file_path |> Path.basename() |> String.replace(".ex", "")
-        Macro.underscore(module_name) |> String.replace("_", "")
+        file_path
+        |> Path.basename(".ex")
+        |> Macro.underscore()
+        |> Kernel.<>("s")
     end
   end
 

@@ -52,7 +52,10 @@ defmodule Mix.Tasks.Ectomancer.Setup do
 
   @impl Mix.Task
   def run(_args) do
+    Mix.Task.run("compile")
     Mix.shell().info("\n🚀 Setting up Ectomancer...")
+
+    app_name = detect_app_name()
 
     check_dependencies!()
     schemas = discover_schemas!()
@@ -62,8 +65,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     include_oban = if :oban in optional_deps, do: prompt_for_oban_bridge(), else: false
     namespace = prompt_for_namespace()
 
-    mcp_path = generate_mcp_module(selected_schemas, include_oban, namespace)
-    update_configuration_files()
+    mcp_path = generate_mcp_module(selected_schemas, include_oban, namespace, app_name)
+    update_configuration_files(app_name)
     print_summary(selected_schemas, include_oban, namespace, mcp_path)
 
     :ok
@@ -118,16 +121,18 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     selected_schemas
   end
 
-  defp generate_mcp_module(selected_schemas, include_oban, namespace) do
+  defp generate_mcp_module(selected_schemas, include_oban, namespace, app_name) do
     Mix.shell().info("\n📝 Generating MCP module...")
 
-    mcp_path = get_mcp_module_path()
+    mcp_path = get_mcp_module_path(app_name)
+    module_name = mcp_module_name(app_name)
 
     case TemplateRenderer.generate_mcp_module(
            schemas: selected_schemas,
            output_path: mcp_path,
            include_oban: include_oban,
-           namespace: namespace
+           namespace: namespace,
+           module_name: module_name
          ) do
       {:ok, message} ->
         Mix.shell().info("   ✓ #{message}")
@@ -139,13 +144,13 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     mcp_path
   end
 
-  defp update_configuration_files do
+  defp update_configuration_files(app_name) do
     Mix.shell().info("\n⚙️  Updating configuration files...")
 
     config = [
       mix_path: "mix.exs",
       config_path: "config/config.exs",
-      router_path: find_router_path()
+      router_path: find_router_path(app_name)
     ]
 
     results = ConfigUpdater.update_files(config)
@@ -153,12 +158,14 @@ defmodule Mix.Tasks.Ectomancer.Setup do
   end
 
   defp print_summary(selected_schemas, include_oban, namespace, mcp_path) do
+    tool_count = count_tools(selected_schemas)
+
     Mix.shell().info("\n✅ Setup complete!")
     Mix.shell().info("\n📋 Summary:")
     Mix.shell().info("   • Added #{length(selected_schemas)} schema(s)")
-    Mix.shell().info("   • Generated #{length(selected_schemas) * 2} tool(s)")
+    Mix.shell().info("   • Generated #{tool_count} tool(s)")
     Mix.shell().info("   • Oban bridge: #{if include_oban, do: "enabled", else: "disabled"}")
-    Mix.shell().info("   • Namespace: #{if namespace == "", do: "none", else: namespace}")
+    Mix.shell().info("   • Namespace: #{namespace || "none"}")
     Mix.shell().info("   • MCP module: #{Path.basename(mcp_path)}")
 
     Mix.shell().info("\n📝 Next steps:")
@@ -184,7 +191,7 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     schemas
     |> Enum.with_index(1)
     |> Enum.each(fn {schema, index} ->
-      Mix.shell().info("   [#{index}] #{schema.module}")
+      Mix.shell().info("   [#{index}] #{inspect(schema.module)}")
     end)
 
     Mix.shell().info("")
@@ -192,7 +199,7 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     selections = prompt_for_selections(schemas)
 
     Enum.map(selections, fn index ->
-      schemas |> Enum.at(index - 1)
+      Enum.at(schemas, index)
     end)
   end
 
@@ -235,16 +242,35 @@ defmodule Mix.Tasks.Ectomancer.Setup do
   defp prompt_for_namespace do
     Mix.shell().info("? Tool namespace? (e.g., 'MyApp', leave empty for none)")
 
-    get_input() |> String.trim()
+    case get_input() |> String.trim() do
+      "" -> nil
+      value -> value
+    end
   end
 
   defp get_input do
-    Mix.shell().input("> ")
+    case IO.gets("> ") do
+      :eof -> ""
+      {:error, _} -> ""
+      input -> input
+    end
   end
 
-  defp get_mcp_module_path do
-    app_name = detect_app_name() || "my_app"
-    "lib/#{app_name}/mcp.ex"
+  defp count_tools(schemas) do
+    Enum.reduce(schemas, 0, fn schema, acc ->
+      if Enum.any?(schema.writable_fields), do: acc + 5, else: acc + 2
+    end)
+  end
+
+  defp get_mcp_module_path(app_name) do
+    "lib/#{app_name || "my_app"}/mcp.ex"
+  end
+
+  defp mcp_module_name(app_name) do
+    case app_name do
+      nil -> "MyApp.MCP"
+      name -> "#{Macro.camelize(name)}.MCP"
+    end
   end
 
   defp detect_app_name do
@@ -260,25 +286,15 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end
   end
 
-  defp find_router_path do
-    possible_paths = [
-      "lib/my_app_web/router.ex",
-      "lib/my_app/router.ex"
-    ]
-
-    app_name = detect_app_name()
-
-    paths =
-      if app_name do
-        [
-          "lib/#{app_name}_web/router.ex",
-          "lib/#{app_name}/router.ex"
-          | possible_paths
-        ]
-      else
-        possible_paths
-      end
-
-    Enum.find(paths, &File.exists?/1)
+  defp find_router_path(app_name) do
+    if app_name do
+      [
+        "lib/#{app_name}_web/router.ex",
+        "lib/#{app_name}/router.ex"
+      ]
+    else
+      []
+    end
+    |> Enum.find(&File.exists?/1)
   end
 end

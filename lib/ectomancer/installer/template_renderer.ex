@@ -20,6 +20,7 @@ defmodule Ectomancer.Installer.TemplateRenderer do
       * `:namespace` - Tool namespace (default: nil)
       * `:include_oban` - Whether to include Oban bridge
       * `:output_path` - Where to save the file
+      * `:module_name` - Module name for the generated MCP module (default: "MyApp.MCP")
 
   ## Returns
 
@@ -34,6 +35,7 @@ defmodule Ectomancer.Installer.TemplateRenderer do
     namespace = Keyword.get(opts, :namespace, nil)
     include_oban = Keyword.get(opts, :include_oban, false)
     output_path = Keyword.get(opts, :output_path, "lib/my_app/mcp.ex")
+    module_name = Keyword.get(opts, :module_name, "MyApp.MCP")
 
     existing_content =
       if File.exists?(output_path) do
@@ -43,11 +45,14 @@ defmodule Ectomancer.Installer.TemplateRenderer do
       end
 
     generated_content =
-      generate_mcp_module_content(schemas, mcp_name, mcp_version, namespace, include_oban)
+      generate_mcp_module_content(schemas, mcp_name, mcp_version, namespace, include_oban,
+        module_name: module_name
+      )
 
     if generated_content == existing_content do
       :not_modified
     else
+      File.mkdir_p!(Path.dirname(output_path))
       File.write!(output_path, generated_content)
       {:ok, "Generated MCP module at #{output_path}"}
     end
@@ -93,105 +98,59 @@ defmodule Ectomancer.Installer.TemplateRenderer do
   @doc """
   Generates complete MCP module content.
   """
-  @spec generate_mcp_module_content(list(map()), String.t(), String.t(), atom() | nil, boolean()) ::
-          String.t()
-  def generate_mcp_module_content(schemas, mcp_name, mcp_version, namespace, include_oban) do
-    expose_annotations = Enum.map_join(schemas, "\n", &generate_expose_annotation/1)
+  @spec generate_mcp_module_content(
+          list(map()),
+          String.t(),
+          String.t(),
+          String.t() | nil,
+          boolean(),
+          keyword()
+        ) :: String.t()
+  def generate_mcp_module_content(
+        schemas,
+        mcp_name,
+        mcp_version,
+        namespace,
+        include_oban,
+        opts \\ []
+      ) do
+    module_name = Keyword.get(opts, :module_name, "MyApp.MCP")
+    expose_lines = Enum.map_join(schemas, "\n\n", &generate_expose_line(&1, namespace))
 
-    example_tools =
-      case Enum.at(schemas, 0) do
-        nil -> ""
-        schema -> generate_example_tools(schema, namespace)
-      end
-
-    oban_section =
+    oban_line =
       if include_oban do
-        """
-
-        # Oban job management tools
-        expose_oban_jobs
-        """
+        "\n\n  expose_oban_jobs"
       else
         ""
       end
 
     """
-    defmodule MyApp.MCP do
+    defmodule #{module_name} do
       use Ectomancer,
         name: "#{mcp_name}",
         version: "#{mcp_version}"
 
-      # Expose Ecto schemas as MCP tools
-      #{expose_annotations}
-
-      #{example_tools}
-
-      #{oban_section}
+    #{expose_lines}#{oban_line}
     end
     """
   end
 
-  defp generate_expose_annotation(schema) do
-    module = schema.module
+  defp generate_expose_line(schema, namespace) do
     actions = determine_actions(schema)
 
-    """
-      #{generate_tool_definition(module)}
-      expose #{inspect(module)},
-        actions: #{actions}
-    """
+    namespace_opt =
+      if namespace && namespace != "",
+        do: ",\n    namespace: :#{Macro.underscore(namespace)}",
+        else: ""
+
+    "  expose #{inspect(schema.module)},\n    actions: #{actions}#{namespace_opt}"
   end
 
   defp determine_actions(schema) do
-    writable = Enum.count(schema.writable_fields)
-
-    if writable > 0 do
-      "[list, get, create, update, delete]"
+    if Enum.any?(schema.writable_fields) do
+      "[:list, :get, :create, :update, :destroy]"
     else
-      "[list, get]"
+      "[:list, :get]"
     end
-  end
-
-  defp generate_tool_definition(module) do
-    table_name =
-      module
-      |> Module.split()
-      |> List.last()
-      |> Macro.underscore()
-
-    tool_name = :"#{table_name}_#{String.to_atom("list")}"
-
-    """
-      # Auto-generated tool for #{inspect(module)}
-      #{tool_name} = :#{table_name}_list
-    """
-  end
-
-  defp generate_example_tools(schema, namespace) do
-    module = schema.module
-    table_name = schema.table || "records"
-    indent = if namespace, do: "  ", else: ""
-    body_indent = if namespace, do: "    ", else: "  "
-    handle_close = if namespace, do: "  ", else: "end"
-
-    """
-
-      # Example custom tool for #{inspect(module)}
-      #{indent}tool :#{format_tool_name(module)} do
-        #{indent}description "List #{table_name}"
-        #{indent}authorize :public
-        #{indent}handle fn _params, _actor ->
-        #{body_indent}{:ok, []}
-        #{handle_close}
-      end
-    """
-  end
-
-  defp format_tool_name(module) do
-    module
-    |> Module.split()
-    |> List.last()
-    |> Macro.underscore()
-    |> String.to_atom()
   end
 end
