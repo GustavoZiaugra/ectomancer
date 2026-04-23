@@ -17,7 +17,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and p
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 1.0"}
+    {:ectomancer, "~> 1.1"}
   ]
 end
 ```
@@ -32,7 +32,58 @@ Run the interactive setup wizard that auto-discovers your schemas:
 mix ectomancer.setup
 ```
 
-This will scan for Ecto schemas, prompt you to select which to expose, ask about optional features, generate the MCP module, and update config files automatically.
+The wizard will:
+
+1. **Check dependencies** — verifies `ecto` and `plug` are present
+2. **Discover schemas** — scans your project for Ecto schemas via module introspection and file scanning
+3. **Prompt for selection** — lets you choose which schemas to expose as MCP tools
+4. **Configure features** — asks about Oban bridge and tool namespacing
+5. **Generate files** — creates the MCP module and patches `mix.exs`, `config.exs`, and your router
+
+Example session:
+
+```
+$ mix ectomancer.setup
+
+🚀 Setting up Ectomancer...
+   ✓ Required dependencies found
+
+🔍 Scanning for Ecto schemas...
+
+📦 Found 3 schema(s):
+   ✓ MyApp.Accounts.User
+   ✓ MyApp.Blog.Post
+   ✓ MyApp.Blog.Comment
+
+? Select schemas to expose (comma-separated numbers, e.g., 1,2,3)
+> 1,2,3
+? Tool namespace? (e.g., 'MyApp', leave empty for none)
+>
+
+📝 Generating MCP module...
+   ✓ Generated MCP module at lib/my_app/mcp.ex
+
+✅ Setup complete!
+```
+
+This generates a ready-to-use MCP module:
+
+```elixir
+defmodule MyApp.MCP do
+  use Ectomancer,
+    name: "my-app-mcp",
+    version: "1.0.0"
+
+  expose MyApp.Accounts.User,
+    actions: [:list, :get, :create, :update, :destroy]
+
+  expose MyApp.Blog.Post,
+    actions: [:list, :get, :create, :update, :destroy]
+
+  expose MyApp.Blog.Comment,
+    actions: [:list, :get, :create, :update, :destroy]
+end
+```
 
 ### Option 2: Manual Setup
 
@@ -349,10 +400,11 @@ Once connected, Claude can:
 
 Ectomancer includes comprehensive test coverage:
 
-- **189 tests** covering all features
+- **260 tests** covering all features
 - **35 authorization-specific tests**
 - **16 changeset error mapping tests**
 - **6 read-only mode tests**
+- **37 installer/setup tests** (unit + integration)
 - Full integration tested with Phoenix apps
 - Zero compiler warnings
 - Full Credo and Dialyzer compliance
@@ -383,7 +435,7 @@ This project is in active development.
 - ✅ Read-only mode for schemas
 - ✅ Ecto changeset error mapping to MCP error responses
 
-Current version: 1.0.0
+Current version: 1.1.0
 
 ## License
 
