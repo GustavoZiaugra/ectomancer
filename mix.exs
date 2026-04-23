@@ -2,7 +2,7 @@ defmodule Ectomancer.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GustavoZiaugra/ectomancer"
-  @version "1.0.0"
+  @version "1.1.0"
 
   def project do
     [
@@ -32,7 +32,7 @@ defmodule Ectomancer.MixProject do
   defp package do
     [
       name: :ectomancer,
-      files: ["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
+      files: ["lib", "priv", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
       maintainers: ["Gustavo Ziaugra"],
       licenses: ["MIT"],
       links: %{
@@ -56,7 +56,13 @@ defmodule Ectomancer.MixProject do
           Ectomancer.RouteIntrospection,
           Ectomancer.ObanBridge
         ],
-        Utilities: [Ectomancer.SchemaBuilder, Ectomancer.SchemaIntrospection]
+        Utilities: [Ectomancer.SchemaBuilder, Ectomancer.SchemaIntrospection],
+        Installer: [
+          Ectomancer.Installer.ConfigUpdater,
+          Ectomancer.Installer.DependencyChecker,
+          Ectomancer.Installer.SchemaDiscovery,
+          Ectomancer.Installer.TemplateRenderer
+        ]
       ]
     ]
   end

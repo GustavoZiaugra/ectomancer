@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-23
+
 ### Added
 - Interactive setup tool (`mix ectomancer.setup`) for automatic project configuration
-- Schema discovery module to automatically find Ecto schemas in your project
-- Config updater for automatic updates to mix.exs, config.exs, and router files
+  - Auto-discovers Ecto schemas via module introspection and file scanning
+  - Prompts for schema selection, Oban bridge, and tool namespace
+  - Generates MCP module with proper `expose` declarations
+  - Updates mix.exs, config.exs, and router files automatically
+  - Derives module name from app name (e.g., `TestEctoApp.MCP`)
+- Schema discovery module (`Ectomancer.Installer.SchemaDiscovery`) with dual discovery strategy
+- Config updater (`Ectomancer.Installer.ConfigUpdater`) for idempotent file patching
+- Dependency checker (`Ectomancer.Installer.DependencyChecker`) for required/optional dep validation
+- Template renderer (`Ectomancer.Installer.TemplateRenderer`) for MCP module generation
+- Igniter installer stub (`Ectomancer.Igniter`)
+
+### Testing
+- **260 tests** (up from 223), all passing
+- Full integration tests for the setup tool workflow
 
 ## [1.0.0] - 2026-03-29
 
@@ -219,7 +233,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v1.0.0
 [0.1.0-rc.4]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.3
