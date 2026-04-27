@@ -388,4 +388,132 @@ defmodule Ectomancer.QueryFilteringTest do
       refute props["nonexistent"]
     end
   end
+
+  describe "UUID and binary_id filter params" do
+    defmodule UUIDSchema do
+      use Ecto.Schema
+
+      @primary_key {:id, Ecto.UUID, autogenerate: true}
+      schema "uuid_items" do
+        field(:token, :binary_id)
+        field(:label, :string)
+      end
+    end
+
+    defmodule UUIDMCP do
+      use Ectomancer, name: "uuid-test-mcp", version: "1.0.0"
+
+      expose(UUIDSchema, actions: [:list])
+    end
+
+    alias UUIDMCP.Tool.ListUuidSchemas
+
+    test "UUID primary key gets not and in filters" do
+      schema = ListUuidSchemas.input_schema()
+      props = schema["properties"]
+
+      assert props["id_not"]["type"] == "string"
+      assert props["id_in"]["type"] == "array"
+      refute props["id_contains"]
+      refute props["id_gt"]
+    end
+
+    test "binary_id field gets not and in filters" do
+      schema = ListUuidSchemas.input_schema()
+      props = schema["properties"]
+
+      assert props["token_not"]["type"] == "string"
+      assert props["token_in"]["type"] == "array"
+      refute props["token_contains"]
+      refute props["token_gt"]
+    end
+
+    test "string field still gets full string filters" do
+      schema = ListUuidSchemas.input_schema()
+      props = schema["properties"]
+
+      assert props["label_contains"]
+      assert props["label_icontains"]
+      assert props["label_not"]
+      assert props["label_in"]
+    end
+  end
+
+  describe "except with filterable interaction" do
+    defmodule ExceptFilterableMCP do
+      use Ectomancer, name: "except-filterable-test-mcp", version: "1.0.0"
+
+      expose(FilterUser,
+        actions: [:list],
+        except: [:age],
+        filterable: [:email, :age, :name]
+      )
+    end
+
+    alias ExceptFilterableMCP.Tool.ListFilterUsers, as: ExceptList
+
+    test "excluded fields are not exposed at all" do
+      schema = ExceptList.input_schema()
+      props = schema["properties"]
+
+      refute props["age"]
+      refute props["age_gt"]
+      refute props["age_in"]
+    end
+
+    test "filterable fields that are not excluded still get suffixes" do
+      schema = ExceptList.input_schema()
+      props = schema["properties"]
+
+      assert props["email_contains"]
+      assert props["name_contains"]
+    end
+
+    test "non-filterable exposed fields only have exact-match params" do
+      schema = ExceptList.input_schema()
+      props = schema["properties"]
+
+      assert props["score"]
+      refute props["score_gt"]
+    end
+  end
+
+  describe "decimal field type filter params" do
+    defmodule ProductSchema do
+      use Ecto.Schema
+
+      schema "products" do
+        field(:price, :decimal)
+        field(:name, :string)
+      end
+    end
+
+    defmodule ProductMCP do
+      use Ectomancer, name: "product-test-mcp", version: "1.0.0"
+
+      expose(ProductSchema, actions: [:list])
+    end
+
+    alias ProductMCP.Tool.ListProductSchemas
+
+    test "decimal field gets numeric filter suffixes" do
+      schema = ListProductSchemas.input_schema()
+      props = schema["properties"]
+
+      assert props["price_gt"]["type"] == "number"
+      assert props["price_gte"]["type"] == "number"
+      assert props["price_lt"]["type"] == "number"
+      assert props["price_lte"]["type"] == "number"
+      assert props["price_not"]["type"] == "number"
+      assert props["price_in"]["type"] == "array"
+      refute props["price_contains"]
+    end
+
+    test "decimal base param is number type" do
+      schema = ListProductSchemas.input_schema()
+      props = schema["properties"]
+
+      assert props["price"]["type"] == "number"
+    end
+  end
 end

@@ -391,8 +391,8 @@ if Code.ensure_loaded?(Ecto) do
 
     defp apply_filter(query, field, :icontains, value) do
       import Ecto.Query
-      pattern = "%#{sanitize_like(value)}%"
-      where(query, [r], ilike(field(r, ^field), ^pattern))
+      pattern = "%#{sanitize_like(value)}%" |> String.downcase()
+      where(query, [r], like(fragment("LOWER(?)", field(r, ^field)), ^pattern))
     end
 
     defp apply_filter(query, field, :in, value) when is_list(value) do

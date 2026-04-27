@@ -57,10 +57,11 @@ if Code.ensure_loaded?(Ecto) do
 
         # Only allow advanced filtering on specific fields
         expose User,
-          only: [:id, :email, :name, :role, :internal_notes],
-          filterable: [:email, :name]
-        # Email and name support _contains, _gt, etc.
-        # Role and internal_notes only support exact-match filtering
+          only: [:id, :email, :name, :role, :age],
+          filterable: [:email, :age]
+        # Email supports _contains, _icontains, etc.
+        # Age supports _gt, _gte, _lt, _lte, etc.
+        # Name and role only support exact-match filtering
 
     ## Handling Naming Collisions
 
@@ -135,6 +136,8 @@ if Code.ensure_loaded?(Ecto) do
         * `:actions` - List of actions (default: `[:list, :get, :create, :update, :destroy]`)
         * `:only` - Whitelist fields
         * `:except` - Blacklist fields
+        * `:filterable` - Fields that allow advanced filter operators (default: all exposed fields)
+        * `:readonly` - Disable mutation operations (`:create`, `:update`, `:destroy`)
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
 
@@ -157,6 +160,10 @@ if Code.ensure_loaded?(Ecto) do
 
          expose MyApp.Accounts.User, as: :admin_users
          # Generates: list_admin_users, get_admin_users, etc.
+
+         expose MyApp.Accounts.User, filterable: [:email, :age]
+         # Email and age support advanced filter operators;
+         # all other exposed fields only support exact-match filtering.
     """
     defmacro expose(schema_module, opts \\ []) do
       schema = Macro.expand(schema_module, __CALLER__)
