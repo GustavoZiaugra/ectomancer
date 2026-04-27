@@ -1,5 +1,7 @@
 # Ectomancer
 
+[![CI](https://github.com/GustavoZiaugra/ectomancer/workflows/CI/badge.svg)](https://github.com/GustavoZiaugra/ectomancer/actions?query=workflow%3ACI) [![Hex.pm](https://img.shields.io/hexpm/v/ectomancer.svg)](https://hex.pm/packages/ectomancer) [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/ectomancer)
+
 > Add an AI brain to your Phoenix app in one afternoon.
 
 **Ectomancer** automatically exposes your Phoenix/Ecto app as an MCP (Model Context Protocol) server, making it conversationally operable by Claude and other LLMs with minimal configuration.
