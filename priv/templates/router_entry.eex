@@ -1,2 +1,0 @@
-# Ectomancer MCP
-forward "/mcp", Ectomancer.Plug

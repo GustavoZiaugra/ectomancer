@@ -32,7 +32,7 @@ defmodule Ectomancer.MixProject do
   defp package do
     [
       name: :ectomancer,
-      files: ["lib", "priv", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
+      files: ["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
       maintainers: ["Gustavo Ziaugra"],
       licenses: ["MIT"],
       links: %{

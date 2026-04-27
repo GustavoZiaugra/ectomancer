@@ -30,9 +30,9 @@ mix docs              # generate documentation
 |---|---|---|
 | DSL | `Ectomancer`, `Ectomancer.Expose`, `Ectomancer.Tool` | Public macros for schema exposure and custom tools |
 | Authorization | `Ectomancer.Authorization`, `Ectomancer.Authorization.Policy` | Inline, policy-module, and action-specific auth |
-| Integration | `Ectomancer.Plug`, `Ectomancer.Repo`, `Ectomancer.ObanBridge` | Phoenix plug, Ecto CRUD, Oban job management |
+| Integration | `Ectomancer.Plug`, `Ectomancer.Repo`, `Ectomancer.ObanBridge`, `Ectomancer.Server` | Phoenix plug, Ecto CRUD, Oban job management, server lifecycle |
 | Introspection | `Ectomancer.SchemaIntrospection`, `Ectomancer.SchemaBuilder`, `Ectomancer.RouteIntrospection` | Compile-time metadata extraction and JSON schema generation |
-| Installer | `Ectomancer.Installer.*`, `Mix.Tasks.Ectomancer.Setup` | Interactive setup, schema discovery, config file patching |
+| Installer | `Ectomancer.Installer.*`, `Ectomancer.Igniter`, `Mix.Tasks.Ectomancer.Setup` | Interactive setup, schema discovery, config file patching |
 
 Optional dependencies (Phoenix, Ecto, Oban, Plug) are declared as optional in `mix.exs` and must be guarded accordingly.
 

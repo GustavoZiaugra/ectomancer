@@ -3,6 +3,6 @@ defmodule EctomancerTest do
   doctest Ectomancer
 
   test "returns version" do
-    assert Ectomancer.version() == "1.0.0"
+    assert Ectomancer.version() == Application.spec(:ectomancer, :vsn) |> to_string()
   end
 end

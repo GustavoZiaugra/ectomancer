@@ -93,7 +93,7 @@ defmodule Ectomancer do
   Returns the version of Ectomancer.
   """
   def version do
-    "1.0.0"
+    Application.spec(:ectomancer, :vsn) |> to_string()
   end
 
   @doc false
