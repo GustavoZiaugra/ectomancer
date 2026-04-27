@@ -1,6 +1,8 @@
 defmodule Ectomancer.QueryFilteringIntegrationTest do
   @moduledoc """
   Integration tests for rich query filtering against a real SQLite database.
+
+  Tests both direct `Repo.list/3` calls and end-to-end MCP tool execution.
   """
 
   use Ectomancer.DataCase
@@ -20,6 +22,14 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
       timestamps()
     end
   end
+
+  defmodule ItemMCP do
+    use Ectomancer, name: "item-test-mcp", version: "1.0.0"
+
+    expose(Item, actions: [:list])
+  end
+
+  alias ItemMCP.Tool.ListItems
 
   @moduletag schemas: [Item]
 
@@ -222,6 +232,127 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
       insert!(Item, %{name: "Inactive", price: 1.0, quantity: 1, active: false})
 
       assert {:ok, [%{name: "Inactive"}]} = Repo.list(Item, %{"active_not" => true})
+    end
+  end
+
+  describe "timestamp ordering" do
+    test "order_by inserted_at sorts by creation time" do
+      insert!(Item, %{
+        name: "First",
+        price: 1.0,
+        quantity: 1,
+        active: true,
+        inserted_at: ~N[2024-01-01 10:00:00]
+      })
+
+      insert!(Item, %{
+        name: "Second",
+        price: 2.0,
+        quantity: 2,
+        active: true,
+        inserted_at: ~N[2024-01-02 10:00:00]
+      })
+
+      assert {:ok, [%{name: "Second"}, %{name: "First"}]} =
+               Repo.list(Item, %{"order_by" => "inserted_at", "order_dir" => "desc"})
+    end
+  end
+
+  describe "end-to-end MCP tool execution" do
+    defp tool_response_text(params) do
+      frame = %{assigns: %{ectomancer_actor: nil}}
+
+      case ListItems.execute(params, frame) do
+        {:reply, %Anubis.Server.Response{content: [%{"text" => text}]}, _} ->
+          text
+
+        {:error, error, _} ->
+          flunk("Tool execution failed: #{inspect(error)}")
+      end
+    end
+
+    test "list tool returns records via MCP execute" do
+      insert!(Item, %{name: "Apple", price: 1.5, quantity: 10, active: true})
+      insert!(Item, %{name: "Banana", price: 0.5, quantity: 20, active: true})
+
+      text = tool_response_text(%{})
+      assert text =~ "Apple"
+      assert text =~ "Banana"
+    end
+
+    test "list tool filters via MCP execute" do
+      insert!(Item, %{name: "Apple", price: 1.5, quantity: 10, active: true})
+      insert!(Item, %{name: "Banana", price: 0.5, quantity: 20, active: true})
+
+      text = tool_response_text(%{"name" => "Apple"})
+      assert text =~ "Apple"
+      refute text =~ "Banana"
+    end
+
+    test "list tool applies contains filter via MCP execute" do
+      insert!(Item, %{name: "Apple Pie", price: 5.0, quantity: 10, active: true})
+      insert!(Item, %{name: "Banana", price: 1.0, quantity: 20, active: true})
+
+      text = tool_response_text(%{"name_contains" => "Apple"})
+      assert text =~ "Apple Pie"
+      refute text =~ "Banana"
+    end
+
+    test "list tool applies numeric filter via MCP execute" do
+      insert!(Item, %{name: "Cheap", price: 1.0, quantity: 10, active: true})
+      insert!(Item, %{name: "Expensive", price: 10.0, quantity: 1, active: true})
+
+      text = tool_response_text(%{"price_gt" => 5.0})
+      assert text =~ "Expensive"
+      refute text =~ "Cheap"
+    end
+
+    test "list tool orders results via MCP execute" do
+      insert!(Item, %{name: "Banana", price: 0.5, quantity: 20, active: true})
+      insert!(Item, %{name: "Apple", price: 1.5, quantity: 10, active: true})
+
+      text = tool_response_text(%{"order_by" => "name"})
+      # In ascending order, Apple comes before Banana
+      apple_pos = :binary.match(text, "Apple") |> elem(0)
+      banana_pos = :binary.match(text, "Banana") |> elem(0)
+      assert apple_pos < banana_pos
+    end
+
+    test "list tool paginates results via MCP execute" do
+      insert!(Item, %{name: "A", price: 1.0, quantity: 1, active: true})
+      insert!(Item, %{name: "B", price: 2.0, quantity: 2, active: true})
+      insert!(Item, %{name: "C", price: 3.0, quantity: 3, active: true})
+
+      text = tool_response_text(%{"limit" => 2})
+      # Should only contain 2 records
+      assert text =~ "A"
+      assert text =~ "B"
+      refute text =~ "C"
+    end
+
+    test "list tool returns empty result when no matches" do
+      insert!(Item, %{name: "Apple", price: 1.5, quantity: 10, active: true})
+
+      text = tool_response_text(%{"name" => "Orange"})
+      assert text =~ "[]"
+    end
+
+    test "list tool combines filters and ordering via MCP execute" do
+      insert!(Item, %{name: "Zebra", price: 10.0, quantity: 1, active: true})
+      insert!(Item, %{name: "Apple", price: 5.0, quantity: 5, active: true})
+      insert!(Item, %{name: "Banana", price: 3.0, quantity: 10, active: true})
+
+      text =
+        tool_response_text(%{
+          "price_gt" => 3.0,
+          "order_by" => "name",
+          "order_dir" => "asc",
+          "limit" => 1
+        })
+
+      assert text =~ "Apple"
+      refute text =~ "Banana"
+      refute text =~ "Zebra"
     end
   end
 end

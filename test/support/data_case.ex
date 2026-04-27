@@ -76,10 +76,35 @@ defmodule Ectomancer.DataCase do
 
   @doc """
   Inserts a single record using Ecto's type casting.
+
+  Automatically populates `inserted_at` and `updated_at` if the schema
+  has timestamps and they are not provided.
   """
   def insert!(schema_module, attrs) when is_map(attrs) or is_list(attrs) do
+    attrs =
+      case schema_module.__schema__(:fields) do
+        fields when is_list(fields) ->
+          now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+          attrs
+          |> Enum.into(%{})
+          |> maybe_put_timestamp(:inserted_at, fields, now)
+          |> maybe_put_timestamp(:updated_at, fields, now)
+
+        _ ->
+          attrs
+      end
+
     {1, _} = TestRepo.insert_all(schema_module, [attrs])
     :ok
+  end
+
+  defp maybe_put_timestamp(attrs, field, fields, value) do
+    if field in fields and not Map.has_key?(attrs, field) do
+      Map.put(attrs, field, value)
+    else
+      attrs
+    end
   end
 
   @doc """
