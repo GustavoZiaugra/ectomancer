@@ -9,6 +9,7 @@ defmodule Ectomancer.DataCase do
   use ExUnit.CaseTemplate
 
   alias Ecto.Adapters.SQL
+  alias Ecto.Adapters.SQL.Sandbox
   alias Ectomancer.TestRepo
 
   using do
@@ -19,10 +20,10 @@ defmodule Ectomancer.DataCase do
   end
 
   setup tags do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(TestRepo)
+    :ok = Sandbox.checkout(TestRepo)
 
     unless tags[:async] do
-      Ecto.Adapters.SQL.Sandbox.mode(TestRepo, {:shared, self()})
+      Sandbox.mode(TestRepo, {:shared, self()})
     end
 
     # Create tables for schemas listed in the @moduletag :schemas
