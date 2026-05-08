@@ -87,6 +87,74 @@ defmodule Ectomancer do
           # Use actor for authorization...
         end
       end
+
+  ## Actor Extraction
+
+  Ectomancer extracts the actor (the user/entity making the request) from the Plug
+  connection and threads it through the system automatically. Here's how it flows:
+
+  ### 1. Configuration
+
+  Define an `actor_from` function in your config. This function receives the
+  `Plug.Conn` struct and returns the actor (or `{:error, reason}` to reject):
+
+      config :ectomancer,
+        actor_from: fn conn ->
+          case Plug.Conn.get_req_header(conn, "authorization") do
+            ["Bearer " <> token] ->
+              case MyApp.Auth.verify_token(token) do
+                {:ok, user} -> user
+                {:error, _} -> {:error, :unauthorized}
+              end
+            _ ->
+              {:error, :unauthorized}
+          end
+        end
+
+  If no `actor_from` is configured, the actor defaults to `nil` (unauthenticated).
+
+  ### 2. Extraction (Plug layer)
+
+  `Ectomancer.Plug.extract_actor/1` calls your `actor_from` function on every
+  incoming request. If the function returns `{:error, reason}`, the request is
+  rejected with HTTP 401 before reaching any MCP tools.
+
+  ### 3. Threading (MCP frame)
+
+  The extracted actor is placed into `conn.assigns[:ectomancer_actor]`. Anubis MCP
+  propagates this into `frame.assigns[:ectomancer_actor]` for every tool call
+  within that session — you never need to re-extract it.
+
+  ### 4. Authorization
+
+  Tool handlers and expose-generated CRUD tools receive the actor automatically:
+
+      # Custom tool
+      tool :my_tool do
+        authorize fn actor, action -> actor != nil end
+
+        handle fn params, actor, scope ->
+          # actor is the user/entity from actor_from
+          {:ok, %{message: "Hello, \#{actor.name}"}}
+        end
+      end
+
+      # Exposed schema (authorization configured separately)
+      expose MyApp.User, authorize: fn actor, action ->
+        actor.role == :admin
+      end
+
+  ### Extraction Flow Summary
+
+  | Layer | Location | What happens |
+  |-------|----------|-------------|
+  | Config | `config :ectomancer, actor_from: ...` | User provides extraction function |
+  | Plug | `Ectomancer.Plug.call/2` | Calls `extract_actor(conn)` |
+  | Assigns | `conn.assigns[:ectomancer_actor]` | Actor stored in connection |
+  | Frame | `frame.assigns[:ectomancer_actor]` | Anubis propagates to tool context |
+  | Tool | `execute(params, frame)` | Actor accessible via `frame.assigns` |
+  | Handler | `handle(params, actor, scope)` | Actor passed as 2nd argument |
+  | Authorization | `Authorization.check/3` | Actor + action checked against policy |
   """
 
   @doc """

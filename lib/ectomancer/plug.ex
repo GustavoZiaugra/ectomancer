@@ -96,7 +96,50 @@ if Code.ensure_loaded?(Plug) do
     @doc """
     Extracts the actor from the connection using the configured `actor_from` function.
 
-    Returns the actor or `nil` if no actor_from is configured.
+    Reads the application config for `:ectomancer, :actor_from`. If set, calls the
+    function with the `conn` and returns its result. If unset, returns `nil`.
+
+    The `actor_from` function can return:
+      - Any value — the actor (e.g., a `%User{}` struct, a string, an atom)
+      - `{:error, reason}` — the request will be rejected with HTTP 401
+
+    ## Configuration
+
+        config :ectomancer,
+          actor_from: fn conn ->
+            case Plug.Conn.get_req_header(conn, "authorization") do
+              ["Bearer " <> token] -> MyApp.Auth.verify_token(token)
+              _ -> {:error, :unauthorized}
+            end
+          end
+
+    ## Examples
+
+        # With JWT token verification
+        config :ectomancer,
+          actor_from: fn conn ->
+            with ["Bearer " <> token] <- Plug.Conn.get_req_header(conn, "authorization"),
+                 {:ok, claims} <- MyApp.JWT.verify(token) do
+              MyApp.Accounts.get_user!(claims["sub"])
+            else
+              _ -> {:error, :unauthorized}
+            end
+          end
+
+        # With session cookie (read from conn before Plug session)
+        config :ectomancer,
+          actor_from: fn conn ->
+            case Plug.Conn.get_req_header(conn, "cookie") do
+              [cookie] -> MyApp.Auth.verify_session(cookie)
+              _ -> {:error, :unauthorized}
+            end
+          end
+
+        # Public API (no auth required)
+        # Just omit actor_from — returns nil, tools without authorization pass through
+
+    The extracted actor is stored in `conn.assigns[:ectomancer_actor]` and
+    propagated to tool handlers via `frame.assigns[:ectomancer_actor]`.
     """
     @spec extract_actor(Plug.Conn.t()) :: any()
     def extract_actor(conn) do
