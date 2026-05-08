@@ -9,10 +9,10 @@ defmodule Ectomancer.PreloadTest do
     use Ecto.Schema
 
     schema "preload_posts" do
-      field :title, :string
-      field :body, :string
-      field :views, :integer
-      has_many :comments, Ectomancer.PreloadTest.Comment, foreign_key: :post_id
+      field(:title, :string)
+      field(:body, :string)
+      field(:views, :integer)
+      has_many(:comments, Ectomancer.PreloadTest.Comment, foreign_key: :post_id)
       timestamps()
     end
   end
@@ -21,8 +21,8 @@ defmodule Ectomancer.PreloadTest do
     use Ecto.Schema
 
     schema "preload_comments" do
-      field :body, :string
-      belongs_to :post, Ectomancer.PreloadTest.Post
+      field(:body, :string)
+      belongs_to(:post, Ectomancer.PreloadTest.Post)
       timestamps()
     end
   end
@@ -80,9 +80,10 @@ defmodule Ectomancer.PreloadTest do
       defmodule PreloadTestMCP do
         use Ectomancer
 
-        expose Ectomancer.PreloadTest.Post,
+        expose(Ectomancer.PreloadTest.Post,
           actions: [:list, :get],
           preload: [:comments]
+        )
       end
 
       assert {:module, _} = Code.ensure_loaded(PreloadTestMCP.Tool.ListPosts)
