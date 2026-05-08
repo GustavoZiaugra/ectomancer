@@ -468,16 +468,17 @@ if Code.ensure_loaded?(Ecto) do
       handler =
         if action in [:list, :get] and config.preload != [] do
           quote do
-            fn params, _actor ->
+            fn params, _actor, scope ->
               Ectomancer.Repo.unquote(action)(unquote(config.schema), params,
-                preload: unquote(config.preload)
+                preload: unquote(config.preload),
+                scope: scope
               )
             end
           end
         else
           quote do
-            fn params, _actor ->
-              Ectomancer.Repo.unquote(action)(unquote(config.schema), params)
+            fn params, _actor, scope ->
+              Ectomancer.Repo.unquote(action)(unquote(config.schema), params, scope: scope)
             end
           end
         end

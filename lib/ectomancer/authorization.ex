@@ -49,7 +49,17 @@ defmodule Ectomancer.Authorization do
   ## Returns
 
     * `:ok` - Authorization passed
+    * `{:ok, :scoped, scope_fn}` - Authorization passed with row-level scope
     * `{:error, reason}` - Authorization failed with reason
+
+  The `scope_fn` is a function that takes an Ecto query and returns a scoped query:
+
+      fn query ->
+        from(u in query, where: u.org_id == ^actor.org_id)
+      end
+
+  When a scope is returned, it is automatically applied to all CRUD queries
+  (`list`, `get`, `update`, `destroy`) for that tool call.
   """
   @spec check(any(), atom(), keyword()) :: :ok | {:error, String.t()}
   def check(actor, action, opts) do
@@ -93,6 +103,7 @@ defmodule Ectomancer.Authorization do
       false -> {:error, "Unauthorized access to #{action}"}
       {:ok, true} -> :ok
       {:ok, false} -> {:error, "Unauthorized access to #{action}"}
+      {:ok, :scoped, _scope_fn} = scoped -> scoped
       {:error, reason} -> {:error, reason}
       _ -> {:error, "Authorization check failed"}
     end
