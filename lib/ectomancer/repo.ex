@@ -72,7 +72,8 @@ if Code.ensure_loaded?(Ecto) do
           |> apply_ordering(meta_params, introspection.fields)
           |> apply_pagination(meta_params, opts)
 
-        {:ok, repo.all(query)}
+        results = repo.all(query)
+        {:ok, maybe_preload(repo, results, opts)}
       end)
     end
 
@@ -83,16 +84,23 @@ if Code.ensure_loaded?(Ecto) do
 
       * `schema_module` - The Ecto schema module
       * `params` - Map containing the primary key value
+      * `opts` - Options including `:preload` for eager-loading associations
 
     ## Examples
 
         get(MyApp.Accounts.User, %{"id" => 123})
+        get(MyApp.Accounts.User, %{"id" => 123}, preload: [:posts, :comments])
     """
-    @spec get(module(), map()) :: {:ok, struct() | nil} | {:error, any()}
-    def get(schema_module, params) do
+    @spec get(module(), map(), keyword()) :: {:ok, struct() | nil} | {:error, any()}
+    def get(schema_module, params, opts \\ []) do
       with {:ok, repo} <- get_repo(),
            {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
-        fetch_single_record(repo, schema_module, pk_values)
+        result = fetch_single_record(repo, schema_module, pk_values)
+
+        case result do
+          {:ok, record} -> {:ok, maybe_preload(repo, record, opts)}
+          error -> error
+        end
       end
     rescue
       e -> {:error, "GET failed: #{Exception.message(e)}"}
@@ -462,6 +470,22 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp parse_int(_), do: nil
+
+    defp maybe_preload(_repo, record, _opts) when is_nil(record), do: nil
+
+    defp maybe_preload(repo, record, opts) when not is_list(record) do
+      case Keyword.get(opts, :preload) do
+        nil -> record
+        preloads -> repo.preload(record, preloads)
+      end
+    end
+
+    defp maybe_preload(repo, records, opts) when is_list(records) do
+      case Keyword.get(opts, :preload) do
+        nil -> records
+        preloads -> repo.preload(records, preloads)
+      end
+    end
 
     defp extract_primary_key(_params, [], _field_types), do: {:error, :no_primary_key}
 

@@ -30,6 +30,7 @@ if Code.ensure_loaded?(Ecto) do
       * `:as` - Alternative name for the resource (e.g., `:admin_users` → `list_admin_users`)
       * `:readonly` - Enable read-only mode (disables `:create`, `:update`, `:destroy`)
       * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
+      * `:preload` - Ecto associations to eager-load on `:list` and `:get` results
 
     ## Generated Tools
 
@@ -209,7 +210,8 @@ if Code.ensure_loaded?(Ecto) do
         namespace: opts[:namespace],
         introspection: introspection,
         authorization: auth_config,
-        readonly: readonly
+        readonly: readonly,
+        preload: Keyword.get(opts, :preload, [])
       }
     end
 
@@ -355,9 +357,19 @@ if Code.ensure_loaded?(Ecto) do
       auth_block = generate_authorization_block(action, config)
 
       handler =
-        quote do
-          fn params, _actor ->
-            Ectomancer.Repo.unquote(action)(unquote(config.schema), params)
+        if action in [:list, :get] and config.preload != [] do
+          quote do
+            fn params, _actor ->
+              Ectomancer.Repo.unquote(action)(unquote(config.schema), params,
+                preload: unquote(config.preload)
+              )
+            end
+          end
+        else
+          quote do
+            fn params, _actor ->
+              Ectomancer.Repo.unquote(action)(unquote(config.schema), params)
+            end
           end
         end
 
