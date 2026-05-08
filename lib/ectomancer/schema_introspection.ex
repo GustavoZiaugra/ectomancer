@@ -219,6 +219,35 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
+    @soft_delete_fields [:deleted_at, :archived_at]
+
+    @datetime_types [:utc_datetime, :naive_datetime, :utc_datetime_usec, :naive_datetime_usec]
+
+    @doc """
+    Detects if a schema has a soft-delete field (e.g., `deleted_at`, `archived_at`).
+
+    Returns the field name (atom) if found, `nil` otherwise. Only datetime-type
+    fields are considered valid soft-delete markers.
+
+    ## Examples
+
+        iex> Ectomancer.SchemaIntrospection.soft_delete_field(MyApp.Accounts.User)
+        :deleted_at
+
+        iex> Ectomancer.SchemaIntrospection.soft_delete_field(MyApp.Blog.Post)
+        nil
+    """
+    @spec soft_delete_field(module()) :: atom() | nil
+    def soft_delete_field(schema_module) do
+      Enum.find_value(@soft_delete_fields, fn field ->
+        type = schema_module.__schema__(:type, field)
+
+        if type in @datetime_types do
+          field
+        end
+      end)
+    end
+
     @doc """
     Converts an Ecto type to a human-readable string representation.
 
@@ -275,6 +304,7 @@ else
     def field_info(_schema_module, _field), do: %{type: nil, nullable: true}
     def primary_key(_schema_module), do: []
     def writable_fields(_schema_module), do: []
+    def soft_delete_field(_schema_module), do: nil
     def type_to_string(_type), do: "unknown"
   end
 end
