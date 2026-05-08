@@ -25,6 +25,7 @@ if Code.ensure_loaded?(Ecto) do
       * `:actions` - List of actions to expose: `:list`, `:get`, `:create`, `:update`, `:destroy`
       * `:only` - Whitelist of fields to include
       * `:except` - Blacklist of fields to exclude
+      * `:filterable` - Fields that allow advanced filter operators (defaults to all exposed fields)
       * `:namespace` - Prefix tools with namespace (e.g., `:accounts` → `accounts_list_users`)
       * `:as` - Alternative name for the resource (e.g., `:admin_users` → `list_admin_users`)
       * `:readonly` - Enable read-only mode (disables `:create`, `:update`, `:destroy`)
@@ -47,6 +48,20 @@ if Code.ensure_loaded?(Ecto) do
 
         # Exclude sensitive fields
         expose User, except: [:password_hash, :secret_token]
+
+    ## Advanced Filtering Control
+
+    By default, all exposed fields get advanced filter operators (`_gt`, `_contains`, etc.).
+    Use `:filterable` to restrict which fields support these operators while still
+    exposing all fields for reading:
+
+        # Only allow advanced filtering on specific fields
+        expose User,
+          only: [:id, :email, :name, :role, :age],
+          filterable: [:email, :age]
+        # Email supports _contains, _icontains, etc.
+        # Age supports _gt, _gte, _lt, _lte, etc.
+        # Name and role only support exact-match filtering
 
     ## Handling Naming Collisions
 
@@ -121,6 +136,8 @@ if Code.ensure_loaded?(Ecto) do
         * `:actions` - List of actions (default: `[:list, :get, :create, :update, :destroy]`)
         * `:only` - Whitelist fields
         * `:except` - Blacklist fields
+        * `:filterable` - Fields that allow advanced filter operators (default: all exposed fields)
+        * `:readonly` - Disable mutation operations (`:create`, `:update`, `:destroy`)
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
 
@@ -143,6 +160,10 @@ if Code.ensure_loaded?(Ecto) do
 
          expose MyApp.Accounts.User, as: :admin_users
          # Generates: list_admin_users, get_admin_users, etc.
+
+         expose MyApp.Accounts.User, filterable: [:email, :age]
+         # Email and age support advanced filter operators;
+         # all other exposed fields only support exact-match filtering.
     """
     defmacro expose(schema_module, opts \\ []) do
       schema = Macro.expand(schema_module, __CALLER__)
@@ -175,10 +196,14 @@ if Code.ensure_loaded?(Ecto) do
       base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
       actions = filter_actions_for_readonly(base_actions, readonly)
 
+      exposed_fields = filter_fields(introspection, opts)
+      filterable_fields = filter_filterable_fields(exposed_fields, opts)
+
       %{
         schema: schema,
         actions: actions,
-        exposed_fields: filter_fields(introspection, opts),
+        exposed_fields: exposed_fields,
+        filterable_fields: filterable_fields,
         writable_fields: filter_writable_fields(introspection, opts),
         resource_name: determine_resource_name(schema, opts[:as]),
         namespace: opts[:namespace],
@@ -260,6 +285,13 @@ if Code.ensure_loaded?(Ecto) do
     defp filter_writable_fields(introspection, opts) do
       filter_fields(introspection, opts)
       |> Enum.reject(fn f -> f in introspection.primary_key end)
+    end
+
+    defp filter_filterable_fields(exposed_fields, opts) do
+      case Keyword.get(opts, :filterable) do
+        nil -> exposed_fields
+        fields when is_list(fields) -> Enum.filter(fields, fn f -> f in exposed_fields end)
+      end
     end
 
     defp determine_resource_name(schema, as_name) do
@@ -399,12 +431,45 @@ if Code.ensure_loaded?(Ecto) do
             "Invalid authorization handler: #{inspect(handler)}"
     end
 
-    # Generate param declarations based on action type
-    defp generate_params(:list, _config) do
-      # List action typically doesn't require specific params
-      # but can accept filter params
-      quote do
-        # List supports optional filter params
+    @filter_suffixes %{
+      string: ~w(contains icontains not in),
+      number: ~w(gt gte lt lte not in),
+      datetime: ~w(gt gte lt lte not)
+    }
+
+    @number_types [:integer, :float, :decimal, :id]
+    @datetime_types [
+      :date,
+      :time,
+      :time_usec,
+      :naive_datetime,
+      :naive_datetime_usec,
+      :utc_datetime,
+      :utc_datetime_usec
+    ]
+
+    defp generate_params(:list, config) do
+      base_params = build_list_base_params(config.exposed_fields, config.introspection.types)
+
+      suffix_params =
+        build_list_filter_params(config.filterable_fields, config.introspection.types)
+
+      meta_params =
+        quote do
+          param(:order_by, :string)
+          param(:order_dir, :string)
+          param(:limit, :integer)
+          param(:offset, :integer)
+        end
+
+      all_params = base_params ++ suffix_params
+
+      case all_params do
+        [] ->
+          meta_params
+
+        _ ->
+          {:__block__, [], all_params ++ elem(meta_params, 2)}
       end
     end
 
@@ -445,6 +510,52 @@ if Code.ensure_loaded?(Ecto) do
         param(unquote(pk_field), unquote(pk_type), required: true)
       end
     end
+
+    defp build_list_base_params(fields, types) do
+      Enum.map(fields, fn field ->
+        type = Map.get(types, field)
+        build_single_param(field, type)
+      end)
+    end
+
+    defp build_list_filter_params(fields, types) do
+      Enum.flat_map(fields, fn field ->
+        type = Map.get(types, field)
+        build_suffix_params(field, type)
+      end)
+    end
+
+    defp build_single_param(field, type) do
+      param_type = get_ecto_type_for_param(type)
+
+      quote do
+        param(unquote(field), unquote(param_type))
+      end
+    end
+
+    defp build_suffix_params(field, type) do
+      suffixes = suffixes_for_type(type)
+
+      Enum.map(suffixes, fn suffix ->
+        suffixed_name = :"#{field}_#{suffix}"
+        param_type = suffix_param_type(suffix, type)
+
+        quote do
+          param(unquote(suffixed_name), unquote(param_type))
+        end
+      end)
+    end
+
+    defp suffixes_for_type(type) when type in @number_types, do: @filter_suffixes.number
+    defp suffixes_for_type(type) when type in @datetime_types, do: @filter_suffixes.datetime
+    defp suffixes_for_type(:string), do: @filter_suffixes.string
+    defp suffixes_for_type(:binary_id), do: ["not", "in"]
+    defp suffixes_for_type(Ecto.UUID), do: ["not", "in"]
+    defp suffixes_for_type(:boolean), do: ["not"]
+    defp suffixes_for_type(_), do: []
+
+    defp suffix_param_type("in", _type), do: :list
+    defp suffix_param_type(_suffix, type), do: get_ecto_type_for_param(type)
 
     defp build_param_block(fields, types) do
       fields
