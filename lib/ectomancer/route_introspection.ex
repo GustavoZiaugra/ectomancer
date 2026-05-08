@@ -106,6 +106,14 @@ defmodule Ectomancer.RouteIntrospection do
   end
 
   defp singularize(name) do
+    if Code.ensure_loaded?(Inflex) do
+      Inflex.singularize(name)
+    else
+      fallback_singularize(name)
+    end
+  end
+
+  defp fallback_singularize(name) do
     if String.ends_with?(name, "s") and not String.ends_with?(name, "ss"),
       do: String.slice(name, 0..-2//1),
       else: name
