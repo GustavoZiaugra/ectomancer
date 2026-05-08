@@ -55,6 +55,42 @@ defmodule Ectomancer.RouteIntrospectionTest do
       route = {"GET", "/users", UserController, :index}
       assert :admin_get_users = RouteIntrospection.build_tool_name(route, :admin)
     end
+
+    test "singularizes words ending in -us correctly (status)" do
+      route = {"GET", "/status", UserController, :show}
+      assert :get_status = RouteIntrospection.build_tool_name(route)
+    end
+
+    test "singularizes words ending in -ss correctly (address)" do
+      route = {"GET", "/address", UserController, :index}
+      assert :get_address = RouteIntrospection.build_tool_name(route)
+    end
+
+    test "singularizes words ending in -ies correctly (series)" do
+      route = {"GET", "/series", UserController, :index}
+      assert :get_series = RouteIntrospection.build_tool_name(route)
+    end
+
+    test "singularizes words ending in -ness correctly (business)" do
+      route = {"GET", "/business", UserController, :index}
+      assert :get_business = RouteIntrospection.build_tool_name(route)
+    end
+
+    test "singularizes words ending in -ews correctly (news)" do
+      route = {"GET", "/news", UserController, :index}
+      assert :get_news = RouteIntrospection.build_tool_name(route)
+    end
+
+    test "singularizes regular plurals correctly" do
+      route = {"GET", "/users/:id", UserController, :show}
+      assert :get_user = RouteIntrospection.build_tool_name(route)
+
+      route2 = {"GET", "/posts/:id", UserController, :show}
+      assert :get_post = RouteIntrospection.build_tool_name(route2)
+
+      route3 = {"GET", "/comments/:id", UserController, :show}
+      assert :get_comment = RouteIntrospection.build_tool_name(route3)
+    end
   end
 
   describe "get_routes/1" do
