@@ -130,9 +130,13 @@ if Code.ensure_loaded?(Ecto) do
 
             # Check authorization before executing
             case check_authorization(actor, @action) do
+              {:ok, :scoped, scope_fn} ->
+                handler = unquote(handler_ast)
+                do_execute(handler, params, scope_fn, actor, frame)
+
               :ok ->
                 handler = unquote(handler_ast)
-                do_execute(handler, params, actor, frame)
+                do_execute(handler, params, nil, actor, frame)
 
               {:error, reason} ->
                 error = %Anubis.MCP.Error{
@@ -158,8 +162,41 @@ if Code.ensure_loaded?(Ecto) do
           # Helper function to hide handler return type from compiler analysis
           # This prevents "clause will never match" warnings when test handlers
           # only return {:ok, _} - the compiler can't track types through this function
+          @dialyzer {:nowarn_function, do_execute: 5}
+          defp do_execute(handler, params, scope, actor, frame) when is_function(handler, 3) do
+            result = handler.(params, actor, scope)
+
+            case result do
+              {:ok, data} ->
+                response = %Anubis.Server.Response{
+                  type: :tool,
+                  content: [%{"type" => "text", "text" => inspect(data)}]
+                }
+
+                {:reply, response, frame}
+
+              {:error, reason} ->
+                {code, message, data} = Ectomancer.Tool.format_error(reason)
+                error = %Anubis.MCP.Error{code: code, message: message, data: data}
+                {:error, error, frame}
+            end
+          rescue
+            e ->
+              error = %Anubis.MCP.Error{
+                code: -32_603,
+                message: "Tool execution error: #{Exception.message(e)}",
+                data: %{
+                  error: inspect(e),
+                  stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+                }
+              }
+
+              {:error, error, frame}
+          end
+
+          # Backward compatibility: custom tools with arity 2 (params, actor)
           @dialyzer {:nowarn_function, do_execute: 4}
-          defp do_execute(handler, params, actor, frame) when is_function(handler, 2) do
+          defp do_execute(handler, params, _scope, actor, frame) when is_function(handler, 2) do
             result = handler.(params, actor)
 
             case result do

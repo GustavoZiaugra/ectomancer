@@ -69,6 +69,7 @@ if Code.ensure_loaded?(Ecto) do
         query =
           schema_module
           |> build_filter_query(filter_params, introspection.fields)
+          |> apply_scope(Keyword.get(opts, :scope))
           |> apply_soft_delete_filter(schema_module, meta_params)
           |> apply_ordering(meta_params, introspection.fields)
           |> apply_pagination(meta_params, opts)
@@ -96,7 +97,7 @@ if Code.ensure_loaded?(Ecto) do
     def get(schema_module, params, opts \\ []) do
       with {:ok, repo} <- get_repo(),
            {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
-        result = fetch_single_record(repo, schema_module, pk_values)
+        result = fetch_single_record(repo, schema_module, pk_values, opts)
 
         case result do
           {:ok, record} ->
@@ -129,7 +130,7 @@ if Code.ensure_loaded?(Ecto) do
         create(MyApp.Accounts.User, %{"email" => "test@example.com", "name" => "Test"})
     """
     @spec create(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t()}
-    def create(schema_module, params) do
+    def create(schema_module, params, _opts \\ []) do
       with_repo(fn repo ->
         struct = struct(schema_module)
         attrs = normalize_params(params || %{}, schema_module)
@@ -165,10 +166,10 @@ if Code.ensure_loaded?(Ecto) do
         update(MyApp.Accounts.User, %{"id" => 123, "name" => "New Name"})
     """
     @spec update(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t() | :not_found}
-    def update(schema_module, params) do
+    def update(schema_module, params, opts \\ []) do
       with {:ok, repo} <- get_repo(),
            {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params || %{}),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
+           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         perform_update(repo, schema_module, record, params || %{}, pk_fields)
       end
     end
@@ -186,10 +187,10 @@ if Code.ensure_loaded?(Ecto) do
         destroy(MyApp.Accounts.User, %{"id" => 123})
     """
     @spec destroy(module(), map()) :: {:ok, struct()} | {:error, :not_found | any()}
-    def destroy(schema_module, params) do
+    def destroy(schema_module, params, opts \\ []) do
       with {:ok, repo} <- get_repo(),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
+           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         perform_destroy(repo, schema_module, record)
       end
     rescue
@@ -210,10 +211,10 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec restore(module(), map()) ::
             {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
-    def restore(schema_module, params) do
+    def restore(schema_module, params, opts \\ []) do
       with {:ok, repo} <- get_repo(),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
+           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         sd_field = SchemaIntrospection.soft_delete_field(schema_module)
 
         if sd_field do
@@ -283,8 +284,11 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp fetch_single_record(repo, schema_module, pk_values) do
-      query = build_pk_query(schema_module, pk_values)
+    defp fetch_single_record(repo, schema_module, pk_values, opts) do
+      query =
+        schema_module
+        |> build_pk_query(pk_values)
+        |> apply_scope(Keyword.get(opts, :scope))
 
       case repo.one(query) do
         nil -> {:error, :not_found}
@@ -347,6 +351,9 @@ if Code.ensure_loaded?(Ecto) do
         query
       end
     end
+
+    defp apply_scope(query, nil), do: query
+    defp apply_scope(query, scope_fn) when is_function(scope_fn, 1), do: scope_fn.(query)
 
     defp normalize_params(params, schema_module) do
       introspection = SchemaIntrospection.analyze(schema_module)
