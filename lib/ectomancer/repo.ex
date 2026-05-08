@@ -69,6 +69,7 @@ if Code.ensure_loaded?(Ecto) do
         query =
           schema_module
           |> build_filter_query(filter_params, introspection.fields)
+          |> apply_soft_delete_filter(schema_module, meta_params)
           |> apply_ordering(meta_params, introspection.fields)
           |> apply_pagination(meta_params, opts)
 
@@ -98,8 +99,17 @@ if Code.ensure_loaded?(Ecto) do
         result = fetch_single_record(repo, schema_module, pk_values)
 
         case result do
-          {:ok, record} -> {:ok, maybe_preload(repo, record, opts)}
-          error -> error
+          {:ok, record} ->
+            sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+            if sd_field && Map.get(record, sd_field) && !Map.get(params, "include_deleted", false) do
+              {:error, :not_found}
+            else
+              {:ok, maybe_preload(repo, record, opts)}
+            end
+
+          error ->
+            error
         end
       end
     rescue
@@ -180,10 +190,39 @@ if Code.ensure_loaded?(Ecto) do
       with {:ok, repo} <- get_repo(),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
            {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
-        perform_destroy(repo, record)
+        perform_destroy(repo, schema_module, record)
       end
     rescue
       e -> {:error, "DESTROY failed: #{Exception.message(e)}"}
+    end
+
+    @doc """
+    Restores a soft-deleted record by setting its soft-delete field to `nil`.
+
+    ## Parameters
+
+      * `schema_module` - The Ecto schema module
+      * `params` - Map containing the primary key value
+
+    ## Examples
+
+        restore(MyApp.Accounts.User, %{\"id\" => 123})
+    """
+    @spec restore(module(), map()) :: {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
+    def restore(schema_module, params) do
+      with {:ok, repo} <- get_repo(),
+           {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values) do
+        sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+        if sd_field do
+          perform_restore(repo, record, sd_field)
+        else
+          {:error, :not_soft_deletable}
+        end
+      end
+    rescue
+      e -> {:error, "RESTORE failed: #{Exception.message(e)}"}
     end
 
     # Private functions
@@ -275,8 +314,37 @@ if Code.ensure_loaded?(Ecto) do
       repo.update(changeset)
     end
 
-    defp perform_destroy(repo, record) do
-      repo.delete(record)
+    defp perform_destroy(repo, schema_module, record) do
+      sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+      if sd_field do
+        perform_soft_delete(repo, record, sd_field)
+      else
+        repo.delete(record)
+      end
+    end
+
+    defp perform_soft_delete(repo, record, sd_field) do
+      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+      changeset = Ecto.Changeset.change(record, %{sd_field => now})
+      repo.update(changeset)
+    end
+
+    defp perform_restore(repo, record, sd_field) do
+      changeset = Ecto.Changeset.change(record, %{sd_field => nil})
+      repo.update(changeset)
+    end
+
+    defp apply_soft_delete_filter(query, schema_module, meta_params) do
+      import Ecto.Query
+
+      sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+      if sd_field && !Map.get(meta_params, "include_deleted", false) do
+        where(query, [r], is_nil(field(r, ^sd_field)))
+      else
+        query
+      end
     end
 
     defp normalize_params(params, schema_module) do
@@ -324,7 +392,7 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
-    @meta_keys ~w(order_by order_dir limit offset)
+    @meta_keys ~w(order_by order_dir limit offset include_deleted)
 
     defp extract_meta_params(params) do
       {meta, filters} =

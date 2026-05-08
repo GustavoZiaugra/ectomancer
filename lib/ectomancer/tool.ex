@@ -371,6 +371,10 @@ if Code.ensure_loaded?(Ecto) do
       {-32_002, "Resource not found", %{}}
     end
 
+    def format_error(:not_soft_deletable) do
+      {-32_602, "Invalid params: Schema does not support soft-delete", %{}}
+    end
+
     def format_error(%Ecto.Changeset{} = changeset) do
       errors = map_changeset_errors(changeset)
       validation_type = infer_validation_type(errors)

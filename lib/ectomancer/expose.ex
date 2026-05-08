@@ -124,7 +124,12 @@ if Code.ensure_loaded?(Ecto) do
         suffix: "",
         description_template: "Update an existing %{resource}"
       },
-      destroy: %{prefix: "destroy", suffix: "", description_template: "Delete a %{resource}"}
+      destroy: %{prefix: "destroy", suffix: "", description_template: "Delete a %{resource}"},
+      restore: %{
+        prefix: "restore",
+        suffix: "",
+        description_template: "Restore a soft-deleted %{resource}"
+      }
     }
 
     @doc """
@@ -141,6 +146,7 @@ if Code.ensure_loaded?(Ecto) do
         * `:readonly` - Disable mutation operations (`:create`, `:update`, `:destroy`)
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
+        * `:soft_delete` - Enable soft-delete awareness (auto-detects `:deleted_at`/`:archived_at` fields)
 
      ## Examples
 
@@ -196,6 +202,10 @@ if Code.ensure_loaded?(Ecto) do
 
       base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
       actions = filter_actions_for_readonly(base_actions, readonly)
+      soft_delete = resolve_soft_delete(schema, opts)
+
+      # Auto-add restore for soft-delete enabled schemas
+      actions = if soft_delete, do: actions ++ [:restore], else: actions
 
       exposed_fields = filter_fields(introspection, opts)
       filterable_fields = filter_filterable_fields(exposed_fields, opts)
@@ -211,8 +221,18 @@ if Code.ensure_loaded?(Ecto) do
         introspection: introspection,
         authorization: auth_config,
         readonly: readonly,
-        preload: Keyword.get(opts, :preload, [])
+        preload: Keyword.get(opts, :preload, []),
+        soft_delete: soft_delete
       }
+    end
+
+    defp resolve_soft_delete(schema, opts) do
+      case Keyword.get(opts, :soft_delete) do
+        nil -> false
+        false -> false
+        true -> SchemaIntrospection.soft_delete_field(schema)
+        field when is_atom(field) -> field
+      end
     end
 
     defp filter_actions_for_readonly(actions, true) do
@@ -467,11 +487,21 @@ if Code.ensure_loaded?(Ecto) do
         build_list_filter_params(config.filterable_fields, config.introspection.types)
 
       meta_params =
-        quote do
-          param(:order_by, :string)
-          param(:order_dir, :string)
-          param(:limit, :integer)
-          param(:offset, :integer)
+        if config.soft_delete do
+          quote do
+            param(:order_by, :string)
+            param(:order_dir, :string)
+            param(:limit, :integer)
+            param(:offset, :integer)
+            param(:include_deleted, :boolean)
+          end
+        else
+          quote do
+            param(:order_by, :string)
+            param(:order_dir, :string)
+            param(:limit, :integer)
+            param(:offset, :integer)
+          end
         end
 
       all_params = base_params ++ suffix_params
@@ -490,8 +520,15 @@ if Code.ensure_loaded?(Ecto) do
       pk_field = hd(config.introspection.primary_key)
       pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
+      if config.soft_delete do
+        quote do
+          param(unquote(pk_field), unquote(pk_type), required: true)
+          param(:include_deleted, :boolean)
+        end
+      else
+        quote do
+          param(unquote(pk_field), unquote(pk_type), required: true)
+        end
       end
     end
 
@@ -515,6 +552,16 @@ if Code.ensure_loaded?(Ecto) do
 
     defp generate_params(:destroy, config) do
       # Destroy action requires the primary key
+      pk_field = hd(config.introspection.primary_key)
+      pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+      quote do
+        param(unquote(pk_field), unquote(pk_type), required: true)
+      end
+    end
+
+    defp generate_params(:restore, config) do
+      # Restore action requires the primary key
       pk_field = hd(config.introspection.primary_key)
       pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
