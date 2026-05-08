@@ -188,8 +188,19 @@ if Code.ensure_loaded?(Ecto) do
           generate_tool(action, config, tool_name)
         end)
 
+      # Generate MCP Resource module for schema discovery
+      resource_prefix =
+        if config.namespace,
+          do: "#{config.namespace}_#{config.resource_name}",
+          else: config.resource_name
+
+      resource_module_name =
+        Module.concat(__CALLER__.module, "Resource.#{Macro.camelize(resource_prefix)}")
+
+      resource_definition = generate_resource(config, resource_module_name, resource_prefix)
+
       quote do
-        (unquote_splicing(tool_definitions))
+        (unquote_splicing(tool_definitions ++ [resource_definition]))
       end
     end
 
@@ -364,6 +375,84 @@ if Code.ensure_loaded?(Ecto) do
 
         Generated tool: #{inspect(tool_module)}
         """)
+      end
+    end
+
+    # Resource generation for MCP schema discovery
+
+    defp generate_resource(config, module_name, uri_key) do
+      resource_name = config.resource_name
+      schema = config.schema
+      introspection = config.introspection
+      actions = config.actions
+
+      # Build metadata structures at compile time
+      fields_meta =
+        Enum.map(config.exposed_fields, fn field ->
+          ecto_type = Map.get(introspection.types, field)
+
+          %{
+            "name" => Atom.to_string(field),
+            "type" => SchemaIntrospection.type_to_string(ecto_type),
+            "required" =>
+              field not in config.writable_fields and field not in introspection.primary_key
+          }
+        end)
+
+      assocs_meta =
+        Enum.map(introspection.associations, fn assoc ->
+          %{
+            "name" => Atom.to_string(assoc.field),
+            "type" => Atom.to_string(assoc.cardinality),
+            "related" => inspect(assoc.related)
+          }
+        end)
+
+      pk_meta = Enum.map(introspection.primary_key, &Atom.to_string/1)
+      actions_meta = Enum.map(actions, &Atom.to_string/1)
+      schema_module_str = inspect(schema)
+      resource_uri = "ectomancer://schemas/#{uri_key}"
+
+      resource_entry = %{
+        "name" => resource_name,
+        "uri" => resource_uri,
+        "title" => "#{Macro.camelize(resource_name)} Schema"
+      }
+
+      quote do
+        defmodule unquote(module_name) do
+          use Anubis.Server.Component,
+            type: :resource,
+            uri: unquote(resource_uri),
+            name: unquote(resource_name),
+            mime_type: "application/json"
+
+          @moduledoc "Schema metadata for #{unquote(resource_name)}"
+
+          def description, do: "Schema metadata for #{unquote(resource_name)}"
+
+          def read(_params, frame) do
+            metadata = %{
+              "name" => unquote(resource_name),
+              "module" => unquote(schema_module_str),
+              "uri" => unquote(resource_uri),
+              "fields" => unquote(Macro.escape(fields_meta)),
+              "associations" => unquote(Macro.escape(assocs_meta)),
+              "primary_key" => unquote(Macro.escape(pk_meta)),
+              "available_actions" => unquote(Macro.escape(actions_meta))
+            }
+
+            {:reply,
+             %Anubis.Server.Response{
+               type: :resource,
+               content: [%{"type" => "text", "text" => Jason.encode!(metadata)}]
+             }, frame}
+          end
+        end
+
+        require Anubis.Server
+        Anubis.Server.component(unquote(module_name))
+        @ectomancer_resources unquote(Macro.escape(resource_entry))
       end
     end
 

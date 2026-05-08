@@ -102,12 +102,58 @@ defmodule Ectomancer do
       use Anubis.Server,
         name: Keyword.get(unquote(opts), :name, "ectomancer-server"),
         version: Keyword.get(unquote(opts), :version, "0.1.0"),
-        capabilities: [:tools]
+        capabilities: [:tools, :resources]
+
+      Module.register_attribute(__MODULE__, :ectomancer_resources, accumulate: true)
+
+      @before_compile Ectomancer
 
       import Ectomancer.Tool, only: [tool: 2, authorize: 1]
       import Ectomancer.Expose, only: [expose: 1, expose: 2]
       import Ectomancer.RouteIntrospection, only: [expose_routes: 1, expose_routes: 2]
       import Ectomancer.ObanBridge, only: [expose_oban_jobs: 0, expose_oban_jobs: 1]
+    end
+  end
+
+  @doc false
+  defmacro __before_compile__(env) do
+    resources = Module.get_attribute(env.module, :ectomancer_resources)
+
+    if resources == [] do
+      quote do
+        :ok
+      end
+    else
+      # The resources attribute accumulates entries in reverse order (LIFO)
+      resources = Enum.reverse(resources)
+
+      quote do
+        defmodule Resource.Schemas do
+          use Anubis.Server.Component,
+            type: :resource,
+            uri: "ectomancer://schemas",
+            name: "schemas",
+            mime_type: "application/json"
+
+          @moduledoc "Available Schemas"
+
+          def description, do: "Lists all available schemas in this Ectomancer server"
+
+          def read(_params, frame) do
+            schemas_list = unquote(Macro.escape(resources))
+
+            {:reply,
+             %Anubis.Server.Response{
+               type: :resource,
+               content: [
+                 %{"type" => "text", "text" => Jason.encode!(%{"schemas" => schemas_list})}
+               ]
+             }, frame}
+          end
+        end
+
+        Anubis.Server.component(Resource.Schemas)
+      end
     end
   end
 end
