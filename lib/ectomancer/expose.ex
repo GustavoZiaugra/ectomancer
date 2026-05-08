@@ -147,6 +147,7 @@ if Code.ensure_loaded?(Ecto) do
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
         * `:soft_delete` - Enable soft-delete awareness (auto-detects `:deleted_at`/`:archived_at` fields)
+        * `:field_authorize` - Dynamic field-level authorization callback `fn actor, field -> boolean :: boolean()`
 
      ## Examples
 
@@ -233,7 +234,8 @@ if Code.ensure_loaded?(Ecto) do
         authorization: auth_config,
         readonly: readonly,
         preload: Keyword.get(opts, :preload, []),
-        soft_delete: soft_delete
+        soft_delete: soft_delete,
+        field_authorize: Keyword.get(opts, :field_authorize)
       }
     end
 
@@ -465,7 +467,7 @@ if Code.ensure_loaded?(Ecto) do
       params = generate_params(action, config)
       auth_block = generate_authorization_block(action, config)
 
-      handler =
+      base_handler =
         if action in [:list, :get] and config.preload != [] do
           quote do
             fn params, _actor, scope ->
@@ -481,6 +483,28 @@ if Code.ensure_loaded?(Ecto) do
               Ectomancer.Repo.unquote(action)(unquote(config.schema), params, scope: scope)
             end
           end
+        end
+
+      handler =
+        if config.field_authorize do
+          field_auth_fn = config.field_authorize
+
+          quote do
+            fn params, actor, scope ->
+              inner = unquote(base_handler)
+              result = inner.(params, actor, scope)
+
+              case result do
+                {:ok, data} ->
+                  {:ok, Ectomancer.FieldAuth.filter_fields(data, actor, unquote(field_auth_fn))}
+
+                other ->
+                  other
+              end
+            end
+          end
+        else
+          base_handler
         end
 
       quote do
