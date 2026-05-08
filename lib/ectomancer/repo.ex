@@ -208,7 +208,8 @@ if Code.ensure_loaded?(Ecto) do
 
         restore(MyApp.Accounts.User, %{\"id\" => 123})
     """
-    @spec restore(module(), map()) :: {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
+    @spec restore(module(), map()) ::
+            {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
     def restore(schema_module, params) do
       with {:ok, repo} <- get_repo(),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),

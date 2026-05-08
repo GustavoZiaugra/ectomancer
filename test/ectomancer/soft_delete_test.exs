@@ -35,6 +35,7 @@ defmodule Ectomancer.SoftDeleteTest do
     Ectomancer.DataCase.create_table_for_schema!(NoSoftDeletePost)
 
     Ectomancer.DataCase.insert!(Post, %{title: "Active Post", body: "Hello"})
+
     Ectomancer.DataCase.insert!(Post, %{
       title: "Deleted Post",
       body: "World",
@@ -157,96 +158,79 @@ defmodule Ectomancer.SoftDeleteTest do
     end
   end
 
+  # Test MCP modules for expose macro tests — defined at top level to avoid compiler warnings
+  defmodule SoftDeleteTestMCP do
+    use Ectomancer
+
+    expose(Ectomancer.SoftDeleteTest.Post,
+      actions: [:list, :get, :destroy],
+      soft_delete: true
+    )
+  end
+
+  defmodule NoSoftDeleteRestoreMCP do
+    use Ectomancer
+
+    expose(Ectomancer.SoftDeleteTest.NoSoftDeletePost, actions: [:list, :get])
+  end
+
+  defmodule ListWithSoftDeleteMCP do
+    use Ectomancer
+
+    expose(Ectomancer.SoftDeleteTest.Post,
+      actions: [:list],
+      soft_delete: true
+    )
+  end
+
+  defmodule GetWithSoftDeleteMCP do
+    use Ectomancer
+
+    expose(Ectomancer.SoftDeleteTest.Post,
+      actions: [:get],
+      soft_delete: true
+    )
+  end
+
+  defmodule ListWithoutSoftDeleteMCP do
+    use Ectomancer
+
+    expose(Ectomancer.SoftDeleteTest.NoSoftDeletePost, actions: [:list])
+  end
+
   describe "expose macro generates tools with soft_delete" do
     test "list tool includes include_deleted param" do
-      defmodule SoftDeleteTestMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.Post,
-          actions: [:list, :get, :destroy],
-          soft_delete: true
-        )
-      end
-
       assert {:module, _} = Code.ensure_loaded(SoftDeleteTestMCP.Tool.ListPosts)
       assert {:module, _} = Code.ensure_loaded(SoftDeleteTestMCP.Tool.GetPost)
       assert {:module, _} = Code.ensure_loaded(SoftDeleteTestMCP.Tool.DestroyPost)
     end
 
     test "generates restore tool" do
-      defmodule SoftDeleteRestoreTestMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.Post,
-          actions: [:list, :get, :destroy],
-          soft_delete: true
-        )
-      end
-
-      assert {:module, _} = Code.ensure_loaded(SoftDeleteRestoreTestMCP.Tool.RestorePost)
+      assert {:module, _} = Code.ensure_loaded(SoftDeleteTestMCP.Tool.RestorePost)
     end
 
     test "does not generate restore without soft_delete" do
-      defmodule NoSoftDeleteRestoreMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.NoSoftDeletePost, actions: [:list, :get])
-      end
-
       refute Code.ensure_loaded?(NoSoftDeleteRestoreMCP.Tool.RestoreNoSoftDeletePost)
     end
 
     test "restore tool has correct input params" do
-      defmodule RestoreToolSchema do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.Post,
-          actions: [:list, :get, :destroy],
-          soft_delete: true
-        )
-      end
-
-      schema = RestoreToolSchema.Tool.RestorePost.input_schema()
+      schema = SoftDeleteTestMCP.Tool.RestorePost.input_schema()
       assert schema["type"] == "object"
       assert schema["properties"]["id"]["type"] == "integer"
       assert "id" in schema["required"]
     end
 
     test "list tool includes include_deleted in schema when soft_delete enabled" do
-      defmodule ListWithSoftDeleteMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.Post,
-          actions: [:list],
-          soft_delete: true
-        )
-      end
-
       schema = ListWithSoftDeleteMCP.Tool.ListPosts.input_schema()
       assert schema["properties"]["include_deleted"]["type"] == "boolean"
     end
 
     test "get tool includes include_deleted in schema when soft_delete enabled" do
-      defmodule GetWithSoftDeleteMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.Post,
-          actions: [:get],
-          soft_delete: true
-        )
-      end
-
       schema = GetWithSoftDeleteMCP.Tool.GetPost.input_schema()
       assert schema["properties"]["include_deleted"]["type"] == "boolean"
     end
 
     test "list tool does not include include_deleted when soft_delete not enabled" do
-      defmodule ListWithoutSoftDeleteMCP do
-        use Ectomancer
-
-        expose(Ectomancer.SoftDeleteTest.NoSoftDeletePost, actions: [:list])
-      end
-
       schema = ListWithoutSoftDeleteMCP.Tool.ListNoSoftDeletePosts.input_schema()
       refute Map.has_key?(schema["properties"], "include_deleted")
     end
