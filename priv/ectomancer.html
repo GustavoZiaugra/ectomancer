@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ectomancer · MCP Browser Client</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --radius: 8px;
+    --font: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), #a371f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header .subtitle {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .spacer { flex: 1; }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.disconnected { background: var(--red); }
+  .status-dot.connecting { background: var(--orange); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+  /* Connection Bar */
+  .connection-bar {
+    background: var(--surface-2);
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .connection-bar label { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+  .connection-bar input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 6px 10px;
+    flex: 1;
+    min-width: 200px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .connection-bar input:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn.secondary:hover { background: var(--surface-2); }
+  .btn.danger { background: var(--red); color: #fff; }
+  .btn.danger:hover { opacity: 0.85; }
+
+  /* Main Layout */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Sidebar - Tool List */
+  .sidebar {
+    width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sidebar-header .count {
+    background: var(--surface-2);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+  .tool-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .tool-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+  }
+  .tool-item:hover { background: var(--surface-2); }
+  .tool-item.active { background: var(--surface-2); border-left: 2px solid var(--accent); }
+  .tool-item .name { font-size: 13px; font-weight: 500; }
+  .tool-item .desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tool-item .schema-badge {
+    font-size: 10px;
+    color: var(--accent);
+    margin-top: 3px;
+  }
+
+  /* Content - Tool Detail */
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tool-detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .tool-detail h2 { font-size: 20px; margin-bottom: 4px; }
+  .tool-detail .tool-desc { color: var(--text-muted); margin-bottom: 16px; }
+  .tool-detail h3 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+
+  /* Arguments Form */
+  .arg-field {
+    margin-bottom: 12px;
+  }
+  .arg-field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .arg-field label .required { color: var(--red); margin-left: 2px; }
+  .arg-field label .type { color: var(--accent); margin-left: 4px; font-size: 11px; }
+  .arg-field input, .arg-field textarea, .arg-field select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .arg-field input:focus, .arg-field textarea:focus, .arg-field select:focus {
+    border-color: var(--accent);
+  }
+  .arg-field textarea { min-height: 60px; resize: vertical; font-family: var(--font); }
+
+  /* Results */
+  .result-panel {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    max-height: 40%;
+    display: flex;
+    flex-direction: column;
+  }
+  .result-header {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .result-header h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin: 0; }
+  .result-body {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 20px;
+    font-size: 13px;
+  }
+  .result-body pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    font-family: var(--font);
+  }
+  .result-body .empty {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .error-result { color: var(--red); }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Log */
+  .log-container {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 20px;
+    max-height: 60px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .log-line {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .log-line.error { color: var(--red); }
+  .log-line.success { color: var(--green); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .sidebar { width: 200px; }
+    header h1 { font-size: 15px; }
+  }
+  @media (max-width: 600px) {
+    .main { flex-direction: column; }
+    .sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid var(--border); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+  .empty-state h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+  .empty-state p { max-width: 400px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <header>
+    <h1>◈ Ectomancer</h1>
+    <span class="subtitle">MCP Browser Client</span>
+    <div class="spacer"></div>
+    <div class="status" id="status">
+      <span class="status-dot disconnected" id="statusDot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- Log -->
+  <div class="log-container" id="logContainer"></div>
+
+  <!-- Connection Bar -->
+  <div class="connection-bar">
+    <label for="serverUrl">Server</label>
+    <input type="url" id="serverUrl" value="http://localhost:4000/mcp" placeholder="http://localhost:4000/mcp" spellcheck="false">
+    <button class="btn" id="connectBtn" onclick="connect()">Connect</button>
+    <button class="btn secondary" id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span>Tools</span>
+        <span class="count" id="toolCount">0</span>
+      </div>
+      <div class="tool-list" id="toolList">
+        <div class="loading">
+          <div class="spinner"></div>
+          Connect to a server to discover tools
+        </div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="tool-detail" id="toolDetail">
+        <div class="empty-state">
+          <div class="icon">◈</div>
+          <h2>Welcome to Ectomancer</h2>
+          <p>Connect to any Ectomancer MCP server to browse its tools, inspect schemas, and call them interactively — all from your browser.</p>
+          <p style="margin-top: 12px; font-size: 12px;">Enter the server URL above and click <strong>Connect</strong>.</p>
+        </div>
+      </div>
+
+      <!-- Result Panel -->
+      <div class="result-panel" id="resultPanel" style="display: none;">
+        <div class="result-header">
+          <h3>Result</h3>
+          <div>
+            <span id="resultTime" style="font-size: 11px; color: var(--text-muted); margin-right: 12px;"></span>
+            <button class="btn secondary" onclick="clearResult()" style="font-size: 11px; padding: 3px 10px;">Clear</button>
+            <button class="btn secondary" onclick="copyResult()" style="font-size: 11px; padding: 3px 10px; margin-left: 4px;">Copy</button>
+          </div>
+        </div>
+        <div class="result-body" id="resultBody">
+          <pre class="empty">Call a tool to see results here.</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────
+let sessionId = null;
+let messageEndpoint = null;
+let eventSource = null;
+let tools = [];
+let activeToolName = null;
+let resultData = null;
+
+// ─── Connection ──────────────────────────────────────────────────────────
+function connect() {
+  const baseUrl = document.getElementById('serverUrl').value.replace(/\/+$/, '');
+  if (!baseUrl) return log('Server URL is required', 'error');
+
+  setStatus('connecting', 'Connecting…');
+  document.getElementById('connectBtn').disabled = true;
+  log(`Connecting to ${baseUrl}/sse …`);
+
+  if (eventSource) eventSource.close();
+
+  // The MCP SSE endpoint is at {baseUrl}/sse
+  const sseUrl = `${baseUrl}/sse`;
+  eventSource = new EventSource(sseUrl);
+
+  eventSource.onopen = () => {
+    log(`SSE connection opened`, 'success');
+  };
+
+  eventSource.addEventListener('endpoint', (e) => {
+    messageEndpoint = e.data;
+    // Extract sessionId from endpoint URL
+    try {
+      const u = new URL(messageEndpoint);
+      sessionId = u.searchParams.get('sessionId');
+    } catch(_) { sessionId = 'unknown'; }
+    setStatus('connected', `Connected · ${sessionId.slice(0,8)}…`);
+    document.getElementById('connectBtn').disabled = true;
+    document.getElementById('disconnectBtn').disabled = false;
+    log(`MCP session established: ${sessionId}`, 'success');
+    log(`POST endpoint: ${messageEndpoint}`);
+    loadTools();
+  });
+
+  eventSource.addEventListener('message', (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch(err) {
+      // Might be keepalive or non-JSON
+    }
+  });
+
+  eventSource.onerror = () => {
+    if (eventSource.readyState === EventSource.CLOSED) {
+      setStatus('disconnected', 'Disconnected');
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('disconnectBtn').disabled = true;
+      log('Connection lost', 'error');
+    }
+  };
+}
+
+function disconnect() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  sessionId = null;
+  messageEndpoint = null;
+  tools = [];
+  activeToolName = null;
+  setStatus('disconnected', 'Disconnected');
+  document.getElementById('connectBtn').disabled = false;
+  document.getElementById('disconnectBtn').disabled = true;
+  renderToolList();
+  document.getElementById('toolDetail').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">◈</div>
+      <h2>Disconnected</h2>
+      <p>Connect to a server to browse its tools.</p>
+    </div>`;
+  document.getElementById('resultPanel').style.display = 'none';
+  log('Disconnected', 'error');
+}
+
+// ─── MCP JSON-RPC ────────────────────────────────────────────────────────
+let messageId = 1;
+
+function sendRequest(method, params = {}) {
+  return new Promise((resolve, reject) => {
+    if (!messageEndpoint) return reject(new Error('Not connected'));
+
+    const id = messageId++;
+    const body = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+
+    // Store pending handler
+    pendingRequests[id] = { resolve, reject, method };
+
+    fetch(messageEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    }).catch(err => {
+      delete pendingRequests[id];
+      reject(err);
+    });
+
+    // Timeout after 30s
+    setTimeout(() => {
+      if (pendingRequests[id]) {
+        delete pendingRequests[id];
+        reject(new Error(`Request ${method} timed out`));
+      }
+    }, 30000);
+  });
+}
+
+const pendingRequests = {};
+
+function handleMessage(msg) {
+  if (msg.id && pendingRequests[msg.id]) {
+    const { resolve, reject } = pendingRequests[msg.id];
+    delete pendingRequests[msg.id];
+    if (msg.error) {
+      reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+    } else {
+      resolve(msg.result);
+    }
+  }
+}
+
+// ─── Tool Operations ─────────────────────────────────────────────────────
+async function loadTools() {
+  try {
+    log('Requesting tool list …');
+    const result = await sendRequest('tools/list');
+    tools = result.tools || [];
+    log(`Loaded ${tools.length} tools`, 'success');
+    renderToolList();
+    if (tools.length > 0) {
+      selectTool(tools[0].name);
+    }
+  } catch(err) {
+    log(`Failed to load tools: ${err.message}`, 'error');
+  }
+}
+
+async function callTool(name) {
+  const tool = tools.find(t => t.name === name);
+  if (!tool) return;
+
+  const args = {};
+  if (tool.inputSchema && tool.inputSchema.properties) {
+    for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
+      const el = document.getElementById(`arg-${name}-${key}`);
+      if (el) {
+        const val = el.value;
+        if (val !== '' && val !== undefined && val !== null) {
+          args[key] = tryParse(val);
+        }
+      }
+    }
+  }
+
+  log(`Calling ${name} …`);
+  setStatus('connecting', `Calling ${name}…`);
+  document.getElementById(`call-${name}`).disabled = true;
+
+  try {
+    const result = await sendRequest('tools/call', { name, arguments: args });
+    resultData = result;
+    displayResult(result);
+    log(`${name} completed`, 'success');
+    setStatus('connected', `Connected · ${sessionId.slice(0,8)}…`);
+  } catch(err) {
+    displayError(err.message);
+    log(`${name} failed: ${err.message}`, 'error');
+    setStatus('connected', `Connected · ${sessionId.slice(0,8)}…`);
+  }
+  document.getElementById(`call-${name}`).disabled = false;
+}
+
+// ─── Rendering ───────────────────────────────────────────────────────────
+function renderToolList() {
+  const container = document.getElementById('toolList');
+  const count = document.getElementById('toolCount');
+
+  if (tools.length === 0) {
+    container.innerHTML = `<div class="loading"><div class="spinner"></div>No tools discovered</div>`;
+    count.textContent = '0';
+    return;
+  }
+
+  count.textContent = tools.length;
+  container.innerHTML = tools.map(t => `
+    <div class="tool-item ${t.name === activeToolName ? 'active' : ''}"
+         onclick="selectTool('${t.name}')"
+         id="tool-${t.name}">
+      <div class="name">${escapeHtml(t.name)}</div>
+      <div class="desc">${escapeHtml(t.description || 'No description')}</div>
+    </div>
+  `).join('');
+}
+
+function selectTool(name) {
+  activeToolName = name;
+  const tool = tools.find(t => t.name === name);
+  if (!tool) return;
+
+  // Update sidebar
+  document.querySelectorAll('.tool-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById(`tool-${name}`);
+  if (activeEl) activeEl.classList.add('active');
+
+  // Render detail
+  const detail = document.getElementById('toolDetail');
+  const schema = tool.inputSchema || {};
+  const props = schema.properties || {};
+  const required = new Set(schema.required || []);
+
+  let fields = '';
+  if (Object.keys(props).length > 0) {
+    fields = Object.entries(props).map(([key, prop]) => {
+      const isReq = required.has(key);
+      const type = prop.type || 'string';
+      const desc = prop.description || '';
+      const inputType = type === 'integer' || type === 'number' ? 'number' :
+                         type === 'boolean' ? 'select' : 'text';
+      const placeholder = desc;
+      let input = '';
+      if (inputType === 'select') {
+        input = `<select id="arg-${name}-${key}">
+          <option value="">—</option>
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>`;
+      } else if (type === 'object' || type === 'array') {
+        input = `<textarea id="arg-${name}-${key}" placeholder="${escapeHtml(desc)} (JSON)"></textarea>`;
+      } else {
+        input = `<input type="${inputType}" id="arg-${name}-${key}" placeholder="${escapeHtml(placeholder)}" spellcheck="false">`;
+      }
+      return `
+        <div class="arg-field">
+          <label>
+            ${escapeHtml(key)}
+            <span class="type">${type}</span>
+            ${isReq ? '<span class="required">*</span>' : ''}
+          </label>
+          ${input}
+        </div>`;
+    }).join('');
+  } else {
+    fields = `<p style="color: var(--text-muted); font-size: 13px;">No arguments required.</p>`;
+  }
+
+  const examples = getExamples(name);
+
+  detail.innerHTML = `
+    <h2>${escapeHtml(tool.name)}</h2>
+    <div class="tool-desc">${escapeHtml(tool.description || 'No description available.')}</div>
+
+    <div style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
+      <button class="btn" id="call-${name}" onclick="callTool('${name}')">
+        ▶ Call Tool
+      </button>
+      ${examples ? `<button class="btn secondary" onclick="fillExample('${name}')">📋 Load Example</button>` : ''}
+    </div>
+
+    <h3>Arguments</h3>
+    ${fields}
+  `;
+
+  // Store examples as data attribute
+  if (examples) {
+    detail.dataset.examples = JSON.stringify(examples);
+  }
+}
+
+function getExamples(toolName) {
+  // Smart examples for common Ectomancer patterns
+  if (toolName.startsWith('list_')) {
+    return { limit: 10 };
+  }
+  if (toolName.startsWith('get_')) {
+    return { id: 1 };
+  }
+  if (toolName.startsWith('create_')) {
+    return { /* empty - user fills in */ };
+  }
+  return null;
+}
+
+function fillExample(toolName) {
+  const detail = document.getElementById('toolDetail');
+  if (!detail.dataset.examples) return;
+  const examples = JSON.parse(detail.dataset.examples);
+  for (const [key, val] of Object.entries(examples)) {
+    const el = document.getElementById(`arg-${toolName}-${key}`);
+    if (el) el.value = val;
+  }
+}
+
+function displayResult(result) {
+  const panel = document.getElementById('resultPanel');
+  const body = document.getElementById('resultBody');
+  const time = document.getElementById('resultTime');
+
+  panel.style.display = 'flex';
+  time.textContent = new Date().toLocaleTimeString();
+  body.innerHTML = `<pre>${escapeHtml(formatResult(result))}</pre>`;
+}
+
+function displayError(message) {
+  const panel = document.getElementById('resultPanel');
+  const body = document.getElementById('resultBody');
+  const time = document.getElementById('resultTime');
+
+  panel.style.display = 'flex';
+  time.textContent = new Date().toLocaleTimeString();
+  body.innerHTML = `<pre class="error-result">${escapeHtml(message)}</pre>`;
+}
+
+function clearResult() {
+  document.getElementById('resultPanel').style.display = 'none';
+  resultData = null;
+}
+
+function copyResult() {
+  if (!resultData) return;
+  const text = formatResult(resultData);
+  navigator.clipboard.writeText(text).then(() => {
+    log('Result copied to clipboard', 'success');
+  }).catch(() => {
+    log('Failed to copy', 'error');
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const label = document.getElementById('statusText');
+  dot.className = 'status-dot ' + state;
+  label.textContent = text;
+}
+
+function log(msg, type = '') {
+  const container = document.getElementById('logContainer');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  const time = new Date().toLocaleTimeString();
+  line.textContent = `[${time}] ${msg}`;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+  // Keep max 50 log lines
+  while (container.children.length > 50) container.removeChild(container.firstChild);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function tryParse(str) {
+  // Try to parse JSON, otherwise return as string
+  if (str === 'true') return true;
+  if (str === 'false') return false;
+  if (str === 'null' || str === '') return null;
+  if (!isNaN(str) && str.trim() !== '') return Number(str);
+  try { return JSON.parse(str); } catch(_) { return str; }
+}
+
+function formatResult(result) {
+  if (result === null || result === undefined) return '(empty)';
+  if (typeof result === 'string') return result;
+  return JSON.stringify(result, null, 2);
+}
+
+// ─── Keyboard shortcuts ─────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  // Ctrl+Enter or Cmd+Enter to call active tool
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (activeToolName) callTool(activeToolName);
+  }
+  // Enter in URL field to connect
+  if (e.key === 'Enter' && document.activeElement === document.getElementById('serverUrl')) {
+    if (document.getElementById('connectBtn').disabled === false) connect();
+  }
+});
+
+// ─── Auto-connect if URL has ?connect param ────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const autoUrl = params.get('connect');
+  if (autoUrl) {
+    document.getElementById('serverUrl').value = autoUrl;
+    setTimeout(connect, 300);
+  }
+});
+
+// Also handle ?url= param (alias)
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('url')) {
+    document.getElementById('serverUrl').value = params.get('url');
+    if (params.get('auto') !== 'false') setTimeout(connect, 300);
+  }
+});
+</script>
+</body>
+</html>

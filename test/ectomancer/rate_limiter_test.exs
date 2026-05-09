@@ -40,7 +40,8 @@ defmodule Ectomancer.RateLimiterTest do
 
     test "refills tokens over time" do
       max = 2
-      window_ms = 2_000  # 2s window = 1 token/sec
+      # 2s window = 1 token/sec
+      window_ms = 2_000
 
       # Consume all tokens
       Ectomancer.RateLimiter.check(max: max, window_ms: window_ms, key: :refill_test)
@@ -84,6 +85,7 @@ defmodule Ectomancer.RateLimiterTest do
 
     test "window_ms of 0 never refills" do
       Ectomancer.RateLimiter.check(max: 1, window_ms: 0, key: :no_refill)
+
       assert {:error, :rate_limited, _} =
                Ectomancer.RateLimiter.check(max: 1, window_ms: 0, key: :no_refill)
     end
@@ -92,6 +94,7 @@ defmodule Ectomancer.RateLimiterTest do
   describe "reset/0" do
     test "clears all buckets" do
       Ectomancer.RateLimiter.check(max: 1, window_ms: 60_000, key: :reset_test)
+
       assert {:error, :rate_limited, _} =
                Ectomancer.RateLimiter.check(max: 1, window_ms: 60_000, key: :reset_test)
 
