@@ -131,12 +131,16 @@ if Code.ensure_loaded?(Ecto) do
             # Check authorization before executing
             case check_authorization(actor, @action) do
               {:ok, :scoped, scope_fn} ->
-                handler = unquote(handler_ast)
-                do_execute(handler, params, scope_fn, actor, frame)
+                with :ok <- check_rate_limit(actor, frame) do
+                  handler = unquote(handler_ast)
+                  do_execute(handler, params, scope_fn, actor, frame)
+                end
 
               :ok ->
-                handler = unquote(handler_ast)
-                do_execute(handler, params, nil, actor, frame)
+                with :ok <- check_rate_limit(actor, frame) do
+                  handler = unquote(handler_ast)
+                  do_execute(handler, params, nil, actor, frame)
+                end
 
               {:error, reason} ->
                 error = %Anubis.MCP.Error{
@@ -156,6 +160,34 @@ if Code.ensure_loaded?(Ecto) do
               Ectomancer.Authorization.check(actor, action, handler: auth_handler)
             else
               :ok
+            end
+          end
+
+          defp check_rate_limit(actor, frame) do
+            case Application.get_env(:ectomancer, :rate_limit) do
+              nil ->
+                :ok
+
+              config when is_list(config) ->
+                max = Keyword.get(config, :max, 100)
+                window_ms = Keyword.get(config, :window_ms, 60_000)
+                per_actor = Keyword.get(config, :per_actor, false)
+
+                key = if per_actor, do: {:actor, actor}, else: :global
+
+                case Ectomancer.RateLimiter.check(max: max, window_ms: window_ms, key: key) do
+                  :ok ->
+                    :ok
+
+                  {:error, :rate_limited, retry_after} ->
+                    error = %Anubis.MCP.Error{
+                      code: -32_029,
+                      message: "Rate limited. Try again in #{retry_after}ms",
+                      data: %{retry_after_ms: retry_after}
+                    }
+
+                    {:error, error, frame}
+                end
             end
           end
 
