@@ -235,7 +235,8 @@ if Code.ensure_loaded?(Ecto) do
         readonly: readonly,
         preload: Keyword.get(opts, :preload, []),
         soft_delete: soft_delete,
-        field_authorize: Keyword.get(opts, :field_authorize)
+        field_authorize: Keyword.get(opts, :field_authorize),
+        repo: Keyword.get(opts, :repo)
       }
     end
 
@@ -467,21 +468,24 @@ if Code.ensure_loaded?(Ecto) do
       params = generate_params(action, config)
       auth_block = generate_authorization_block(action, config)
 
+      repo_module = config.repo
+      preload = config.preload
+      has_preload = action in [:list, :get] and preload != []
+
       base_handler =
-        if action in [:list, :get] and config.preload != [] do
-          quote do
-            fn params, _actor, scope ->
-              Ectomancer.Repo.unquote(action)(unquote(config.schema), params,
-                preload: unquote(config.preload),
-                scope: scope
-              )
-            end
-          end
-        else
-          quote do
-            fn params, _actor, scope ->
-              Ectomancer.Repo.unquote(action)(unquote(config.schema), params, scope: scope)
-            end
+        quote bind_quoted: [
+                repo_module: repo_module,
+                preload: preload,
+                has_preload: has_preload,
+                schema: config.schema,
+                action: action
+              ] do
+          fn params, _actor, scope ->
+            opts = [scope: scope]
+            opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+            opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
+
+            apply(Ectomancer.Repo, action, [schema, params, opts])
           end
         end
 

@@ -62,7 +62,7 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec list(module(), map(), keyword()) :: {:ok, [struct()]} | {:error, any()}
     def list(schema_module, params \\ %{}, opts \\ []) do
-      with_repo(fn repo ->
+      with_repo(opts, fn repo ->
         introspection = SchemaIntrospection.analyze(schema_module)
         {meta_params, filter_params} = extract_meta_params(params)
 
@@ -98,7 +98,7 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec get(module(), map(), keyword()) :: {:ok, struct() | nil} | {:error, any()}
     def get(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(),
+      with {:ok, repo} <- get_repo(opts),
            {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
         result = fetch_single_record(repo, schema_module, pk_values, opts)
 
@@ -136,8 +136,8 @@ if Code.ensure_loaded?(Ecto) do
         create(MyApp.Accounts.User, %{"email" => "test@example.com", "name" => "Test"})
     """
     @spec create(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t()}
-    def create(schema_module, params, _opts \\ []) do
-      with_repo(fn repo ->
+    def create(schema_module, params, opts \\ []) do
+      with_repo(opts, fn repo ->
         struct = struct(schema_module)
         attrs = normalize_params(params || %{}, schema_module)
 
@@ -175,7 +175,7 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec update(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t() | :not_found}
     def update(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(),
+      with {:ok, repo} <- get_repo(opts),
            {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params || %{}),
            {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         perform_update(repo, schema_module, record, params || %{}, pk_fields)
@@ -200,7 +200,7 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec destroy(module(), map()) :: {:ok, struct()} | {:error, :not_found | any()}
     def destroy(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(),
+      with {:ok, repo} <- get_repo(opts),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
            {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         perform_destroy(repo, schema_module, record)
@@ -226,7 +226,7 @@ if Code.ensure_loaded?(Ecto) do
     @spec restore(module(), map()) ::
             {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
     def restore(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(),
+      with {:ok, repo} <- get_repo(opts),
            {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
            {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         sd_field = SchemaIntrospection.soft_delete_field(schema_module)
@@ -262,17 +262,20 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp with_repo(fun) do
-      case repo() do
-        nil -> {:error, :repo_not_configured}
-        repo -> fun.(repo)
-      end
+    defp with_repo(opts, fun) do
+      configured = repo_for_opts(opts)
+      if configured, do: fun.(configured), else: {:error, :repo_not_configured}
     end
 
-    defp get_repo do
-      case repo() do
-        nil -> {:error, :repo_not_configured}
-        repo -> {:ok, repo}
+    defp get_repo(opts) do
+      configured = repo_for_opts(opts)
+      if configured, do: {:ok, configured}, else: {:error, :repo_not_configured}
+    end
+
+    defp repo_for_opts(opts) do
+      case opts[:repo] do
+        nil -> repo()
+        mod -> validate_repo(mod)
       end
     end
 
