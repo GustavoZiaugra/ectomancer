@@ -383,6 +383,23 @@ end
 expose MyApp.Accounts.User  # get_user, create_user, etc. all work with UUIDs
 ```
 
+## Browser Playground
+
+Ectomancer ships with a **standalone browser client** that connects to any running Ectomancer MCP server over SSE — no dependencies, no build step, no npm install.
+
+```bash
+open priv/ectomancer.html
+# or serve it:
+python3 -m http.server 8080
+```
+
+Features:
+- 🔍 Browse all exposed tools from any connected device
+- ⚡ Call tools with auto-generated argument forms
+- 📋 Copy results as JSON with one click
+- 🌐 Works with any MCP server that supports SSE transport
+- 🎨 Dark theme, responsive layout
+
 ## What Claude gains access to
 
 Once connected, Claude can:
@@ -396,13 +413,14 @@ Once connected, Claude can:
 ## Documentation
 
 - [HexDocs](https://hexdocs.pm/ectomancer)
+- [GitHub Pages](https://gustavoZiaugra.github.io/ectomancer) — auto-built from main
 - Full documentation and examples at [GitHub](https://github.com/GustavoZiaugra/ectomancer)
 
 ## Testing
 
 Ectomancer includes comprehensive test coverage:
 
-- **260 tests** covering all features
+- **398 tests** covering all features
 - **35 authorization-specific tests**
 - **16 changeset error mapping tests**
 - **6 read-only mode tests**
