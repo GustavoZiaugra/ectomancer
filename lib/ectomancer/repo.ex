@@ -77,6 +77,9 @@ if Code.ensure_loaded?(Ecto) do
         results = repo.all(query)
         {:ok, maybe_preload(repo, results, opts)}
       end)
+    rescue
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      e -> {:error, {:unexpected, "List failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -114,7 +117,10 @@ if Code.ensure_loaded?(Ecto) do
         end
       end
     rescue
-      e -> {:error, "GET failed: #{Exception.message(e)}"}
+      Ecto.NoResultsError -> {:error, :not_found}
+      Ecto.StaleEntryError -> {:error, :stale_entry}
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      e -> {:error, {:unexpected, "GET failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -150,7 +156,9 @@ if Code.ensure_loaded?(Ecto) do
         end
       end)
     rescue
-      e -> {:error, "Database error: #{Exception.message(e)}"}
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      Ecto.StaleEntryError -> {:error, :stale_entry}
+      e -> {:error, {:unexpected, "Create failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -172,6 +180,10 @@ if Code.ensure_loaded?(Ecto) do
            {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
         perform_update(repo, schema_module, record, params || %{}, pk_fields)
       end
+    rescue
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      Ecto.StaleEntryError -> {:error, :stale_entry}
+      e -> {:error, {:unexpected, "Update failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -194,7 +206,9 @@ if Code.ensure_loaded?(Ecto) do
         perform_destroy(repo, schema_module, record)
       end
     rescue
-      e -> {:error, "DESTROY failed: #{Exception.message(e)}"}
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      Ecto.StaleEntryError -> {:error, :stale_entry}
+      e -> {:error, {:unexpected, "Destroy failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -224,7 +238,9 @@ if Code.ensure_loaded?(Ecto) do
         end
       end
     rescue
-      e -> {:error, "RESTORE failed: #{Exception.message(e)}"}
+      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+      Ecto.StaleEntryError -> {:error, :stale_entry}
+      e -> {:error, {:unexpected, "Restore failed: #{Exception.message(e)}"}}
     end
 
     # Private functions
