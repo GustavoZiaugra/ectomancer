@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Rate limiting** — Token bucket algorithm with ETS storage. Configurable per-tool and global limits. Opt-in via `config :ectomancer, :rate_limits`.
+- **Multi-repo support** — expose schemas from different repos with `expose User, repo: MyApp.ReplicaRepo`. Falls back to global repo config.
+- **Browser MCP client** — Zero-dependency HTML browser client at `priv/ectomancer.html`. Browse tools, call them, see results. No build step required.
+- **Auto-deployed ExDoc to GitHub Pages** — New CI workflow builds docs on push to main and deploys via `actions/deploy-pages`.
+- **CI, Hex, and Docs badges** to README header.
+
+### Fixed
+- `singularize` helper now handles edge cases (`status`, `address`, `series`) correctly.
+- Error handling now returns structured `{:error, %{code:, message:, details:}}` tuples consistently.
+
+### Testing
+- **398 tests** (up from 260), all passing
+- 9 new rate limiter tests
+- Validated multi-repo integration with secondary Phoenix app (SQLite)
+
 ## [1.1.0] - 2026-04-23
 
 ### Added
