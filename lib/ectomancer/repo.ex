@@ -569,6 +569,37 @@ if Code.ensure_loaded?(Ecto) do
 
     defp parse_int(_), do: nil
 
+    @doc """
+    Validates dynamic include requests against allowed preloadable associations.
+
+    Returns the opts keyword list with merged preloads.
+    """
+    @spec validate_includes(list() | nil, :all | list(atom()), keyword()) :: keyword()
+    def validate_includes(nil, _allowed, opts), do: opts
+    def validate_includes([], _allowed, opts), do: opts
+
+    def validate_includes(include, :all, opts) when is_list(include) do
+      validated =
+        include
+        |> Enum.map(&String.to_atom/1)
+        |> Enum.reject(&is_nil(&1))
+
+      existing = Keyword.get(opts, :preload, [])
+      Keyword.put(opts, :preload, existing ++ validated)
+    end
+
+    def validate_includes(include, allowed, opts) when is_list(include) and is_list(allowed) do
+      allowed_strs = Enum.map(allowed, &Atom.to_string/1)
+
+      validated =
+        include
+        |> Enum.filter(&(&1 in allowed_strs))
+        |> Enum.map(&String.to_atom/1)
+
+      existing = Keyword.get(opts, :preload, [])
+      Keyword.put(opts, :preload, existing ++ validated)
+    end
+
     defp maybe_preload(_repo, record, _opts) when is_nil(record), do: nil
 
     defp maybe_preload(repo, record, opts) when not is_list(record) do

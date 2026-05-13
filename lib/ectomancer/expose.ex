@@ -571,35 +571,10 @@ if Code.ensure_loaded?(Ecto) do
             ] do
         fn params, _actor, scope ->
           opts = [scope: scope]
-
-          opts =
-            if has_preload do
-              Keyword.put(opts, :preload, preload)
-            else
-              opts
-            end
-
+          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
           {include, clean_params} = Map.pop(params, "include", nil)
-
-          opts =
-            if is_list(include) && include != [] do
-              validated =
-                Enum.reduce(include, [], fn assoc_name, acc ->
-                  if assoc_name in assoc_names do
-                    [String.to_atom(assoc_name) | acc]
-                  else
-                    acc
-                  end
-                end)
-
-              existing = Keyword.get(opts, :preload, [])
-              Keyword.put(opts, :preload, existing ++ Enum.reverse(validated))
-            else
-              opts
-            end
-
+          opts = Ectomancer.Repo.validate_includes(include, :all, opts)
           opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
-
           apply(Ectomancer.Repo, action, [schema, clean_params, opts])
         end
       end
@@ -613,47 +588,20 @@ if Code.ensure_loaded?(Ecto) do
            schema,
            action
          ) do
-      allowed_strs = Enum.map(allowed, &Atom.to_string/1)
-
       quote bind_quoted: [
               repo_module: repo_module,
               preload: preload,
               has_preload: has_preload,
-              allowed_strs: allowed_strs,
+              allowed: allowed,
               schema: schema,
               action: action
             ] do
         fn params, _actor, scope ->
           opts = [scope: scope]
-
-          opts =
-            if has_preload do
-              Keyword.put(opts, :preload, preload)
-            else
-              opts
-            end
-
+          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
           {include, clean_params} = Map.pop(params, "include", nil)
-
-          opts =
-            if is_list(include) && include != [] do
-              validated =
-                Enum.reduce(include, [], fn assoc_name, acc ->
-                  if assoc_name in allowed_strs do
-                    [String.to_atom(assoc_name) | acc]
-                  else
-                    acc
-                  end
-                end)
-
-              existing = Keyword.get(opts, :preload, [])
-              Keyword.put(opts, :preload, existing ++ Enum.reverse(validated))
-            else
-              opts
-            end
-
+          opts = Ectomancer.Repo.validate_includes(include, allowed, opts)
           opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
-
           apply(Ectomancer.Repo, action, [schema, clean_params, opts])
         end
       end
