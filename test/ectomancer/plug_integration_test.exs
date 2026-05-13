@@ -42,7 +42,24 @@ defmodule Ectomancer.PlugIntegrationTest do
       else
         Application.delete_env(:ectomancer, :actor_from)
       end
+
+      :persistent_term.erase({Anubis.Server.Supervisor, TestMCP, :session_config})
     end)
+
+    # Anubis 1.5.0 requires session_config to be set in persistent_term
+    # before the plug can be called
+    :persistent_term.put(
+      {Anubis.Server.Supervisor, TestMCP, :session_config},
+      %{
+        server_module: TestMCP,
+        registry_mod: Anubis.Registry.Swarm,
+        transport: [layer: :streamable_http, name: :mcp_test_transport],
+        session_idle_timeout: :timer.minutes(30),
+        timeout: 30_000,
+        task_supervisor: TestMCP.TaskSupervisor,
+        task_store: [adapter: Anubis.Server.TaskStore.Default, name: TestMCP.TaskStore]
+      }
+    )
 
     :ok
   end
