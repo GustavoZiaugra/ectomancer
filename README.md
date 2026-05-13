@@ -1,18 +1,28 @@
 # Ectomancer
 
-[![CI](https://github.com/GustavoZiaugra/ectomancer/workflows/CI/badge.svg)](https://github.com/GustavoZiaugra/ectomancer/actions?query=workflow%3ACI) [![Hex.pm](https://img.shields.io/hexpm/v/ectomancer.svg)](https://hex.pm/packages/ectomancer) [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/ectomancer)
+[![CI](https://github.com/GustavoZiaugra/ectomancer/workflows/CI/badge.svg)](https://github.com/GustavoZiaugra/ectomancer/actions?query=workflow%3ACI)
+[![Hex.pm](https://img.shields.io/hexpm/v/ectomancer)](https://hex.pm/packages/ectomancer)
+[![Hex Docs](https://img.shields.io/badge/docs-hexpm-blue)](https://hexdocs.pm/ectomancer)
+[![Downloads](https://img.shields.io/hexpm/dt/ectomancer)](https://hex.pm/packages/ectomancer)
+[![License](https://img.shields.io/hexpm/l/ectomancer)](https://github.com/GustavoZiaugra/ectomancer/blob/main/LICENSE)
 
-> Add an AI brain to your Phoenix app in one afternoon.
+**Auto-generate MCP tools from your Ecto schemas — your Phoenix app, now conversationally operable by Claude and any LLM.**
 
-**Ectomancer** automatically exposes your Phoenix/Ecto app as an MCP (Model Context Protocol) server, making it conversationally operable by Claude and other LLMs with minimal configuration.
+Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and turns your database schemas into live MCP tools. Add it to your router, start the server, and your AI assistant can query, create, and update records through natural language — no hand-written tool definitions, no boilerplate.
 
-## What it does
+## Features
 
-Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and provides three killer features:
-
-1. **Auto-generates MCP tools** from your Ecto schemas — no hand-writing tool definitions
-2. **Authorization system** — fine-grained control with inline functions or policy modules
-3. **Threads the current user (actor)** through every tool call automatically — auth just works
+- **Schema → MCP tools** — auto-generates CRUD tools from `expose MyApp.Accounts.User`
+- **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
+- **Authorization system** — inline functions, policy modules, or action-specific rules
+- **Actor threading** — the current user flows through every tool call automatically
+- **Custom tools** — `tool :search_users do ... end` with typed params
+- **Rate limiting** — configurable token bucket per tool or globally
+- **Multi-repo support** — expose schemas from different repos simultaneously
+- **MCP Resources** — schemas auto-register at `ectomancer://schemas/{name}` for data model discovery
+- **Browser playground** — zero-dep HTML client at `priv/ectomancer.html`, no build step
+- **Oban integration** — optional bridge for inspecting queue depth and workers
+- **Interactive installer** — `mix ectomancer.setup` auto-discovers schemas and patches your project
 
 ## Installation
 
@@ -26,70 +36,7 @@ end
 
 ## Quick Start
 
-### Option 1: Interactive Setup (Recommended)
-
-Run the interactive setup wizard that auto-discovers your schemas:
-
-```bash
-mix ectomancer.setup
-```
-
-The wizard will:
-
-1. **Check dependencies** — verifies `ecto` and `plug` are present
-2. **Discover schemas** — scans your project for Ecto schemas via module introspection and file scanning
-3. **Prompt for selection** — lets you choose which schemas to expose as MCP tools
-4. **Configure features** — asks about Oban bridge and tool namespacing
-5. **Generate files** — creates the MCP module and patches `mix.exs`, `config.exs`, and your router
-
-Example session:
-
-```
-$ mix ectomancer.setup
-
-🚀 Setting up Ectomancer...
-   ✓ Required dependencies found
-
-🔍 Scanning for Ecto schemas...
-
-📦 Found 3 schema(s):
-   ✓ MyApp.Accounts.User
-   ✓ MyApp.Blog.Post
-   ✓ MyApp.Blog.Comment
-
-? Select schemas to expose (comma-separated numbers, e.g., 1,2,3)
-> 1,2,3
-? Tool namespace? (e.g., 'MyApp', leave empty for none)
->
-
-📝 Generating MCP module...
-   ✓ Generated MCP module at lib/my_app/mcp.ex
-
-✅ Setup complete!
-```
-
-This generates a ready-to-use MCP module:
-
-```elixir
-defmodule MyApp.MCP do
-  use Ectomancer,
-    name: "my-app-mcp",
-    version: "1.0.0"
-
-  expose MyApp.Accounts.User,
-    actions: [:list, :get, :create, :update, :destroy]
-
-  expose MyApp.Blog.Post,
-    actions: [:list, :get, :create, :update, :destroy]
-
-  expose MyApp.Blog.Comment,
-    actions: [:list, :get, :create, :update, :destroy]
-end
-```
-
-### Option 2: Manual Setup
-
-#### 1. Create your MCP module
+### 1. Create your MCP module
 
 ```elixir
 defmodule MyApp.MCP do
@@ -97,366 +44,139 @@ defmodule MyApp.MCP do
     name: "myapp-mcp",
     version: "0.1.0"
 
-  # Expose Ecto schemas as MCP tools
   expose MyApp.Accounts.User,
     actions: [:list, :get, :create, :update]
 
-  # Custom tools with authorization
-  tool :send_password_reset do
-    description "Send a password reset email to a user"
-    param :email, :string, required: true
-    
-    authorize fn actor, _action ->
-      actor != nil  # Must be authenticated
-    end
+  expose MyApp.Blog.Post,
+    actions: [:list, :get]
 
-    handle fn %{"email" => email}, actor ->
-      MyApp.Accounts.send_reset_email(email, actor)
-      {:ok, %{sent: true}}
+  tool :search_users do
+    description "Search users by email"
+    param :query, :string, required: true
+    param :limit, :integer
+
+    handle fn %{"query" => q, "limit" => l}, _actor ->
+      {:ok, MyApp.Accounts.search_users(q, limit: l || 10)}
     end
   end
 end
 ```
 
-#### 2. Add to your Application supervisor
+### 2. Start the MCP server
+
+Add to your Application supervisor:
 
 ```elixir
-defmodule MyApp.Application do
-  use Application
+children = [
+  # ... other children ...
+  {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+  MyAppWeb.Endpoint
+]
+```
 
-  def start(_type, _args) do
-    children = [
-      # ... other children ...
-      
-      # Start Anubis MCP server with your module
-      {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
-      
-      MyAppWeb.Endpoint
-    ]
+### 3. Mount in your router
 
-    Supervisor.start_link(children, strategy: :one_for_one)
-  end
+```elixir
+scope "/mcp" do
+  pipe_through :api
+  forward "/", Ectomancer.Plug, server: MyApp.MCP
 end
 ```
 
-#### 3. Add the route to your router
+### 4. Configure actor extraction (optional)
 
 ```elixir
-defmodule MyAppWeb.Router do
-  use MyAppWeb, :router
-
-  scope "/mcp" do
-    pipe_through :api
-    forward "/", Ectomancer.Plug, server: MyApp.MCP
-  end
-end
-```
-
-#### 4. Configure Ectomancer (optional)
-
-```elixir
-# config/config.exs
 config :ectomancer,
   repo: MyApp.Repo,
   actor_from: fn conn ->
-    # Extract current user from conn
     conn.assigns.current_user
   end
 ```
 
-## Features
+Done. Claude can now query your database through natural language at `/mcp`.
 
-### Expose Phoenix Routes (New!)
+## Authorization
 
-Auto-discover and expose Phoenix routes as callable MCP tools:
+Three strategies, choose what fits:
 
-```elixir
-defmodule MyApp.MCP do
-  use Ectomancer
+| Style | Example | Use case |
+|-------|---------|----------|
+| **Inline** | `authorize fn actor, _ -> actor.role == :admin end` | Quick rules |
+| **Policy module** | `authorize with: MyApp.Policies.UserPolicy` | Complex logic, reusable |
+| **None** | `authorize :none` | Public endpoints |
 
-  # Expose all routes from your router
-  expose_routes MyAppWeb.Router
-  # Generates: get_users, post_users, get_user, put_user, delete_user, etc.
-  
-  # Filter specific routes
-  expose_routes MyAppWeb.Router, 
-    only: ["/api/users", "/api/posts"],
-    namespace: :api
-  
-  # Filter by HTTP methods
-  expose_routes MyAppWeb.Router, 
-    methods: ["GET", "POST"],
-    except: ["/admin"]
-end
-```
-
-Tool naming:
-- `/users` (GET) → `get_users`
-- `/users/:id` (GET) → `get_user` (singularized)
-- `/users` (POST) → `post_users`
-- `/users/:id` (DELETE) → `delete_user`
-
-### Expose Ecto Schemas
-
-Automatically generate CRUD tools from your schemas:
-
-```elixir
-# Basic usage - exposes all CRUD actions
-expose MyApp.Accounts.User
-
-# Limit actions
-expose MyApp.Blog.Post, actions: [:list, :get]
-
-# Read-only mode (disables create, update, destroy)
-expose MyApp.Blog.Post, readonly: true
-
-# Filter fields
-expose MyApp.Accounts.User, only: [:email, :name]
-expose MyApp.Accounts.User, except: [:password_hash]
-
-# Namespace to avoid collisions
-expose MyApp.Accounts.User, namespace: :accounts
-```
-
-### Custom Tools
-
-Define custom tools with parameters:
-
-```elixir
-tool :search_users do
-  description "Search users by email"
-  param :query, :string, required: true
-  param :limit, :integer
-  
-  handle fn params, _actor ->
-    users = MyApp.Accounts.search_users(params["query"], limit: params["limit"])
-    {:ok, %{users: users}}
-  end
-end
-```
-
-### Authorization
-
-Ectomancer provides flexible authorization with three strategies:
-
-#### 1. Inline Function
-
-Simple authorization with a function:
-
-```elixir
-tool :admin_stats do
-  description "Get admin statistics"
-  
-  authorize fn actor, _action ->
-    actor != nil && actor.role == :admin
-  end
-  
-  handle fn _params, _actor ->
-    {:ok, %{stats: calculate_stats()}}
-  end
-end
-```
-
-#### 2. Policy Module
-
-Complex authorization with reusable policy modules:
-
-```elixir
-defmodule MyApp.Policies.UserPolicy do
-  @behaviour Ectomancer.Authorization.Policy
-  
-  @impl true
-  def authorize(actor, action, _opts) do
-    case action do
-      :list -> :ok  # Public
-      :get when actor != nil -> :ok  # Authenticated only
-      :create when actor.role == :admin -> :ok  # Admin only
-      _ -> {:error, "Unauthorized"}
-    end
-  end
-end
-
-# Use in tool
-tool :user_action do
-  authorize with: MyApp.Policies.UserPolicy
-  # ...
-end
-```
-
-#### 3. Public Access
-
-No authorization required:
-
-```elixir
-tool :public_status do
-  description "Get system status"
-  authorize :none
-  
-  handle fn _params, _actor ->
-    {:ok, %{status: "operational"}}
-  end
-end
-```
-
-### Schema-Level Authorization
-
-Apply authorization to all actions of a schema:
-
-```elixir
-# Global authorization for all actions
-expose MyApp.Accounts.User,
-  actions: [:list, :get, :create],
-  authorize: fn actor, _action -> actor.role == :admin end
-```
-
-### Action-Specific Authorization
-
-Fine-grained control per action:
+Schema-level and action-specific rules work too:
 
 ```elixir
 expose MyApp.Accounts.User,
   actions: [:list, :get, :create, :update],
   authorize: [
-    list: :none,           # Public
-    get: fn actor, _ -> actor != nil end,  # Authenticated
-    create: :admin_only,    # Admin only
-    update: with: MyApp.Policies.UserPolicy  # Policy module
+    list: :none,
+    get: fn actor, _ -> actor != nil end,
+    create: :admin_only,
+    update: with: MyApp.Policies.UserPolicy
   ]
 ```
 
-### Error Handling
+## Configuration
 
-Ectomancer provides structured error responses for better debugging:
-
-#### Changeset Validation Errors
-
-When `create` or `update` operations fail validation, you get detailed error information:
+### Sources
 
 ```elixir
-# Example error response
-{
-  code: -32602,
-  message: "Missing required field(s)",
-  data: {
-    errors: [
-      %{field: "Email", message: "can't be blank"},
-      %{field: "Name", message: "has invalid format"}
-    ],
-    count: 2
-  }
-}
+config :ectomancer, repo: MyApp.Repo
 ```
 
-Error messages are automatically categorized:
-- **presence**: Missing required fields
-- **format**: Invalid format (e.g., email regex)
-- **inclusion**: Value not in allowed set
-- **confirmation**: Confirmation doesn't match
-- **length**: String length issues
-- **comparison**: Numeric comparison failures
-
-#### Database Errors
-
-Common database errors are mapped to descriptive messages:
-
-- `null value in column` → "Missing required parameter: Field Name"
-- `violates foreign key` → "Invalid reference: Related record does not exist"
-- `duplicate key` → "Duplicate value: Record with this value already exists"
-- `not found` → "Resource not found"
-
-### Binary ID / UUID Support
-
-Ectomancer automatically handles binary_id and UUID primary keys:
+### Actor extraction
 
 ```elixir
-defmodule MyApp.Accounts.User do
-  use Ecto.Schema
-  
-  @primary_key {:id, :binary_id, autogenerate: true}
-  schema "users" do
-    field :email, :string
-    # ...
+config :ectomancer,
+  actor_from: fn conn ->
+    case Plug.Conn.get_req_header(conn, "authorization") do
+      ["Bearer " <> token] -> MyApp.Auth.verify_token(token)
+      _ -> {:error, :unauthorized}
+    end
   end
-end
-
-# Works seamlessly with expose
-expose MyApp.Accounts.User  # get_user, create_user, etc. all work with UUIDs
 ```
 
-## Browser Playground
+### Rate limiting
 
-Ectomancer ships with a **standalone browser client** that connects to any running Ectomancer MCP server over SSE — no dependencies, no build step, no npm install.
-
-```bash
-open priv/ectomancer.html
-# or serve it:
-python3 -m http.server 8080
+```elixir
+config :ectomancer, :rate_limits,
+  enabled: true,
+  global: [max_requests: 100, time_window_ms: 60_000],
+  per_tool: [search_users: [max_requests: 10, time_window_ms: 60_000]]
 ```
 
-Features:
-- 🔍 Browse all exposed tools from any connected device
-- ⚡ Call tools with auto-generated argument forms
-- 📋 Copy results as JSON with one click
-- 🌐 Works with any MCP server that supports SSE transport
-- 🎨 Dark theme, responsive layout
+### Multi-repo
 
-## What Claude gains access to
+```elixir
+expose MyApp.OtherSchema, repo: MyApp.ReplicaRepo
+```
 
-Once connected, Claude can:
+## Pages
 
-- Query data in natural language ("show me users who signed up this week")
-- Run multi-step workflows ("create account, assign plan, send welcome email")
-- Give support agents a conversational admin interface
-- Serve as a lightweight BI layer over your data
-- Inspect queue depth and background workers (with Oban integration)
+| Path | Description |
+|------|-------------|
+| `/mcp` | MCP endpoint (SSE + JSON-RPC) |
+
+Open `priv/ectomancer.html` in a browser for a visual playground — browse tools, fill params, call them, and inspect results. No build step, no npm install, no dependencies.
 
 ## Documentation
 
 - [HexDocs](https://hexdocs.pm/ectomancer)
-- [GitHub Pages](https://gustavoZiaugra.github.io/ectomancer) — auto-built from main
-- Full documentation and examples at [GitHub](https://github.com/GustavoZiaugra/ectomancer)
+- [GitHub Pages](https://gustavoZiaugra.github.io/ectomancer)
+- [GitHub](https://github.com/GustavoZiaugra/ectomancer)
 
 ## Testing
 
-Ectomancer includes comprehensive test coverage:
-
-- **398 tests** covering all features
-- **35 authorization-specific tests**
-- **16 changeset error mapping tests**
-- **6 read-only mode tests**
-- **37 installer/setup tests** (unit + integration)
-- Full integration tested with Phoenix apps
-- Zero compiler warnings
-- Full Credo and Dialyzer compliance
-
-Run tests:
 ```bash
 mix test
 ```
 
-## Status
+426 tests covering all features. Zero compiler warnings, full Credo and Dialyzer compliance.
 
-This project is in active development.
-
-**Phase 4 (Setup & Deployment) is complete**, including:
-- ✅ Interactive setup tool (`mix ectomancer.setup`)
-- ✅ Auto-discovery of Ecto schemas
-- ✅ Automatic configuration of project files
-
-**Phase 3 (Power Features) is complete**, including:
-- ✅ Phoenix route introspection via `expose_routes`
-- ✅ Auto-generation of tools from Phoenix router routes
-- ✅ Smart tool naming with path parameter handling
-- ✅ Route filtering and namespace support
-- ✅ Optional Oban bridge for job queue management
-
-**Phase 2 (Authorization) is complete**, including:
-- ✅ Authorization system with inline functions, policy modules, and action-specific rules
-- ✅ Read-only mode for schemas
-- ✅ Ecto changeset error mapping to MCP error responses
-
-Current version: 1.2.1
+Current version: **1.2.1**
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT
