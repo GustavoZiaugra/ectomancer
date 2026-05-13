@@ -24,6 +24,30 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Oban integration** — optional bridge for inspecting queue depth and workers
 - **Interactive installer** — `mix ectomancer.setup` auto-discovers schemas and patches your project
 
+## Demo
+
+Watch Ectomancer in action — a full Phoenix app with User, Post, and Comment schemas exposed as MCP tools, running on the Streamable HTTP transport.
+
+[![asciicast](https://asciinema.org/a/DUbHClUUK8kTkff7.svg)](https://asciinema.org/a/DUbHClUUK8kTkff7)
+
+*Click the image above to watch the interactive terminal demo.*
+
+The demo shows:
+- **3 Ecto schemas** → **15 MCP tools** (list, get, create, update, destroy) with zero boilerplate
+- **Advanced filtering** — `list_posts(title_contains: "hello")` with automatic LIKE operators
+- **Association support** — create posts linked to users through MCP tool calls
+- **Real-time interaction** — query, create, and update records conversationally
+
+Try it yourself:
+
+```bash
+git clone https://github.com/GustavoZiaugra/ectomancer_demo
+cd ectomancer_demo
+mix setup
+mix phx.server
+# Connect your MCP client to http://localhost:4000/mcp
+```
+
 ## Installation
 
 ```elixir
