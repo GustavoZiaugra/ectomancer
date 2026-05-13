@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-13
+
+### Fixed
+- **Hex publish compatibility** — Replaced `inflex` (GitHub dep, blocked hex.publish) with
+  `plurality` (Hex dep) for route name singularization. Plurality is a modern, zero-regex
+  inflection library with verified accuracy across 80k+ noun pairs.
+
+### Changed
+- `mix.exs` dependency: `inflex` → `plurality ~> 0.2`
+- `RouteIntrospection.singularize/1` now calls `Plurality.singularize/1` directly
+
 ## [1.2.0] - 2026-05-13
 
 ### Added
@@ -254,7 +265,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v1.0.0

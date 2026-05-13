@@ -455,7 +455,7 @@ This project is in active development.
 - ✅ Read-only mode for schemas
 - ✅ Ecto changeset error mapping to MCP error responses
 
-Current version: 1.2.0
+Current version: 1.2.1
 
 ## License
 
