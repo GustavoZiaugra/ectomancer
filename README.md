@@ -173,7 +173,9 @@ Open `priv/ectomancer.html` in a browser for a visual playground — browse tool
 mix test
 ```
 
-426 tests covering all features, including authorization, error mapping, read-only mode, route introspection, and the interactive installer. Zero compiler warnings, full Credo and Dialyzer compliance.
+426 tests covering all features. Zero compiler warnings, full Credo and Dialyzer compliance.
+
+Current version: **1.2.1**
 
 ## License
 

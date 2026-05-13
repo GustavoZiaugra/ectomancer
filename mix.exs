@@ -2,7 +2,7 @@ defmodule Ectomancer.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GustavoZiaugra/ectomancer"
-  @version "1.2.0"
+  @version "1.2.1"
 
   def project do
     [
@@ -71,7 +71,7 @@ defmodule Ectomancer.MixProject do
   defp deps do
     [
       # MCP Server Implementation (fork of Hermes, more actively maintained)
-      {:anubis_mcp, "~> 0.17"},
+      {:anubis_mcp, "~> 1.5"},
 
       # JSON handling
       {:jason, "~> 1.4"},
