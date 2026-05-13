@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-13
+
 ### Added
 - **MCP Resources for schema discovery** — Each `expose`d schema now automatically registers an MCP resource at `ectomancer://schemas/{name}` returning full schema metadata (fields, types, associations, primary key, available actions). A top-level `ectomancer://schemas` resource lists all registered schemas. Opt-out per schema with `resource: false`. (Closes #56)
 - **Dynamic association preloading** — New `preloadable` option for `expose` allows LLMs to dynamically request associated records via an `include` parameter on `list` and `get` tools. Supports `preloadable: true` (all associations) or `preloadable: [:posts, :comments]` (specific). Requested includes are validated against allowed associations. (Closes #57)
@@ -21,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling now returns structured `{:error, %{code:, message:, details:}}` tuples consistently.
 
 ### Testing
-- **398 tests** (up from 260), all passing
+- **426 tests** (up from 260), all passing
+- 28 new tests: 19 for MCP Resources, 9 for dynamic preloading
 - 9 new rate limiter tests
 - Validated multi-repo integration with secondary Phoenix app (SQLite)
 
@@ -251,7 +254,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v1.0.0
 [0.1.0-rc.4]: https://github.com/GustavoZiaugra/ectomancer/releases/tag/v0.1.0-rc.4

@@ -19,7 +19,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and p
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 1.1"}
+    {:ectomancer, "~> 1.2"}
   ]
 end
 ```
@@ -455,7 +455,7 @@ This project is in active development.
 - ✅ Read-only mode for schemas
 - ✅ Ecto changeset error mapping to MCP error responses
 
-Current version: 1.1.0
+Current version: 1.2.0
 
 ## License
 
