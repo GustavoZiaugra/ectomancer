@@ -242,8 +242,18 @@ if Code.ensure_loaded?(Ecto) do
         soft_delete: soft_delete,
         field_authorize: Keyword.get(opts, :field_authorize),
         repo: Keyword.get(opts, :repo),
-        resource: Keyword.get(opts, :resource, true)
+        resource: Keyword.get(opts, :resource, true),
+        preloadable: resolve_preloadable(introspection, opts)
       }
+    end
+
+    defp resolve_preloadable(_introspection, opts) do
+      case Keyword.get(opts, :preloadable) do
+        nil -> false
+        false -> false
+        true -> :all
+        assocs when is_list(assocs) -> assocs
+      end
     end
 
     defp resolve_soft_delete(schema, opts) do
@@ -477,22 +487,32 @@ if Code.ensure_loaded?(Ecto) do
       repo_module = config.repo
       preload = config.preload
       has_preload = action in [:list, :get] and preload != []
+      has_preloadable = action in [:list, :get] and config.preloadable != false
 
       base_handler =
-        quote bind_quoted: [
-                repo_module: repo_module,
-                preload: preload,
-                has_preload: has_preload,
-                schema: config.schema,
-                action: action
-              ] do
-          fn params, _actor, scope ->
-            opts = [scope: scope]
-            opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
-            opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
+        cond do
+          has_preloadable and config.preloadable == :all ->
+            generate_handler_with_all_preloadable(
+              repo_module,
+              preload,
+              has_preload,
+              config.introspection,
+              config.schema,
+              action
+            )
 
-            apply(Ectomancer.Repo, action, [schema, params, opts])
-          end
+          has_preloadable and is_list(config.preloadable) ->
+            generate_handler_with_specific_preloadable(
+              repo_module,
+              preload,
+              has_preload,
+              config.preloadable,
+              config.schema,
+              action
+            )
+
+          true ->
+            generate_simple_handler(repo_module, preload, has_preload, config.schema, action)
         end
 
       handler =
@@ -509,6 +529,80 @@ if Code.ensure_loaded?(Ecto) do
           unquote(params)
           unquote(auth_block)
           handle(unquote(handler))
+        end
+      end
+    end
+
+    defp generate_simple_handler(repo_module, preload, has_preload, schema, action) do
+      quote bind_quoted: [
+              repo_module: repo_module,
+              preload: preload,
+              has_preload: has_preload,
+              schema: schema,
+              action: action
+            ] do
+        fn params, _actor, scope ->
+          opts = [scope: scope]
+          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
+
+          apply(Ectomancer.Repo, action, [schema, params, opts])
+        end
+      end
+    end
+
+    defp generate_handler_with_all_preloadable(
+           repo_module,
+           preload,
+           has_preload,
+           introspection,
+           schema,
+           action
+         ) do
+      assoc_names = Enum.map(introspection.associations, &Atom.to_string(&1.field))
+
+      quote bind_quoted: [
+              repo_module: repo_module,
+              preload: preload,
+              has_preload: has_preload,
+              assoc_names: assoc_names,
+              schema: schema,
+              action: action
+            ] do
+        fn params, _actor, scope ->
+          opts = [scope: scope]
+          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+          {include, clean_params} = Map.pop(params, "include", nil)
+          opts = Ectomancer.Repo.validate_includes(include, :all, opts)
+          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
+          apply(Ectomancer.Repo, action, [schema, clean_params, opts])
+        end
+      end
+    end
+
+    defp generate_handler_with_specific_preloadable(
+           repo_module,
+           preload,
+           has_preload,
+           allowed,
+           schema,
+           action
+         ) do
+      quote bind_quoted: [
+              repo_module: repo_module,
+              preload: preload,
+              has_preload: has_preload,
+              allowed: allowed,
+              schema: schema,
+              action: action
+            ] do
+        fn params, _actor, scope ->
+          opts = [scope: scope]
+          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+          {include, clean_params} = Map.pop(params, "include", nil)
+          opts = Ectomancer.Repo.validate_includes(include, allowed, opts)
+          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
+          apply(Ectomancer.Repo, action, [schema, clean_params, opts])
         end
       end
     end
@@ -614,6 +708,7 @@ if Code.ensure_loaded?(Ecto) do
             param(:limit, :integer)
             param(:offset, :integer)
             param(:include_deleted, :boolean)
+            unquote(include_param(config.preloadable))
           end
         else
           quote do
@@ -621,6 +716,7 @@ if Code.ensure_loaded?(Ecto) do
             param(:order_dir, :string)
             param(:limit, :integer)
             param(:offset, :integer)
+            unquote(include_param(config.preloadable))
           end
         end
 
@@ -644,10 +740,12 @@ if Code.ensure_loaded?(Ecto) do
         quote do
           param(unquote(pk_field), unquote(pk_type), required: true)
           param(:include_deleted, :boolean)
+          unquote(include_param(config.preloadable))
         end
       else
         quote do
           param(unquote(pk_field), unquote(pk_type), required: true)
+          unquote(include_param(config.preloadable))
         end
       end
     end
@@ -735,6 +833,14 @@ if Code.ensure_loaded?(Ecto) do
 
     defp suffix_param_type("in", _type), do: :list
     defp suffix_param_type(_suffix, type), do: get_ecto_type_for_param(type)
+
+    defp include_param(false), do: nil
+
+    defp include_param(_preloadable) do
+      quote do
+        param(:include, :list)
+      end
+    end
 
     defp build_param_block(fields, types) do
       fields

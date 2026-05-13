@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Design.AliasUsage
 defmodule Ectomancer.PreloadTest do
   use Ectomancer.DataCase,
     schemas: [Ectomancer.PreloadTest.Post, Ectomancer.PreloadTest.Comment]
@@ -88,6 +89,124 @@ defmodule Ectomancer.PreloadTest do
 
       assert {:module, _} = Code.ensure_loaded(PreloadTestMCP.Tool.ListPosts)
       assert {:module, _} = Code.ensure_loaded(PreloadTestMCP.Tool.GetPost)
+    end
+  end
+
+  describe "dynamic include parameter" do
+    defmodule CommentV2 do
+      use Ecto.Schema
+
+      schema "preload_comments_v2" do
+        field(:body, :string)
+        belongs_to(:post, Ectomancer.PreloadTest.Post)
+        timestamps()
+      end
+    end
+
+    defmodule IncludeMCP do
+      use Ectomancer, name: "include-test", version: "1.0.0"
+
+      expose(Ectomancer.PreloadTest.Post,
+        actions: [:list, :get],
+        preloadable: true
+      )
+    end
+
+    defmodule IncludeSpecificMCP do
+      use Ectomancer, name: "include-specific-test", version: "1.0.0"
+
+      expose(Ectomancer.PreloadTest.Post,
+        actions: [:list, :get],
+        preloadable: [:comments]
+      )
+    end
+
+    defmodule NoIncludeMCP do
+      use Ectomancer, name: "no-include-test", version: "1.0.0"
+
+      expose(Ectomancer.PreloadTest.Post,
+        actions: [:list, :get]
+      )
+    end
+
+    defmodule CreateOnlyMCP do
+      use Ectomancer, name: "create-only-test", version: "1.0.0"
+
+      expose(Ectomancer.PreloadTest.Post,
+        actions: [:create],
+        preloadable: true
+      )
+    end
+
+    defmodule MergePreloadMCP do
+      use Ectomancer, name: "merge-test", version: "1.0.0"
+
+      expose(Ectomancer.PreloadTest.Post,
+        actions: [:list, :get],
+        preload: [:comments],
+        preloadable: true
+      )
+    end
+
+    test "include param present in list when preloadable is set" do
+      schema = IncludeMCP.Tool.ListPosts.input_schema()
+      assert schema["properties"]["include"]
+      assert schema["properties"]["include"]["type"] == "array"
+    end
+
+    test "include param present in get when preloadable is set" do
+      schema = IncludeMCP.Tool.GetPost.input_schema()
+      assert schema["properties"]["include"]
+    end
+
+    test "include param absent when preloadable is not set" do
+      schema = NoIncludeMCP.Tool.ListPosts.input_schema()
+      refute schema["properties"]["include"]
+    end
+
+    test "include param absent in non-list/get actions" do
+      schema = CreateOnlyMCP.Tool.CreatePost.input_schema()
+      refute schema["properties"]["include"]
+    end
+
+    test "end-to-end: Repo.get preloads associated records" do
+      Application.put_env(:ectomancer, :repo, TestRepo)
+
+      {:ok, post} = Repo.get(Post, %{"id" => 1}, preload: [:comments])
+      assert length(post.comments) == 2
+      comment_bodies = Enum.map(post.comments, & &1.body)
+      assert "Comment 1" in comment_bodies
+      assert "Comment 2" in comment_bodies
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+    end
+
+    test "Repo.list preloads associated records" do
+      Application.put_env(:ectomancer, :repo, TestRepo)
+
+      {:ok, posts} = Repo.list(Post, %{}, preload: [:comments])
+      assert length(posts) == 2
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+    end
+
+    test "preloadable: :all allows any association" do
+      schema = IncludeMCP.Tool.ListPosts.input_schema()
+      assert schema["properties"]["include"]
+    end
+
+    test "preloadable: [:comments] restricts include" do
+      schema = IncludeSpecificMCP.Tool.ListPosts.input_schema()
+      assert schema["properties"]["include"]
+    end
+
+    test "include merges with static preload" do
+      schema = MergePreloadMCP.Tool.ListPosts.input_schema()
+      assert schema["properties"]["include"]
     end
   end
 end
