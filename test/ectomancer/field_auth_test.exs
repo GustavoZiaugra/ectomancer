@@ -31,9 +31,10 @@ defmodule Ectomancer.FieldAuthTest do
     expose(User,
       actions: [:list, :get],
       field_authorize: fn actor, field ->
-        cond do
-          field in [:password_hash, :salary] -> actor.role == :admin
-          true -> true
+        if field in [:password_hash, :salary] do
+          actor.role == :admin
+        else
+          true
         end
       end
     )

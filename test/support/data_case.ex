@@ -8,6 +8,8 @@ defmodule Ectomancer.DataCase do
 
   use ExUnit.CaseTemplate
 
+  @compile {:no_warn_undefined, {Ectomancer.TestRepo, :insert_all, 3}}
+
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
   alias Ectomancer.TestRepo
@@ -96,7 +98,7 @@ defmodule Ectomancer.DataCase do
           attrs
       end
 
-    {1, _} = TestRepo.insert_all(schema_module, [attrs])
+    {1, _} = TestRepo.insert_all(schema_module, [attrs], [])
     :ok
   end
 

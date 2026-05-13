@@ -492,21 +492,7 @@ if Code.ensure_loaded?(Ecto) do
       handler =
         if config.field_authorize do
           field_auth_fn = config.field_authorize
-
-          quote do
-            fn params, actor, scope ->
-              inner = unquote(base_handler)
-              result = inner.(params, actor, scope)
-
-              case result do
-                {:ok, data} ->
-                  {:ok, Ectomancer.FieldAuth.filter_fields(data, actor, unquote(field_auth_fn))}
-
-                other ->
-                  other
-              end
-            end
-          end
+          wrap_with_field_auth(base_handler, field_auth_fn)
         else
           base_handler
         end
@@ -517,6 +503,16 @@ if Code.ensure_loaded?(Ecto) do
           unquote(params)
           unquote(auth_block)
           handle(unquote(handler))
+        end
+      end
+    end
+
+    defp wrap_with_field_auth(base_handler, field_auth_fn) do
+      quote do
+        fn params, actor, scope ->
+          with {:ok, data} <- unquote(base_handler).(params, actor, scope) do
+            {:ok, Ectomancer.FieldAuth.filter_fields(data, actor, unquote(field_auth_fn))}
+          end
         end
       end
     end

@@ -1,4 +1,5 @@
 defmodule Ectomancer.SoftDeleteTest do
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
   use Ectomancer.DataCase,
     schemas: [
       Ectomancer.SoftDeleteTest.Post,
@@ -75,7 +76,7 @@ defmodule Ectomancer.SoftDeleteTest do
 
     test "works combined with filters" do
       {:ok, posts} = Repo.list(Post, %{"title" => "Deleted"})
-      assert length(posts) == 0
+      assert posts == []
     end
 
     test "filters with include_deleted combined" do
@@ -116,14 +117,14 @@ defmodule Ectomancer.SoftDeleteTest do
 
       # Both records are now soft-deleted — list returns none
       {:ok, posts} = Repo.list(Post, %{})
-      assert length(posts) == 0
+      assert posts == []
     end
 
     test "still hard-deletes schemas without soft-delete" do
       assert {:ok, _} = Repo.destroy(NoSoftDeletePost, %{"id" => 1})
 
       {:ok, posts} = Repo.list(NoSoftDeletePost, %{})
-      assert length(posts) == 0
+      assert posts == []
     end
   end
 

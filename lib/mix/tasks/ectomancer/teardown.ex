@@ -120,24 +120,27 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     case File.read("mix.exs") do
       {:ok, content} ->
         if String.contains?(content, "{:ectomancer,") do
-          # Remove the line containing the ectomancer dependency (with trailing comma)
-          updated =
-            content
-            |> String.replace(~r/\s*\{:ectomancer,\s*"[^"]*"\s*},?\s*\n/, "\n")
-            |> String.replace(~r/\s*\{:ectomancer,\s*"[^"]*"\s*},?/, "")
-
-          if updated != content do
-            File.write!("mix.exs", updated)
-            {:ok, "Removed Ectomancer dependency from mix.exs"}
-          else
-            :error
-          end
+          remove_mix_dependency_content(content)
         else
           :not_found
         end
 
       _ ->
         :error
+    end
+  end
+
+  defp remove_mix_dependency_content(content) do
+    updated =
+      content
+      |> String.replace(~r/\s*\{:ectomancer,\s*"[^"]*"\s*},?\s*\n/, "\n")
+      |> String.replace(~r/\s*\{:ectomancer,\s*"[^"]*"\s*},?/, "")
+
+    if updated != content do
+      File.write!("mix.exs", updated)
+      {:ok, "Removed Ectomancer dependency from mix.exs"}
+    else
+      :error
     end
   end
 
@@ -156,28 +159,31 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     case File.read(path) do
       {:ok, content} ->
         if String.contains?(content, "config :ectomancer,") do
-          # Remove the entire Ectomancer config block (comment + config lines)
-          updated =
-            content
-            |> String.replace(
-              ~r/\n\s*# Ectomancer MCP Server Configuration\n\s*config :ectomancer,\n\s*repo: [^\n]+\n*/,
-              "\n"
-            )
-            |> String.trim()
-            |> Kernel.<>("\n")
-
-          if updated != content do
-            File.write!(path, updated)
-            {:ok, "Removed Ectomancer config from config/config.exs"}
-          else
-            :error
-          end
+          remove_ectomancer_config_content(path, content)
         else
           :not_found
         end
 
       _ ->
         :error
+    end
+  end
+
+  defp remove_ectomancer_config_content(path, content) do
+    updated =
+      content
+      |> String.replace(
+        ~r/\n\s*# Ectomancer MCP Server Configuration\n\s*config :ectomancer,\n\s*repo: [^\n]+\n*/,
+        "\n"
+      )
+      |> String.trim()
+      |> Kernel.<>("\n")
+
+    if updated != content do
+      File.write!(path, updated)
+      {:ok, "Removed Ectomancer config from config/config.exs"}
+    else
+      :error
     end
   end
 
@@ -198,39 +204,44 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
   end
 
   defp remove_router_route(app_name) do
-    path = router_path(app_name)
-
-    case path do
+    case router_path(app_name) do
       nil ->
         :not_found
 
       path ->
-        case File.read(path) do
-          {:ok, content} ->
-            if String.contains?(content, "Ectomancer.Plug") do
-              # Remove the two-line block: comment line + forward line
-              updated =
-                content
-                |> String.replace(
-                  ~r/\n\s*# Ectomancer MCP\n\s*forward\s+"\/mcp",\s*Ectomancer\.Plug\n*/,
-                  "\n"
-                )
-                |> String.trim_trailing()
-                |> Kernel.<>("\n")
+        remove_router_route_path(path)
+    end
+  end
 
-              if updated != content do
-                File.write!(path, updated)
-                {:ok, "Removed Ectomancer route from #{Path.basename(path)}"}
-              else
-                :error
-              end
-            else
-              :not_found
-            end
-
-          _ ->
-            :error
+  defp remove_router_route_path(path) do
+    case File.read(path) do
+      {:ok, content} ->
+        if String.contains?(content, "Ectomancer.Plug") do
+          remove_router_route_content(path, content)
+        else
+          :not_found
         end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp remove_router_route_content(path, content) do
+    updated =
+      content
+      |> String.replace(
+        ~r/\n\s*# Ectomancer MCP\n\s*forward\s+"\/mcp",\s*Ectomancer\.Plug\n*/,
+        "\n"
+      )
+      |> String.trim_trailing()
+      |> Kernel.<>("\n")
+
+    if updated != content do
+      File.write!(path, updated)
+      {:ok, "Removed Ectomancer route from #{Path.basename(path)}"}
+    else
+      :error
     end
   end
 

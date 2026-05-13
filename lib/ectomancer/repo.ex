@@ -101,26 +101,29 @@ if Code.ensure_loaded?(Ecto) do
       with {:ok, repo} <- get_repo(opts),
            {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
         result = fetch_single_record(repo, schema_module, pk_values, opts)
-
-        case result do
-          {:ok, record} ->
-            sd_field = SchemaIntrospection.soft_delete_field(schema_module)
-
-            if sd_field && Map.get(record, sd_field) && !Map.get(params, "include_deleted", false) do
-              {:error, :not_found}
-            else
-              {:ok, maybe_preload(repo, record, opts)}
-            end
-
-          error ->
-            error
-        end
+        handle_get_result(repo, schema_module, params, result, opts)
       end
     rescue
       Ecto.NoResultsError -> {:error, :not_found}
       Ecto.StaleEntryError -> {:error, :stale_entry}
       DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
       e -> {:error, {:unexpected, "GET failed: #{Exception.message(e)}"}}
+    end
+
+    defp handle_get_result(repo, schema_module, params, result, opts) do
+      case result do
+        {:ok, record} ->
+          sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+          if sd_field && Map.get(record, sd_field) && !Map.get(params, "include_deleted", false) do
+            {:error, :not_found}
+          else
+            {:ok, maybe_preload(repo, record, opts)}
+          end
+
+        error ->
+          error
+      end
     end
 
     @doc """
