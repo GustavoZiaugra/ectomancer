@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP Resources for schema discovery** — Each `expose`d schema now automatically registers an MCP resource at `ectomancer://schemas/{name}` returning full schema metadata (fields, types, associations, primary key, available actions). A top-level `ectomancer://schemas` resource lists all registered schemas. Opt-out per schema with `resource: false`. (Closes #56)
 - **Rate limiting** — Token bucket algorithm with ETS storage. Configurable per-tool and global limits. Opt-in via `config :ectomancer, :rate_limits`.
 - **Multi-repo support** — expose schemas from different repos with `expose User, repo: MyApp.ReplicaRepo`. Falls back to global repo config.
 - **Browser MCP client** — Zero-dependency HTML browser client at `priv/ectomancer.html`. Browse tools, call them, see results. No build step required.
