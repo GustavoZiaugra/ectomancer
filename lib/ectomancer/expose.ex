@@ -189,19 +189,24 @@ if Code.ensure_loaded?(Ecto) do
           generate_tool(action, config, tool_name)
         end)
 
-      # Generate MCP Resource module for schema discovery
-      resource_prefix =
-        if config.namespace,
-          do: "#{config.namespace}_#{config.resource_name}",
-          else: config.resource_name
+      # Generate MCP Resource module for schema discovery (opt-out with resource: false)
+      resource_definitions =
+        if config.resource do
+          resource_prefix =
+            if config.namespace,
+              do: "#{config.namespace}_#{config.resource_name}",
+              else: config.resource_name
 
-      resource_module_name =
-        Module.concat(__CALLER__.module, "Resource.#{Macro.camelize(resource_prefix)}")
+          resource_module_name =
+            Module.concat(__CALLER__.module, "Resource.#{Macro.camelize(resource_prefix)}")
 
-      resource_definition = generate_resource(config, resource_module_name, resource_prefix)
+          [generate_resource(config, resource_module_name, resource_prefix)]
+        else
+          []
+        end
 
       quote do
-        (unquote_splicing(tool_definitions ++ [resource_definition]))
+        (unquote_splicing(tool_definitions ++ resource_definitions))
       end
     end
 
@@ -236,7 +241,8 @@ if Code.ensure_loaded?(Ecto) do
         preload: Keyword.get(opts, :preload, []),
         soft_delete: soft_delete,
         field_authorize: Keyword.get(opts, :field_authorize),
-        repo: Keyword.get(opts, :repo)
+        repo: Keyword.get(opts, :repo),
+        resource: Keyword.get(opts, :resource, true)
       }
     end
 
