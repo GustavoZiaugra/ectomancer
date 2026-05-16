@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `resource/2` macro for defining custom MCP resources, parallel to the existing `tool/2` macro
+  - Static resources (`uri "scheme://path"`) and templated resources (`uri "scheme://{var}"`)
+  - Optional `authorize` block for access control (inline function, policy module, or `:none`)
+  - Configurable `mime_type` (defaults to `"text/plain"`)
+  - Read handler `fn params, actor -> {:ok, content} | {:error, reason} end`
+- Per-schema metadata resources now auto-generated from `expose` alongside existing tools
+- `:resource` option in `expose/2` accepts `false` to opt out of per-schema resource generation
+- 19 new tests for custom resource DSL
+
+### Changed
+- `use Ectomancer` now imports `resource: 2` macro
+- Capabilities updated to include `[:tools, :resources]`
+
 ## [1.2.1] - 2026-05-13
 
 ### Fixed
