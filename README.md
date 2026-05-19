@@ -17,9 +17,10 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Authorization system** — inline functions, policy modules, or action-specific rules
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
+- **Custom resources** — `resource :system_status do ... end` with URI templates, MIME types, and authorization
 - **Rate limiting** — configurable token bucket per tool or globally
 - **Multi-repo support** — expose schemas from different repos simultaneously
-- **MCP Resources** — schemas auto-register at `ectomancer://schemas/{name}` for data model discovery
+- **MCP Resources** — schemas auto-register at `ectomancer://schemas/{name}`, plus custom resources with URI templates, MIME types, and read handlers
 - **Browser playground** — zero-dep HTML client at `priv/ectomancer.html`, no build step
 - **Oban integration** — optional bridge for inspecting queue depth and workers
 - **Interactive installer** — `mix ectomancer.setup` auto-discovers schemas and patches your project
@@ -81,6 +82,16 @@ defmodule MyApp.MCP do
 
     handle fn %{"query" => q, "limit" => l}, _actor ->
       {:ok, MyApp.Accounts.search_users(q, limit: l || 10)}
+    end
+  end
+
+  resource :system_status do
+    description "Current system health metrics"
+    uri "metrics://status"
+    mime_type "application/json"
+
+    read fn _params, _actor ->
+      {:ok, Jason.encode!(%{status: "healthy", uptime: System.uptime()})}
     end
   end
 end
@@ -197,7 +208,7 @@ Open `priv/ectomancer.html` in a browser for a visual playground — browse tool
 mix test
 ```
 
-426 tests covering all features. Zero compiler warnings, full Credo and Dialyzer compliance.
+Zero compiler warnings, full Credo and Dialyzer compliance.
 
 Current version: **1.2.1**
 
