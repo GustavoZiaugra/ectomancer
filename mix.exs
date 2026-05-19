@@ -2,7 +2,7 @@ defmodule Ectomancer.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GustavoZiaugra/ectomancer"
-  @version "1.2.1"
+  @version "1.3.0"
 
   def project do
     [
