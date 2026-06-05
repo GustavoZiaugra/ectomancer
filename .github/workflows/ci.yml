@@ -26,9 +26,13 @@ jobs:
           - elixir: '1.18.4'
             otp: '26.2'
           
-          # Lint and check on latest
+          # Test on next stable
           - elixir: '1.19.1'
             otp: '28.1'
+          
+          # Lint and check on latest
+          - elixir: '1.20.0'
+            otp: '29.0'
             lint: true
 
     steps:
