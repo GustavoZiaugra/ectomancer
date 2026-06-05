@@ -18,7 +18,7 @@ defmodule Ectomancer.MixProject do
       docs: docs(),
       source_url: @source_url,
       homepage_url: @source_url,
-      dialyzer: [plt_add_apps: [:mix]]
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 
