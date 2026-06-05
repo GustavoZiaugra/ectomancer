@@ -106,6 +106,10 @@ if Code.ensure_loaded?(Ecto) do
                auth_handler,
                handler_ast
              ) do
+      has_auth = not is_nil(auth_handler)
+      execute_clause = build_execute_clause(has_auth, handler_ast)
+      auth_clause = build_check_authorization_clause(has_auth, auth_handler)
+
       quote do
         defmodule unquote(module_name) do
           @moduledoc unquote(description)
@@ -125,67 +129,8 @@ if Code.ensure_loaded?(Ecto) do
           # JSON Schema for external clients (string keys, JSON encodable)
           def input_schema, do: unquote(json_schema_for_clients)
 
-          unquote(
-            if auth_handler do
-              quote do
-                def execute(params, frame) do
-                  actor = frame.assigns[:ectomancer_actor]
-
-                  case check_authorization(actor, @action) do
-                    {:ok, :scoped, scope_fn} ->
-                      with :ok <- check_rate_limit(actor, frame) do
-                        handler = unquote(handler_ast)
-                        do_execute(handler, params, scope_fn, actor, frame)
-                      end
-
-                    :ok ->
-                      with :ok <- check_rate_limit(actor, frame) do
-                        handler = unquote(handler_ast)
-                        do_execute(handler, params, nil, actor, frame)
-                      end
-
-                    {:error, reason} ->
-                      error = %Anubis.MCP.Error{
-                        code: -32_001,
-                        message: "Unauthorized: #{reason}",
-                        data: %{}
-                      }
-
-                      {:error, error, frame}
-                  end
-                end
-              end
-            else
-              quote do
-                def execute(params, frame) do
-                  actor = frame.assigns[:ectomancer_actor]
-
-                  with :ok <- check_rate_limit(actor, frame) do
-                    handler = unquote(handler_ast)
-                    do_execute(handler, params, nil, actor, frame)
-                  end
-                end
-              end
-            end
-          )
-
-          unquote(
-            if auth_handler do
-              quote do
-                defp check_authorization(actor, action) do
-                  Ectomancer.Authorization.check(
-                    actor,
-                    action,
-                    handler: unquote(auth_handler)
-                  )
-                end
-              end
-            else
-              quote do
-                defp check_authorization(_actor, _action), do: :ok
-              end
-            end
-          )
+          unquote(execute_clause)
+          unquote(auth_clause)
 
           defp check_rate_limit(actor, frame) do
             case Application.get_env(:ectomancer, :rate_limit) do
@@ -222,9 +167,15 @@ if Code.ensure_loaded?(Ecto) do
           defp do_execute(handler, params, scope, actor, frame) do
             result =
               cond do
-                is_function(handler, 3) -> handler.(params, actor, scope)
-                is_function(handler, 2) -> handler.(params, actor)
-                true -> raise ArgumentError, "Handler must be a function of arity 2 or 3, got: #{inspect(handler)}"
+                is_function(handler, 3) ->
+                  handler.(params, actor, scope)
+
+                is_function(handler, 2) ->
+                  handler.(params, actor)
+
+                true ->
+                  raise ArgumentError,
+                        "Handler must be a function of arity 2 or 3, got: #{inspect(handler)}"
               end
 
             case result do
@@ -255,6 +206,71 @@ if Code.ensure_loaded?(Ecto) do
               {:error, error, frame}
           end
         end
+      end
+    end
+
+    # Helpers to generate conditional clauses for tool modules.
+    # Extracted to keep define_tool_module shallow for Credo.
+
+    defp build_execute_clause(true, handler_ast) do
+      quote do
+        def execute(params, frame) do
+          actor = frame.assigns[:ectomancer_actor]
+
+          case check_authorization(actor, @action) do
+            {:ok, :scoped, scope_fn} ->
+              with :ok <- check_rate_limit(actor, frame) do
+                handler = unquote(handler_ast)
+                do_execute(handler, params, scope_fn, actor, frame)
+              end
+
+            :ok ->
+              with :ok <- check_rate_limit(actor, frame) do
+                handler = unquote(handler_ast)
+                do_execute(handler, params, nil, actor, frame)
+              end
+
+            {:error, reason} ->
+              error = %Anubis.MCP.Error{
+                code: -32_001,
+                message: "Unauthorized: #{reason}",
+                data: %{}
+              }
+
+              {:error, error, frame}
+          end
+        end
+      end
+    end
+
+    defp build_execute_clause(false, handler_ast) do
+      quote do
+        def execute(params, frame) do
+          actor = frame.assigns[:ectomancer_actor]
+
+          with :ok <- check_rate_limit(actor, frame) do
+            handler = unquote(handler_ast)
+            do_execute(handler, params, nil, actor, frame)
+          end
+        end
+      end
+    end
+
+    defp build_check_authorization_clause(true, auth_handler) do
+      quote do
+        defp check_authorization(actor, action) do
+          Ectomancer.Authorization.check(
+            actor,
+            action,
+            handler: unquote(auth_handler)
+          )
+        end
+      end
+    end
+
+    defp build_check_authorization_clause(false, _auth_handler) do
+      quote do
+        defp check_authorization(_actor, _action), do: :ok
       end
     end
 
