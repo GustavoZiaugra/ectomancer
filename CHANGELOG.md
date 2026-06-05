@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Support for Elixir 1.20.0 and OTP 29
+
+### Fixed
+- Elixir 1.20 compatibility:
+  - Removed unreachable `parse_auth_handler(nil)` clause in `Ectomancer.Expose`
+  - Merged `do_execute/5` clauses into single function with runtime arity check in `Ectomancer.Tool`
+  - Eliminated type warnings by conditionally generating authorization and execute code in `Ectomancer.Tool` and `Ectomancer.Resource`
+  - Fixed `Authorization.check/3` spec to include `{:ok, :scoped, fun()}` return type
+  - Updated `test/support` loading to use `elixirc_paths` instead of `Code.require_file`
+  - Fixed oban bridge test to avoid always-false type assertion
+
 ## [1.3.0] - 2026-05-19
 
 ### Added

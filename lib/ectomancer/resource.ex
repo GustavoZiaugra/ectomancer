@@ -155,39 +155,46 @@ defmodule Ectomancer.Resource do
 
         def mime_type, do: unquote(mime_type_str)
 
-        def read(params, frame) do
-          actor = frame.assigns[:ectomancer_actor]
-
-          # Check authorization before executing
-          case check_authorization(actor, @action) do
-            :ok ->
-              handler = unquote(read_handler_ast)
-              do_read(handler, params, actor, frame)
-
-            {:error, reason} ->
-              error = %Anubis.MCP.Error{
-                code: -32_001,
-                message: "Unauthorized: #{reason}",
-                data: %{}
-              }
-
-              {:error, error, frame}
-          end
-        end
-
-        defp check_authorization(actor, action) do
-          auth_handler = unquote(auth_handler)
-
+        unquote(
           if auth_handler do
-            case Ectomancer.Authorization.check(actor, action, handler: auth_handler) do
-              {:ok, _result} -> :ok
-              {:error, reason} -> {:error, reason}
-              :ok -> :ok
+            quote do
+              def read(params, frame) do
+                actor = frame.assigns[:ectomancer_actor]
+
+                case check_authorization(actor, @action) do
+                  :ok ->
+                    handler = unquote(read_handler_ast)
+                    do_read(handler, params, actor, frame)
+
+                  {:error, reason} ->
+                    error = %Anubis.MCP.Error{
+                      code: -32_001,
+                      message: "Unauthorized: #{reason}",
+                      data: %{}
+                    }
+
+                    {:error, error, frame}
+                end
+              end
+
+              defp check_authorization(actor, action) do
+                case Ectomancer.Authorization.check(actor, action, handler: unquote(auth_handler)) do
+                  {:ok, _result} -> :ok
+                  {:error, reason} -> {:error, reason}
+                  :ok -> :ok
+                end
+              end
             end
           else
-            :ok
+            quote do
+              def read(params, frame) do
+                actor = frame.assigns[:ectomancer_actor]
+                handler = unquote(read_handler_ast)
+                do_read(handler, params, actor, frame)
+              end
+            end
           end
-        end
+        )
 
         @dialyzer {:nowarn_function, do_read: 4}
         defp do_read(handler, params, actor, frame) when is_function(handler, 2) do

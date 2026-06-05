@@ -170,8 +170,8 @@ defmodule Ectomancer.ObanBridgeTest do
   end
 
   describe "documentation examples" do
-    test "module has moduledoc" do
-      assert is_binary(@moduledoc) or is_nil(@moduledoc)
+    test "module can be loaded" do
+      assert Code.ensure_loaded?(Ectomancer.ObanBridge)
     end
   end
 end
