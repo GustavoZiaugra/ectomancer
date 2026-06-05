@@ -534,19 +534,26 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp generate_simple_handler(repo_module, preload, has_preload, schema, action) do
-      quote bind_quoted: [
-              repo_module: repo_module,
-              preload: preload,
-              has_preload: has_preload,
-              schema: schema,
-              action: action
-            ] do
+      preload_expr =
+        if has_preload do
+          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
+        else
+          quote do: :ok
+        end
+
+      repo_expr =
+        if repo_module do
+          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
+        else
+          quote do: :ok
+        end
+
+      quote do
         fn params, _actor, scope ->
           opts = [scope: scope]
-          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
-          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
-
-          apply(Ectomancer.Repo, action, [schema, params, opts])
+          unquote(preload_expr)
+          unquote(repo_expr)
+          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
         end
       end
     end
@@ -561,21 +568,28 @@ if Code.ensure_loaded?(Ecto) do
          ) do
       assoc_names = Enum.map(introspection.associations, &Atom.to_string(&1.field))
 
-      quote bind_quoted: [
-              repo_module: repo_module,
-              preload: preload,
-              has_preload: has_preload,
-              assoc_names: assoc_names,
-              schema: schema,
-              action: action
-            ] do
+      preload_expr =
+        if has_preload do
+          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
+        else
+          quote do: :ok
+        end
+
+      repo_expr =
+        if repo_module do
+          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
+        else
+          quote do: :ok
+        end
+
+      quote do
         fn params, _actor, scope ->
           opts = [scope: scope]
-          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+          unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
-          opts = Ectomancer.Repo.validate_includes(include, :all, opts)
-          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
-          apply(Ectomancer.Repo, action, [schema, clean_params, opts])
+          opts = Ectomancer.Repo.validate_includes(include, unquote(assoc_names), opts)
+          unquote(repo_expr)
+          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
         end
       end
     end
@@ -588,21 +602,28 @@ if Code.ensure_loaded?(Ecto) do
            schema,
            action
          ) do
-      quote bind_quoted: [
-              repo_module: repo_module,
-              preload: preload,
-              has_preload: has_preload,
-              allowed: allowed,
-              schema: schema,
-              action: action
-            ] do
+      preload_expr =
+        if has_preload do
+          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
+        else
+          quote do: :ok
+        end
+
+      repo_expr =
+        if repo_module do
+          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
+        else
+          quote do: :ok
+        end
+
+      quote do
         fn params, _actor, scope ->
           opts = [scope: scope]
-          opts = if has_preload, do: Keyword.put(opts, :preload, preload), else: opts
+          unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
-          opts = Ectomancer.Repo.validate_includes(include, allowed, opts)
-          opts = if repo_module, do: Keyword.put(opts, :repo, repo_module), else: opts
-          apply(Ectomancer.Repo, action, [schema, clean_params, opts])
+          opts = Ectomancer.Repo.validate_includes(include, unquote(allowed), opts)
+          unquote(repo_expr)
+          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
         end
       end
     end
@@ -646,7 +667,6 @@ if Code.ensure_loaded?(Ecto) do
 
     defp parse_auth_handler(:none), do: quote(do: authorize(:none))
     defp parse_auth_handler(:public), do: quote(do: authorize(:none))
-    defp parse_auth_handler(nil), do: quote(do: authorize(:none))
 
     defp parse_auth_handler(module) when is_atom(module) do
       quote do

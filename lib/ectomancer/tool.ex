@@ -125,43 +125,67 @@ if Code.ensure_loaded?(Ecto) do
           # JSON Schema for external clients (string keys, JSON encodable)
           def input_schema, do: unquote(json_schema_for_clients)
 
-          def execute(params, frame) do
-            actor = frame.assigns[:ectomancer_actor]
-
-            # Check authorization before executing
-            case check_authorization(actor, @action) do
-              {:ok, :scoped, scope_fn} ->
-                with :ok <- check_rate_limit(actor, frame) do
-                  handler = unquote(handler_ast)
-                  do_execute(handler, params, scope_fn, actor, frame)
-                end
-
-              :ok ->
-                with :ok <- check_rate_limit(actor, frame) do
-                  handler = unquote(handler_ast)
-                  do_execute(handler, params, nil, actor, frame)
-                end
-
-              {:error, reason} ->
-                error = %Anubis.MCP.Error{
-                  code: -32_001,
-                  message: "Unauthorized: #{reason}",
-                  data: %{}
-                }
-
-                {:error, error, frame}
-            end
-          end
-
-          defp check_authorization(actor, action) do
-            auth_handler = unquote(auth_handler)
-
+          unquote(
             if auth_handler do
-              Ectomancer.Authorization.check(actor, action, handler: auth_handler)
+              quote do
+                def execute(params, frame) do
+                  actor = frame.assigns[:ectomancer_actor]
+
+                  case check_authorization(actor, @action) do
+                    {:ok, :scoped, scope_fn} ->
+                      with :ok <- check_rate_limit(actor, frame) do
+                        handler = unquote(handler_ast)
+                        do_execute(handler, params, scope_fn, actor, frame)
+                      end
+
+                    :ok ->
+                      with :ok <- check_rate_limit(actor, frame) do
+                        handler = unquote(handler_ast)
+                        do_execute(handler, params, nil, actor, frame)
+                      end
+
+                    {:error, reason} ->
+                      error = %Anubis.MCP.Error{
+                        code: -32_001,
+                        message: "Unauthorized: #{reason}",
+                        data: %{}
+                      }
+
+                      {:error, error, frame}
+                  end
+                end
+              end
             else
-              :ok
+              quote do
+                def execute(params, frame) do
+                  actor = frame.assigns[:ectomancer_actor]
+
+                  with :ok <- check_rate_limit(actor, frame) do
+                    handler = unquote(handler_ast)
+                    do_execute(handler, params, nil, actor, frame)
+                  end
+                end
+              end
             end
-          end
+          )
+
+          unquote(
+            if auth_handler do
+              quote do
+                defp check_authorization(actor, action) do
+                  Ectomancer.Authorization.check(
+                    actor,
+                    action,
+                    handler: unquote(auth_handler)
+                  )
+                end
+              end
+            else
+              quote do
+                defp check_authorization(_actor, _action), do: :ok
+              end
+            end
+          )
 
           defp check_rate_limit(actor, frame) do
             case Application.get_env(:ectomancer, :rate_limit) do
@@ -195,41 +219,13 @@ if Code.ensure_loaded?(Ecto) do
           # This prevents "clause will never match" warnings when test handlers
           # only return {:ok, _} - the compiler can't track types through this function
           @dialyzer {:nowarn_function, do_execute: 5}
-          defp do_execute(handler, params, scope, actor, frame) when is_function(handler, 3) do
-            result = handler.(params, actor, scope)
-
-            case result do
-              {:ok, data} ->
-                response = %Anubis.Server.Response{
-                  type: :tool,
-                  content: [%{"type" => "text", "text" => inspect(data)}]
-                }
-
-                {:reply, response, frame}
-
-              {:error, reason} ->
-                {code, message, data} = Ectomancer.Tool.format_error(reason)
-                error = %Anubis.MCP.Error{code: code, message: message, data: data}
-                {:error, error, frame}
-            end
-          rescue
-            e ->
-              error = %Anubis.MCP.Error{
-                code: -32_603,
-                message: "Tool execution error: #{Exception.message(e)}",
-                data: %{
-                  error: inspect(e),
-                  stacktrace: Exception.format_stacktrace(__STACKTRACE__)
-                }
-              }
-
-              {:error, error, frame}
-          end
-
-          # Backward compatibility: custom tools with arity 2 (params, actor)
-          @dialyzer {:nowarn_function, do_execute: 4}
-          defp do_execute(handler, params, _scope, actor, frame) when is_function(handler, 2) do
-            result = handler.(params, actor)
+          defp do_execute(handler, params, scope, actor, frame) do
+            result =
+              cond do
+                is_function(handler, 3) -> handler.(params, actor, scope)
+                is_function(handler, 2) -> handler.(params, actor)
+                true -> raise ArgumentError, "Handler must be a function of arity 2 or 3, got: #{inspect(handler)}"
+              end
 
             case result do
               {:ok, data} ->

@@ -61,7 +61,8 @@ defmodule Ectomancer.Authorization do
   When a scope is returned, it is automatically applied to all CRUD queries
   (`list`, `get`, `update`, `destroy`) for that tool call.
   """
-  @spec check(any(), atom(), keyword()) :: :ok | {:error, String.t()}
+  @spec check(any(), atom(), keyword()) ::
+          :ok | {:error, String.t()} | {:ok, :scoped, (term() -> term())}
   def check(actor, action, opts) do
     handler = Keyword.get(opts, :handler)
     parent_auth = Keyword.get(opts, :parent_auth)
