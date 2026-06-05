@@ -10,6 +10,7 @@ defmodule Ectomancer.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       name: "Ectomancer",
       description: "Add an AI brain to your Phoenix app - Auto-expose Ecto schemas as MCP tools",
@@ -20,6 +21,9 @@ defmodule Ectomancer.MixProject do
       dialyzer: [plt_add_apps: [:mix]]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
