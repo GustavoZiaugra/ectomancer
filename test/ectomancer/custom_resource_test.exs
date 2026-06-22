@@ -103,6 +103,30 @@ defmodule Ectomancer.CustomResourceTest do
         end
       end)
     end
+
+    # Resource with unknown error type (non-binary, non-not_found)
+    resource :weird_error do
+      description("Resource with weird errors")
+      uri("errors://weird")
+
+      read(fn params, _actor ->
+        case Map.get(params, "type", "default") do
+          "atom" -> {:error, :unknown_atom}
+          "tuple" -> {:error, {:complex, "error"}}
+          _ -> {:ok, "fine"}
+        end
+      end)
+    end
+
+    # Resource that raises an exception
+    resource :crasher do
+      description("Resource that crashes")
+      uri("errors://crash")
+
+      read(fn _params, _actor ->
+        raise "Intentional crash for testing"
+      end)
+    end
   end
 
   # --- Tests ---
@@ -237,6 +261,35 @@ defmodule Ectomancer.CustomResourceTest do
 
       assert response.type == :resource
       assert [%{"type" => "text", "text" => "all good"}] = response.content
+    end
+
+    test "resource with non-binary, non-not_found error returns generic error" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:error, error, _frame} =
+        ResourceMCP.Resource.WeirdError.read(%{"type" => "atom"}, frame)
+
+      assert error.code == -32_603
+      assert error.message == "Resource read failed"
+    end
+
+    test "resource with tuple error returns generic error" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:error, error, _frame} =
+        ResourceMCP.Resource.WeirdError.read(%{"type" => "tuple"}, frame)
+
+      assert error.code == -32_603
+      assert error.message == "Resource read failed"
+    end
+
+    test "resource read handles exceptions gracefully" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:error, error, _frame} = ResourceMCP.Resource.Crasher.read(%{}, frame)
+
+      assert error.code == -32_603
+      assert error.message =~ "Intentional crash for testing"
     end
   end
 

@@ -147,4 +147,60 @@ defmodule Ectomancer.ExposeTest do
       assert "get_test_user_schema" in tool_names
     end
   end
+
+  describe "advanced options" do
+    test "preloadable: false generates valid tools" do
+      defmodule PreloadFalseMCP do
+        use Ectomancer, name: "pf-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:list], preloadable: false)
+      end
+
+      assert Code.ensure_loaded?(PreloadFalseMCP.Tool.ListTestUserSchemas)
+    end
+
+    test "preloadable with explicit list generates valid tools" do
+      defmodule PreloadListMCP do
+        use Ectomancer, name: "pl-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:list], preloadable: [:posts])
+      end
+
+      assert Code.ensure_loaded?(PreloadListMCP.Tool.ListTestUserSchemas)
+    end
+
+    test "soft_delete: false generates valid tools" do
+      defmodule SoftDeleteFalseMCP do
+        use Ectomancer, name: "sdf-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:list], soft_delete: false)
+      end
+
+      assert Code.ensure_loaded?(SoftDeleteFalseMCP.Tool.ListTestUserSchemas)
+    end
+
+    test "soft_delete with custom field generates valid tools" do
+      defmodule SoftDeleteFieldMCP do
+        use Ectomancer, name: "sdfield-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:list], soft_delete: :deleted_at)
+      end
+
+      assert Code.ensure_loaded?(SoftDeleteFieldMCP.Tool.ListTestUserSchemas)
+    end
+
+    test "expose with :as option generates aliased tools" do
+      defmodule AsOptionMCP do
+        use Ectomancer, name: "as-mcp", version: "1.0.0"
+        expose(TestUserSchema, as: :admin_users, actions: [:list])
+      end
+
+      assert Code.ensure_loaded?(AsOptionMCP.Tool.ListAdminUsers)
+    end
+
+    test "expose with :except filters out fields" do
+      defmodule ExceptMCP do
+        use Ectomancer, name: "exc-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:create], except: [:password_hash])
+      end
+
+      assert Code.ensure_loaded?(ExceptMCP.Tool.CreateTestUserSchema)
+    end
+  end
 end

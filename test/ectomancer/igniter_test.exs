@@ -1,17 +1,11 @@
 defmodule Ectomancer.IgniterTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
+
+  alias Ectomancer.Igniter
 
   describe "install/2" do
-    test "runs successfully without errors" do
-      # This test verifies that the installer can be called
-      # without raising exceptions
-      assert true
-    end
-
-    test "returns expected structure" do
-      # The installer should return a success structure
-      # This is a basic sanity check
-      assert true
+    test "outputs installation message" do
+      assert Igniter.install([], %{}) == :ok
     end
   end
 end

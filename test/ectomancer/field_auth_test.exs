@@ -125,6 +125,23 @@ defmodule Ectomancer.FieldAuthTest do
       user = %User{email: "a@b.com"}
       assert Ectomancer.FieldAuth.filter_fields(user, %{}, nil) == user
     end
+
+    test "invalid auth_fn (not arity-2 function) returns data unchanged" do
+      user = %User{email: "a@b.com"}
+      assert Ectomancer.FieldAuth.filter_fields(user, %{}, fn x -> x end) == user
+      assert Ectomancer.FieldAuth.filter_fields(user, %{}, :not_a_fn) == user
+    end
+
+    test "plain map returns data unchanged" do
+      map = %{email: "a@b.com", secret: "x"}
+      assert Ectomancer.FieldAuth.filter_fields(map, %{}, fn _, _ -> false end) == map
+    end
+
+    test "primitives return data unchanged" do
+      assert Ectomancer.FieldAuth.filter_fields("string", %{}, fn _, _ -> false end) == "string"
+      assert Ectomancer.FieldAuth.filter_fields(42, %{}, fn _, _ -> false end) == 42
+      assert Ectomancer.FieldAuth.filter_fields(nil, %{}, fn _, _ -> false end) == nil
+    end
   end
 
   describe "expose macro with field_authorize" do
