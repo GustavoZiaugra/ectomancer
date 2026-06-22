@@ -157,7 +157,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     print_config_update_results(results)
   end
 
-  defp print_summary(selected_schemas, include_oban, namespace, mcp_path) do
+  @doc false
+  def print_summary(selected_schemas, include_oban, namespace, mcp_path) do
     tool_count = count_tools(selected_schemas)
 
     Mix.shell().info("\n✅ Setup complete!")
@@ -176,7 +177,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     Mix.shell().info("\n💡 Tip: You can modify #{mcp_path} to customize the exposed schemas.")
   end
 
-  defp print_config_update_results(results) do
+  @doc false
+  def print_config_update_results(results) do
     Enum.each(results, fn {file, result} ->
       case result do
         {:ok, message} -> Mix.shell().info("   ✓ #{message}")
@@ -221,7 +223,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end)
   end
 
-  defp parse_selection(input) do
+  @doc false
+  def parse_selection(input) do
     case Integer.parse(input) do
       {num, ""} -> num - 1
       _ -> nil
@@ -256,24 +259,28 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end
   end
 
-  defp count_tools(schemas) do
+  @doc false
+  def count_tools(schemas) do
     Enum.reduce(schemas, 0, fn schema, acc ->
       if Enum.any?(schema.writable_fields), do: acc + 5, else: acc + 2
     end)
   end
 
-  defp get_mcp_module_path(app_name) do
+  @doc false
+  def get_mcp_module_path(app_name) do
     "lib/#{app_name || "my_app"}/mcp.ex"
   end
 
-  defp mcp_module_name(app_name) do
+  @doc false
+  def mcp_module_name(app_name) do
     case app_name do
       nil -> "MyApp.MCP"
       name -> "#{Macro.camelize(name)}.MCP"
     end
   end
 
-  defp detect_app_name do
+  @doc false
+  def detect_app_name do
     case File.read("mix.exs") do
       {:ok, content} ->
         case Regex.run(~r/app:\s*:(\w+)/, content) do
@@ -286,7 +293,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end
   end
 
-  defp find_router_path(app_name) do
+  @doc false
+  def find_router_path(app_name) do
     if app_name do
       [
         "lib/#{app_name}_web/router.ex",

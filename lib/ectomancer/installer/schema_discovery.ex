@@ -113,7 +113,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
 
   # Private functions
 
-  defp detect_app_module_prefix do
+  @doc false
+  def detect_app_module_prefix do
     case File.read("mix.exs") do
       {:ok, content} ->
         case Regex.run(~r/app:\s*:(\w+)/, content) do
@@ -126,22 +127,26 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     end
   end
 
-  defp app_module?(_module, nil), do: true
+  @doc false
+  def app_module?(_module, nil), do: true
 
-  defp app_module?(module, prefix) do
+  @doc false
+  def app_module?(module, prefix) do
     module
     |> Module.split()
     |> List.first()
     |> Kernel.==(prefix)
   end
 
-  defp ecto_schema_module?(module) do
+  @doc false
+  def ecto_schema_module?(module) do
     Code.ensure_loaded?(module) and
       function_exported?(module, :__schema__, 1) and
       !function_exported?(module, :__schema__, 2)
   end
 
-  defp contains_ecto_schema?(file_path) do
+  @doc false
+  def contains_ecto_schema?(file_path) do
     case File.read(file_path) do
       {:ok, content} ->
         String.contains?(content, "use Ecto.Schema") or
@@ -152,7 +157,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     end
   end
 
-  defp extract_schemas_from_file(file_path) do
+  @doc false
+  def extract_schemas_from_file(file_path) do
     with {:ok, content} <- File.read(file_path),
          {:ok, ast} <- Code.string_to_quoted(content) do
       case ast do
@@ -206,7 +212,8 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     _ -> nil
   end
 
-  defp extract_table_from_file(file_path) do
+  @doc false
+  def extract_table_from_file(file_path) do
     file_content = File.read!(file_path)
 
     schema_pattern = ~r/schema\s+["'](\w+)["']\s+do/

@@ -58,7 +58,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     :ok
   end
 
-  defp anything_to_cleanup?(app_name) do
+  @doc false
+  def anything_to_cleanup?(app_name) do
     mcp_path = mcp_module_path(app_name)
 
     File.exists?(mcp_path) ||
@@ -84,7 +85,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
 
   # MCP Module
 
-  defp mcp_module_path(app_name) do
+  @doc false
+  def mcp_module_path(app_name) do
     "lib/#{app_name || "my_app"}/mcp.ex"
   end
 
@@ -109,7 +111,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
 
   # Mix Dependency
 
-  defp has_dependency? do
+  @doc false
+  def has_dependency? do
     case File.read("mix.exs") do
       {:ok, content} -> String.contains?(content, "{:ectomancer,")
       _ -> false
@@ -130,7 +133,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     end
   end
 
-  defp remove_mix_dependency_content(content) do
+  @doc false
+  def remove_mix_dependency_content(content) do
     updated =
       content
       |> String.replace(~r/\s*\{:ectomancer,\s*"[^"]*"\s*},?\s*\n/, "\n")
@@ -146,7 +150,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
 
   # Config
 
-  defp has_config? do
+  @doc false
+  def has_config? do
     case File.read("config/config.exs") do
       {:ok, content} -> String.contains?(content, "config :ectomancer,")
       _ -> false
@@ -169,7 +174,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     end
   end
 
-  defp remove_ectomancer_config_content(path, content) do
+  @doc false
+  def remove_ectomancer_config_content(path, content) do
     updated =
       content
       |> String.replace(
@@ -189,14 +195,16 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
 
   # Router
 
-  defp router_path(app_name) do
+  @doc false
+  def router_path(app_name) do
     if app_name do
       ["lib/#{app_name}_web/router.ex", "lib/#{app_name}/router.ex"]
       |> Enum.find(&File.exists?/1)
     end
   end
 
-  defp has_route?(path) do
+  @doc false
+  def has_route?(path) do
     case File.read(path) do
       {:ok, content} -> String.contains?(content, "Ectomancer.Plug")
       _ -> false
@@ -227,7 +235,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     end
   end
 
-  defp remove_router_route_content(path, content) do
+  @doc false
+  def remove_router_route_content(path, content) do
     updated =
       content
       |> String.replace(
@@ -247,7 +256,8 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
 
   # Helpers
 
-  defp detect_app_name do
+  @doc false
+  def detect_app_name do
     case File.read("mix.exs") do
       {:ok, content} ->
         case Regex.run(~r/app:\s*:(\w+)/, content) do
@@ -260,14 +270,16 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     end
   end
 
-  defp dir_empty?(dir) do
+  @doc false
+  def dir_empty?(dir) do
     case File.ls!(dir) do
       [] -> true
       _ -> false
     end
   end
 
-  defp print_results(results) do
+  @doc false
+  def print_results(results) do
     removed = Enum.count(results, fn {_, v} -> match?({:ok, _}, v) end)
     errors = Enum.count(results, fn {_, v} -> v == :error end)
 

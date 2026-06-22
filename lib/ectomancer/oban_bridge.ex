@@ -91,7 +91,8 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    defp build_tool_name(base_name, namespace) do
+    @doc false
+    def build_tool_name(base_name, namespace) do
       if namespace do
         String.to_atom("#{namespace}_#{base_name}")
       else
@@ -410,25 +411,30 @@ if Code.ensure_loaded?(Oban) do
 
     # Helper functions to work with configured repo
 
-    defp repo do
+    @doc false
+    def repo do
       Application.get_env(:ectomancer, :repo) ||
         raise ArgumentError,
               "Ectomancer repo not configured. Set config :ectomancer, :repo, YourApp.Repo"
     end
 
-    defp repo_all(query) do
+    @doc false
+    def repo_all(query) do
       repo().all(query)
     end
 
-    defp repo_one(query) do
+    @doc false
+    def repo_one(query) do
       repo().one(query)
     end
 
-    defp repo_update_all(query, opts) do
+    @doc false
+    def repo_update_all(query, opts) do
       repo().update_all(query, opts)
     end
 
-    defp repo_delete_all(query) do
+    @doc false
+    def repo_delete_all(query) do
       repo().delete_all(query)
     end
   end

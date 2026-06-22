@@ -397,21 +397,24 @@ if Code.ensure_loaded?(Ecto) do
       |> Enum.into(%{})
     end
 
-    defp cast_param_value(value, :binary_id) when is_binary(value) do
+    @doc false
+    def cast_param_value(value, :binary_id) when is_binary(value) do
       case Ecto.UUID.cast(value) do
         {:ok, uuid} -> uuid
         :error -> value
       end
     end
 
-    defp cast_param_value(value, Ecto.UUID) when is_binary(value) do
+    @doc false
+    def cast_param_value(value, Ecto.UUID) when is_binary(value) do
       case Ecto.UUID.cast(value) do
         {:ok, uuid} -> uuid
         :error -> value
       end
     end
 
-    defp cast_param_value(value, _), do: value
+    @doc false
+    def cast_param_value(value, _), do: value
 
     defp writable_fields(schema_module) do
       introspection = SchemaIntrospection.analyze(schema_module)
@@ -424,7 +427,8 @@ if Code.ensure_loaded?(Ecto) do
 
     @meta_keys ~w(order_by order_dir limit offset include_deleted)
 
-    defp extract_meta_params(params) do
+    @doc false
+    def extract_meta_params(params) do
       {meta, filters} =
         Enum.split_with(params, fn {key, _} -> to_string(key) in @meta_keys end)
 
@@ -447,7 +451,8 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
-    defp parse_filter_key(key) do
+    @doc false
+    def parse_filter_key(key) do
       suffixes = ~w(_gte _gt _lte _lt _contains _icontains _in _not)
 
       Enum.find_value(suffixes, {String.to_atom(key), :eq}, fn suffix ->
@@ -508,7 +513,8 @@ if Code.ensure_loaded?(Ecto) do
 
     defp apply_filter(query, _field, :in, _value), do: query
 
-    defp sanitize_like(value) do
+    @doc false
+    def sanitize_like(value) do
       value
       |> to_string()
       |> String.replace("\\", "\\\\")
@@ -535,14 +541,16 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp parse_order_dir(dir) when is_binary(dir) do
+    @doc false
+    def parse_order_dir(dir) when is_binary(dir) do
       case String.downcase(dir) do
         "desc" -> :desc
         _ -> :asc
       end
     end
 
-    defp parse_order_dir(_), do: :asc
+    @doc false
+    def parse_order_dir(_), do: :asc
 
     defp apply_pagination(query, meta, opts) do
       import Ecto.Query
@@ -557,17 +565,20 @@ if Code.ensure_loaded?(Ecto) do
       |> offset(^offset_val)
     end
 
-    defp parse_int(nil), do: nil
-    defp parse_int(val) when is_integer(val), do: val
-
-    defp parse_int(val) when is_binary(val) do
+    @doc false
+    def parse_int(nil), do: nil
+    @doc false
+    def parse_int(val) when is_integer(val), do: val
+    @doc false
+    def parse_int(val) when is_binary(val) do
       case Integer.parse(val) do
         {int, ""} -> int
         _ -> nil
       end
     end
 
-    defp parse_int(_), do: nil
+    @doc false
+    def parse_int(_), do: nil
 
     @doc """
     Validates dynamic include requests against allowed preloadable associations.
@@ -651,7 +662,8 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     # Cast primary key values based on their Ecto type
-    defp cast_primary_key_value(value, :binary_id) when is_binary(value) do
+    @doc false
+    def cast_primary_key_value(value, :binary_id) when is_binary(value) do
       # binary_id fields need to be cast to Ecto.UUID format
       case Ecto.UUID.cast(value) do
         {:ok, casted} -> casted
@@ -659,7 +671,8 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp cast_primary_key_value(value, :id) when is_binary(value) do
+    @doc false
+    def cast_primary_key_value(value, :id) when is_binary(value) do
       # Integer ID passed as string (from JSON)
       case Integer.parse(value) do
         {int, ""} -> int
@@ -667,7 +680,8 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp cast_primary_key_value(value, Ecto.UUID) when is_binary(value) do
+    @doc false
+    def cast_primary_key_value(value, Ecto.UUID) when is_binary(value) do
       # Explicit UUID type
       case Ecto.UUID.cast(value) do
         {:ok, casted} -> casted
@@ -675,7 +689,8 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp cast_primary_key_value(value, _type), do: value
+    @doc false
+    def cast_primary_key_value(value, _type), do: value
 
     defp build_pk_query(schema_module, pk_values) do
       import Ecto.Query
