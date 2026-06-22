@@ -248,8 +248,10 @@ if Code.ensure_loaded?(Ecto) do
 
     # Private functions
 
-    defp validate_repo(repo_module) when repo_module == __MODULE__, do: nil
-    defp validate_repo(repo_module), do: repo_module
+    @doc false
+    def validate_repo(repo_module) when repo_module == __MODULE__, do: nil
+    @doc false
+    def validate_repo(repo_module), do: repo_module
 
     defp find_repo_in_app({app_name, _, _}) do
       app_module =
