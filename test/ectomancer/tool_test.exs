@@ -201,6 +201,32 @@ defmodule Ectomancer.ToolTest do
       assert Ectomancer.Tool.infer_validation_type(errors) == :other
     end
 
+    test "format_error :not_soft_deletable returns correct error" do
+      {code, message, _data} = Ectomancer.Tool.format_error(:not_soft_deletable)
+      assert code == -32_602
+      assert message =~ "soft-delete"
+    end
+
+    test "format_error with unknown binary reason returns generic error" do
+      {code, message, data} = Ectomancer.Tool.format_error("some random database error")
+      assert code == -32_603
+      assert message == "Tool execution failed"
+      assert data.reason == "some random database error"
+    end
+
+    test "format_error with atom reason returns generic error" do
+      {code, message, data} = Ectomancer.Tool.format_error(:unknown_error)
+      assert code == -32_603
+      assert message == "Tool execution failed"
+      assert data.reason == ":unknown_error"
+    end
+
+    test "format_error with map reason returns generic error" do
+      {code, _message, data} = Ectomancer.Tool.format_error(%{foo: :bar})
+      assert code == -32_603
+      assert data.reason =~ "foo"
+    end
+
     test "changeset errors include field names in structured format" do
       changeset = %Ecto.Changeset{
         errors: [email_address: {"can't be blank", []}],

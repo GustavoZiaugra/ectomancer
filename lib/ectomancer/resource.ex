@@ -297,7 +297,8 @@ defmodule Ectomancer.Resource do
     )
   end
 
-  defp parse_authorize_handler(handler) do
+  @doc false
+  def parse_authorize_handler(handler) do
     case handler do
       :none ->
         nil
@@ -324,7 +325,8 @@ defmodule Ectomancer.Resource do
   end
 
   # Flatten nested __block__ items
-  defp flatten_block_items(items) do
+  @doc false
+  def flatten_block_items(items) do
     Enum.flat_map(items, fn
       {:__block__, _, inner} -> flatten_block_items(inner)
       other -> [other]

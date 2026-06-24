@@ -90,7 +90,7 @@ defmodule Ectomancer.RouteIntrospection do
         cond do
           String.starts_with?(segment, ":") -> nil
           String.starts_with?(segment, "*") -> nil
-          String.contains?(segment, ":") -> String.split(segment, ":")[0]
+          String.contains?(segment, ":") -> String.split(segment, ":") |> hd()
           true -> segment
         end
       end)
@@ -234,7 +234,8 @@ defmodule Ectomancer.RouteIntrospection do
     end
   end
 
-  defp validate_router!(router) do
+  @doc false
+  def validate_router!(router) do
     unless Code.ensure_loaded?(Plug) do
       raise ArgumentError,
             "expose_routes requires Plug to be available. " <>
@@ -298,9 +299,11 @@ defmodule Ectomancer.RouteIntrospection do
     end
   end
 
-  defp build_param_declarations([]), do: quote(do: :ok)
+  @doc false
+  def build_param_declarations([]), do: quote(do: :ok)
 
-  defp build_param_declarations(route_params) do
+  @doc false
+  def build_param_declarations(route_params) do
     route_params
     |> Enum.map(fn {param_name, _param_type} ->
       quote do
@@ -314,7 +317,8 @@ defmodule Ectomancer.RouteIntrospection do
     end
   end
 
-  defp build_route_description(method, path, controller, action, namespace) do
+  @doc false
+  def build_route_description(method, path, controller, action, namespace) do
     base = "HTTP #{method} #{path} - #{Macro.underscore(controller)}##{action}"
 
     if namespace do
@@ -353,22 +357,28 @@ defmodule Ectomancer.RouteIntrospection do
     end
   end
 
-  defp normalize_http_method("*"), do: "GET"
-  defp normalize_http_method(method), do: method
+  @doc false
+  def normalize_http_method("*"), do: "GET"
+  @doc false
+  def normalize_http_method(method), do: method
 
-  defp normalize_params(params) do
+  @doc false
+  def normalize_params(params) do
     for {k, v} <- params, into: %{}, do: {to_string(k), v}
   end
 
-  defp format_controller_result(%Plug.Conn{state: :sent} = conn) do
+  @doc false
+  def format_controller_result(%Plug.Conn{state: :sent} = conn) do
     {:ok, "Status: #{conn.status} - Request processed successfully"}
   end
 
-  defp format_controller_result(%Plug.Conn{} = conn) do
+  @doc false
+  def format_controller_result(%Plug.Conn{} = conn) do
     {:ok, "Status: #{conn.status || 200} - Request processed"}
   end
 
-  defp format_controller_result(result) do
+  @doc false
+  def format_controller_result(result) do
     {:ok, "Status: 200 - Request processed: #{inspect(result)}"}
   end
 
@@ -389,7 +399,8 @@ defmodule Ectomancer.RouteIntrospection do
     %{conn | path_params: path_params}
   end
 
-  defp build_url_with_params(path_template, params) do
+  @doc false
+  def build_url_with_params(path_template, params) do
     path_params =
       path_template
       |> String.split("/", trim: true)

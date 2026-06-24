@@ -230,4 +230,65 @@ defmodule Ectomancer.ResourceTest do
       assert AliasedResourceMCP.Resource.AdminUsers.name() == "admin_users"
     end
   end
+
+  describe "parse_authorize_handler/1" do
+    alias Ectomancer.Resource
+
+    test ":none returns nil" do
+      assert Resource.parse_authorize_handler(:none) == nil
+    end
+
+    test "[with: module] returns module" do
+      assert Resource.parse_authorize_handler(with: TestUser) == TestUser
+    end
+
+    test "{:with, _, [module]} returns module" do
+      assert Resource.parse_authorize_handler({:with, [], [TestUser]}) == TestUser
+    end
+
+    test "fn AST is returned as-is" do
+      fn_ast = {:fn, [], []}
+      assert Resource.parse_authorize_handler(fn_ast) == fn_ast
+    end
+
+    test "capture AST is returned as-is" do
+      cap_ast = {:&, [], []}
+      assert Resource.parse_authorize_handler(cap_ast) == cap_ast
+    end
+
+    test "anonymous function is returned as-is" do
+      fun = fn _, _ -> true end
+      assert Resource.parse_authorize_handler(fun) == fun
+    end
+
+    test "invalid handler raises" do
+      handler = String.to_atom("invalid")
+
+      assert_raise ArgumentError, ~r/Invalid authorization handler/, fn ->
+        Resource.parse_authorize_handler(handler)
+      end
+    end
+  end
+
+  describe "flatten_block_items/1" do
+    alias Ectomancer.Resource
+
+    test "flattens nested __block__ items" do
+      items = [
+        {:__block__, [],
+         [{:uri, [], ["test://uri"]}, {:__block__, [], [{:description, [], ["desc"]}]}]}
+      ]
+
+      result = Resource.flatten_block_items(items)
+
+      assert length(result) == 2
+    end
+
+    test "passes through non-block items" do
+      items = [{:uri, [], ["test://uri"]}, {:description, [], ["desc"]}]
+      result = Resource.flatten_block_items(items)
+
+      assert length(result) == 2
+    end
+  end
 end
