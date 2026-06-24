@@ -1,6 +1,9 @@
+# credo:disable-for-this-file Credo.Check.Design.AliasUsage
 defmodule Ectomancer.ObanBridgeTest do
   use ExUnit.Case, async: false
 
+  alias Ecto.Adapters.SQL
+  alias Ecto.Adapters.SQL.Sandbox
   alias Ectomancer.ObanBridge
 
   # Mock Oban.Job module for testing when Oban is not loaded
@@ -255,7 +258,7 @@ defmodule Ectomancer.ObanBridgeTest do
     setup do
       original_env = Application.get_env(:ectomancer, :repo)
       Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
-      Ecto.Adapters.SQL.Sandbox.checkout(Ectomancer.TestRepo)
+      Sandbox.checkout(Ectomancer.TestRepo)
 
       on_exit(fn ->
         if original_env do
@@ -313,7 +316,7 @@ defmodule Ectomancer.ObanBridgeTest do
     setup do
       original_env = Application.get_env(:ectomancer, :repo)
       Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
-      Ecto.Adapters.SQL.Sandbox.checkout(Ectomancer.TestRepo)
+      Sandbox.checkout(Ectomancer.TestRepo)
 
       Ectomancer.DataCase.create_table_for_schema!(Oban.Job)
 
@@ -336,17 +339,17 @@ defmodule Ectomancer.ObanBridgeTest do
     test "list_queues/0 returns queue stats with jobs" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, inserted_at, scheduled_at)
         VALUES ('default', 'available', '#{now}', '#{now}')
       """)
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, inserted_at, scheduled_at)
         VALUES ('default', 'executing', '#{now}', '#{now}')
       """)
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, inserted_at, scheduled_at)
         VALUES ('mailer', 'available', '#{now}', '#{now}')
       """)
@@ -358,12 +361,12 @@ defmodule Ectomancer.ObanBridgeTest do
     test "get_queue_depth/1 returns stats for a queue" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, inserted_at, scheduled_at)
         VALUES ('default', 'available', '#{now}', '#{now}')
       """)
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, inserted_at, scheduled_at)
         VALUES ('default', 'executing', '#{now}', '#{now}')
       """)
@@ -381,12 +384,12 @@ defmodule Ectomancer.ObanBridgeTest do
     test "list_stuck_jobs/1 returns executing jobs" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, worker, inserted_at, scheduled_at, attempted_at)
         VALUES ('default', 'executing', 'MyWorker', '#{now}', '#{now}', '#{now}')
       """)
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, worker, inserted_at, scheduled_at)
         VALUES ('default', 'available', 'OtherWorker', '#{now}', '#{now}')
       """)
@@ -398,12 +401,12 @@ defmodule Ectomancer.ObanBridgeTest do
     test "list_stuck_jobs/1 filters by queue" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, worker, inserted_at, scheduled_at, attempted_at)
         VALUES ('default', 'executing', 'W1', '#{now}', '#{now}', '#{now}')
       """)
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (queue, state, worker, inserted_at, scheduled_at, attempted_at)
         VALUES ('mailer', 'executing', 'W2', '#{now}', '#{now}', '#{now}')
       """)
@@ -415,13 +418,13 @@ defmodule Ectomancer.ObanBridgeTest do
     test "retry_job/1 retries a discarded job" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (state, queue, worker, inserted_at, scheduled_at)
         VALUES ('discarded', 'default', 'W1', '#{now}', '#{now}')
       """)
 
       %{rows: [[job_id | _]]} =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Ectomancer.TestRepo,
           "SELECT id FROM oban_jobs WHERE state = 'discarded' LIMIT 1"
         )
@@ -433,13 +436,13 @@ defmodule Ectomancer.ObanBridgeTest do
     test "retry_job/1 fails for non-retryable state" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (state, queue, worker, inserted_at, scheduled_at)
         VALUES ('completed', 'default', 'W1', '#{now}', '#{now}')
       """)
 
       %{rows: [[job_id | _]]} =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Ectomancer.TestRepo,
           "SELECT id FROM oban_jobs WHERE state = 'completed' LIMIT 1"
         )
@@ -451,13 +454,13 @@ defmodule Ectomancer.ObanBridgeTest do
     test "cancel_job/1 cancels an available job" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (state, queue, worker, inserted_at, scheduled_at)
         VALUES ('available', 'default', 'W1', '#{now}', '#{now}')
       """)
 
       %{rows: [[job_id | _]]} =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Ectomancer.TestRepo,
           "SELECT id FROM oban_jobs WHERE state = 'available' LIMIT 1"
         )
@@ -469,13 +472,13 @@ defmodule Ectomancer.ObanBridgeTest do
     test "cancel_job/1 fails for completed job" do
       now = DateTime.utc_now() |> DateTime.truncate(:second) |> to_string()
 
-      Ecto.Adapters.SQL.query!(Ectomancer.TestRepo, """
+      SQL.query!(Ectomancer.TestRepo, """
         INSERT INTO oban_jobs (state, queue, worker, inserted_at, scheduled_at)
         VALUES ('completed', 'default', 'W1', '#{now}', '#{now}')
       """)
 
       %{rows: [[job_id | _]]} =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Ectomancer.TestRepo,
           "SELECT id FROM oban_jobs WHERE state = 'completed' LIMIT 1"
         )

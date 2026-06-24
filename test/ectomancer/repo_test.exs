@@ -1,6 +1,7 @@
 defmodule Ectomancer.RepoTest do
   use ExUnit.Case
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Ectomancer.Repo
 
   # Test schema
@@ -143,7 +144,7 @@ defmodule Ectomancer.RepoTest do
 
   describe "CRUD operations with repo" do
     setup do
-      Ecto.Adapters.SQL.Sandbox.checkout(Ectomancer.TestRepo)
+      Sandbox.checkout(Ectomancer.TestRepo)
       Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
       Ectomancer.DataCase.create_table_for_schema!(TestUser)
 
