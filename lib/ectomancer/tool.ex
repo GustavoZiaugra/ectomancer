@@ -144,19 +144,23 @@ if Code.ensure_loaded?(Ecto) do
 
                 key = if per_actor, do: {:actor, actor}, else: :global
 
-                case Ectomancer.RateLimiter.check(max: max, window_ms: window_ms, key: key) do
-                  :ok ->
-                    :ok
+                perform_rate_check(max, window_ms, key, frame)
+            end
+          end
 
-                  {:error, :rate_limited, retry_after} ->
-                    error = %Anubis.MCP.Error{
-                      code: -32_029,
-                      message: "Rate limited. Try again in #{retry_after}ms",
-                      data: %{retry_after_ms: retry_after}
-                    }
+          defp perform_rate_check(max, window_ms, key, frame) do
+            case Ectomancer.RateLimiter.check(max: max, window_ms: window_ms, key: key) do
+              :ok ->
+                :ok
 
-                    {:error, error, frame}
-                end
+              {:error, :rate_limited, retry_after} ->
+                error = %Anubis.MCP.Error{
+                  code: -32_029,
+                  message: "Rate limited. Try again in #{retry_after}ms",
+                  data: %{retry_after_ms: retry_after}
+                }
+
+                {:error, error, frame}
             end
           end
 
