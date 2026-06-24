@@ -210,7 +210,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **1.3.0**
+Current version: **1.3.1**
 
 ## License
 
