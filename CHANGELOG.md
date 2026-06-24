@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-24
+
 ### Added
 - Support for Elixir 1.20.0 and OTP 29
+
+### Changed
+- Updated dependencies to latest compatible versions
 
 ### Fixed
 - Elixir 1.20 compatibility:
@@ -18,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed `Authorization.check/3` spec to include `{:ok, :scoped, fun()}` return type
   - Updated `test/support` loading to use `elixirc_paths` instead of `Code.require_file`
   - Fixed oban bridge test to avoid always-false type assertion
+
+### Testing
+- Increased test coverage to 80%+
 
 ## [1.3.0] - 2026-05-19
 
@@ -293,7 +301,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.1.0...v1.2.0
