@@ -75,6 +75,14 @@ if Code.ensure_loaded?(Plug) do
       }
     end
 
+    @doc """
+    Handles the MCP request by extracting the actor from the connection and
+    delegating to the Anubis StreamableHTTP transport plug.
+
+    Calls `extract_actor/1` to resolve the actor, then either rejects with
+    401 (if `{:error, _}` returned) or stores the actor in
+    `conn.assigns[:ectomancer_actor]` and forwards to Anubis.
+    """
     @impl Plug
     def call(conn, %{anubis_state: anubis_state}) do
       actor = extract_actor(conn)
