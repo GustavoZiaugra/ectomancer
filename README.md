@@ -29,13 +29,13 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 
 Watch Ectomancer in action — a full Phoenix app with User, Post, and Comment schemas exposed as MCP tools, running on the Streamable HTTP transport.
 
-[![asciicast](https://asciinema.org/a/DUbHClUUK8kTkff7.svg)](https://asciinema.org/a/DUbHClUUK8kTkff7)
+![Ectomancer Demo](priv/demo.gif)
 
-*Click the image above to watch the interactive terminal demo.*
+*3 Ecto schemas → 15 MCP tools with zero boilerplate. Replay locally with `asciinema play priv/demo.cast`.*
 
 The demo shows:
 - **3 Ecto schemas** → **15 MCP tools** (list, get, create, update, destroy) with zero boilerplate
-- **Advanced filtering** — `list_posts(title_contains: "hello")` with automatic LIKE operators
+- **Advanced filtering** — `list_posts(title_contains: "MCP")` with automatic LIKE operators
 - **Association support** — create posts linked to users through MCP tool calls
 - **Real-time interaction** — query, create, and update records conversationally
 
