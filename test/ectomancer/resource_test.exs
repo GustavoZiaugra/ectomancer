@@ -262,8 +262,10 @@ defmodule Ectomancer.ResourceTest do
     end
 
     test "invalid handler raises" do
+      handler = String.to_atom("invalid")
+      
       assert_raise ArgumentError, ~r/Invalid authorization handler/, fn ->
-        Resource.parse_authorize_handler(:invalid_value)
+        Resource.parse_authorize_handler(handler)
       end
     end
   end
