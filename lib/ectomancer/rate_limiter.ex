@@ -95,6 +95,7 @@ defmodule Ectomancer.RateLimiter do
           window_ms
         end
 
+      Ectomancer.Telemetry.rate_limited(key, window_ms)
       {:error, :rate_limited, retry_after}
     end
   end
