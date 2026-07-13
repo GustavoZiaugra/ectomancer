@@ -25,8 +25,8 @@ defmodule Ectomancer.TelemetryTest do
     end
   end
 
-  alias TestMCP.Tool.Hello
   alias TestMCP.Tool.Explode
+  alias TestMCP.Tool.Hello
 
   def handle_event(name, measurements, metadata, _config) do
     send(self(), {:telemetry_event, name, measurements, metadata})
