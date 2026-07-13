@@ -8,6 +8,10 @@ defmodule Ectomancer.Igniter do
   """
 
   def install(_args, _options) do
-    IO.puts("Installing Ectomancer...")
+    unless Mix.env() == :test do
+      IO.puts("Installing Ectomancer...")
+    end
+
+    :ok
   end
 end
