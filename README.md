@@ -182,6 +182,36 @@ config :ectomancer, :rate_limits,
   per_tool: [search_users: [max_requests: 10, time_window_ms: 60_000]]
 ```
 
+### Telemetry
+
+Ectomancer emits `:telemetry` events for monitoring, observability, and debugging.
+Events are enabled by default. Disable by setting `telemetry: false`:
+
+```elixir
+config :ectomancer, telemetry: false
+```
+
+**Events emitted:**
+
+| Event | When | Measurements | Metadata |
+|-------|------|-------------|----------|
+| `[:ectomancer, :tool, :start]` | Tool execution begins | `system_time` | `:tool` |
+| `[:ectomancer, :tool, :stop]` | Tool execution ends | `duration` | `:tool` |
+| `[:ectomancer, :tool, :exception]` | Tool handler raises | `duration` | `:tool` |
+| `[:ectomancer, :repo, :start]` | CRUD operation begins | `system_time` | `:action`, `:schema` |
+| `[:ectomancer, :repo, :stop]` | CRUD operation ends | `duration` | `:action`, `:schema` |
+| `[:ectomancer, :repo, :exception]` | Repo operation raises | `duration` | `:action`, `:schema` |
+| `[:ectomancer, :authorization, :denied]` | Auth check fails | (none) | `:actor`, `:action`, `:handler` |
+| `[:ectomancer, :rate_limit, :exceeded]` | Rate limit exceeded | (none) | `:key`, `:window_ms` |
+
+**Example: Attaching a handler**
+
+```elixir
+:telemetry.attach("ectomancer-logger", [:ectomancer, :tool, :stop], fn _name, measurements, metadata, _config ->
+  IO.puts("Tool #{metadata.tool} completed in #{System.convert_time_unit(measurements.duration, :native, :millisecond)}ms")
+end, nil)
+```
+
 ### Multi-repo
 
 ```elixir

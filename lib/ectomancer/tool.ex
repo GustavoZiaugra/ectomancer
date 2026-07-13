@@ -165,33 +165,35 @@ if Code.ensure_loaded?(Ecto) do
           # only return {:ok, _} - the compiler can't track types through this function
           @dialyzer {:nowarn_function, do_execute: 5}
           defp do_execute(handler, params, scope, actor, frame) do
-            result =
-              cond do
-                is_function(handler, 3) ->
-                  handler.(params, actor, scope)
+            Ectomancer.Telemetry.tool_span(@tool_name, fn ->
+              result =
+                cond do
+                  is_function(handler, 3) ->
+                    handler.(params, actor, scope)
 
-                is_function(handler, 2) ->
-                  handler.(params, actor)
+                  is_function(handler, 2) ->
+                    handler.(params, actor)
 
-                true ->
-                  raise ArgumentError,
-                        "Handler must be a function of arity 2 or 3, got: #{inspect(handler)}"
+                  true ->
+                    raise ArgumentError,
+                          "Handler must be a function of arity 2 or 3, got: #{inspect(handler)}"
+                end
+
+              case result do
+                {:ok, data} ->
+                  response = %Anubis.Server.Response{
+                    type: :tool,
+                    content: [%{"type" => "text", "text" => inspect(data)}]
+                  }
+
+                  {:reply, response, frame}
+
+                {:error, reason} ->
+                  {code, message, data} = Ectomancer.Tool.format_error(reason)
+                  error = %Anubis.MCP.Error{code: code, message: message, data: data}
+                  {:error, error, frame}
               end
-
-            case result do
-              {:ok, data} ->
-                response = %Anubis.Server.Response{
-                  type: :tool,
-                  content: [%{"type" => "text", "text" => inspect(data)}]
-                }
-
-                {:reply, response, frame}
-
-              {:error, reason} ->
-                {code, message, data} = Ectomancer.Tool.format_error(reason)
-                error = %Anubis.MCP.Error{code: code, message: message, data: data}
-                {:error, error, frame}
-            end
+            end)
           rescue
             e ->
               error = %Anubis.MCP.Error{

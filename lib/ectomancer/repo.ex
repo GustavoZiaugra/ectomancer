@@ -62,24 +62,28 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec list(module(), map(), keyword()) :: {:ok, [struct()]} | {:error, any()}
     def list(schema_module, params \\ %{}, opts \\ []) do
-      with_repo(opts, fn repo ->
-        introspection = SchemaIntrospection.analyze(schema_module)
-        {meta_params, filter_params} = extract_meta_params(params)
+      Ectomancer.Telemetry.repo_span(:list, schema_module, fn ->
+        try do
+          with_repo(opts, fn repo ->
+            introspection = SchemaIntrospection.analyze(schema_module)
+            {meta_params, filter_params} = extract_meta_params(params)
 
-        query =
-          schema_module
-          |> build_filter_query(filter_params, introspection.fields)
-          |> apply_scope(Keyword.get(opts, :scope))
-          |> apply_soft_delete_filter(schema_module, meta_params)
-          |> apply_ordering(meta_params, introspection.fields)
-          |> apply_pagination(meta_params, opts)
+            query =
+              schema_module
+              |> build_filter_query(filter_params, introspection.fields)
+              |> apply_scope(Keyword.get(opts, :scope))
+              |> apply_soft_delete_filter(schema_module, meta_params)
+              |> apply_ordering(meta_params, introspection.fields)
+              |> apply_pagination(meta_params, opts)
 
-        results = repo.all(query)
-        {:ok, maybe_preload(repo, results, opts)}
+            results = repo.all(query)
+            {:ok, maybe_preload(repo, results, opts)}
+          end)
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          e -> {:error, {:unexpected, "List failed: #{Exception.message(e)}"}}
+        end
       end)
-    rescue
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      e -> {:error, {:unexpected, "List failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -98,16 +102,20 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec get(module(), map(), keyword()) :: {:ok, struct() | nil} | {:error, any()}
     def get(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(opts),
-           {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
-        result = fetch_single_record(repo, schema_module, pk_values, opts)
-        handle_get_result(repo, schema_module, params, result, opts)
-      end
-    rescue
-      Ecto.NoResultsError -> {:error, :not_found}
-      Ecto.StaleEntryError -> {:error, :stale_entry}
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      e -> {:error, {:unexpected, "GET failed: #{Exception.message(e)}"}}
+      Ectomancer.Telemetry.repo_span(:get, schema_module, fn ->
+        try do
+          with {:ok, repo} <- get_repo(opts),
+               {:ok, pk_values} <- extract_pk_for_get(schema_module, params) do
+            result = fetch_single_record(repo, schema_module, pk_values, opts)
+            handle_get_result(repo, schema_module, params, result, opts)
+          end
+        rescue
+          Ecto.NoResultsError -> {:error, :not_found}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          e -> {:error, {:unexpected, "GET failed: #{Exception.message(e)}"}}
+        end
+      end)
     end
 
     defp handle_get_result(repo, schema_module, params, result, opts) do
@@ -140,28 +148,31 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec create(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t()}
     def create(schema_module, params, opts \\ []) do
-      with_repo(opts, fn repo ->
-        struct = struct(schema_module)
-        attrs = normalize_params(params || %{}, schema_module)
+      Ectomancer.Telemetry.repo_span(:create, schema_module, fn ->
+        try do
+          with_repo(opts, fn repo ->
+            struct = struct(schema_module)
+            attrs = normalize_params(params || %{}, schema_module)
 
-        # Use the schema's changeset function if available, otherwise fallback to cast
-        changeset =
-          if function_exported?(schema_module, :changeset, 2) do
-            schema_module.changeset(struct, attrs)
-          else
-            writable = writable_fields(schema_module)
-            Ecto.Changeset.cast(struct, attrs, writable)
-          end
+            changeset =
+              if function_exported?(schema_module, :changeset, 2) do
+                schema_module.changeset(struct, attrs)
+              else
+                writable = writable_fields(schema_module)
+                Ecto.Changeset.cast(struct, attrs, writable)
+              end
 
-        case repo.insert(changeset) do
-          {:ok, record} -> {:ok, record}
-          {:error, changeset} -> {:error, changeset}
+            case repo.insert(changeset) do
+              {:ok, record} -> {:ok, record}
+              {:error, changeset} -> {:error, changeset}
+            end
+          end)
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          e -> {:error, {:unexpected, "Create failed: #{Exception.message(e)}"}}
         end
       end)
-    rescue
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      Ecto.StaleEntryError -> {:error, :stale_entry}
-      e -> {:error, {:unexpected, "Create failed: #{Exception.message(e)}"}}
     end
 
     @doc """
@@ -178,15 +189,20 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec update(module(), map()) :: {:ok, struct()} | {:error, Ecto.Changeset.t() | :not_found}
     def update(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(opts),
-           {:ok, pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params || %{}),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
-        perform_update(repo, schema_module, record, params || %{}, pk_fields)
-      end
-    rescue
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      Ecto.StaleEntryError -> {:error, :stale_entry}
-      e -> {:error, {:unexpected, "Update failed: #{Exception.message(e)}"}}
+      Ectomancer.Telemetry.repo_span(:update, schema_module, fn ->
+        try do
+          with {:ok, repo} <- get_repo(opts),
+               {:ok, pk_fields, pk_values} <-
+                 extract_pk_for_mutation(schema_module, params || %{}),
+               {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
+            perform_update(repo, schema_module, record, params || %{}, pk_fields)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          e -> {:error, {:unexpected, "Update failed: #{Exception.message(e)}"}}
+        end
+      end)
     end
 
     @doc """
@@ -203,15 +219,19 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec destroy(module(), map()) :: {:ok, struct()} | {:error, :not_found | any()}
     def destroy(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(opts),
-           {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
-        perform_destroy(repo, schema_module, record)
-      end
-    rescue
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      Ecto.StaleEntryError -> {:error, :stale_entry}
-      e -> {:error, {:unexpected, "Destroy failed: #{Exception.message(e)}"}}
+      Ectomancer.Telemetry.repo_span(:destroy, schema_module, fn ->
+        try do
+          with {:ok, repo} <- get_repo(opts),
+               {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+               {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
+            perform_destroy(repo, schema_module, record)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          e -> {:error, {:unexpected, "Destroy failed: #{Exception.message(e)}"}}
+        end
+      end)
     end
 
     @doc """
@@ -229,21 +249,25 @@ if Code.ensure_loaded?(Ecto) do
     @spec restore(module(), map()) ::
             {:ok, struct()} | {:error, :not_found | :not_soft_deletable | any()}
     def restore(schema_module, params, opts \\ []) do
-      with {:ok, repo} <- get_repo(opts),
-           {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
-           {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
-        sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+      Ectomancer.Telemetry.repo_span(:restore, schema_module, fn ->
+        try do
+          with {:ok, repo} <- get_repo(opts),
+               {:ok, _pk_fields, pk_values} <- extract_pk_for_mutation(schema_module, params),
+               {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
+            sd_field = SchemaIntrospection.soft_delete_field(schema_module)
 
-        if sd_field do
-          perform_restore(repo, record, sd_field)
-        else
-          {:error, :not_soft_deletable}
+            if sd_field do
+              perform_restore(repo, record, sd_field)
+            else
+              {:error, :not_soft_deletable}
+            end
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          e -> {:error, {:unexpected, "Restore failed: #{Exception.message(e)}"}}
         end
-      end
-    rescue
-      DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-      Ecto.StaleEntryError -> {:error, :stale_entry}
-      e -> {:error, {:unexpected, "Restore failed: #{Exception.message(e)}"}}
+      end)
     end
 
     # Private functions

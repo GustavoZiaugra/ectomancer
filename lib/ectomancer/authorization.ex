@@ -101,12 +101,12 @@ defmodule Ectomancer.Authorization do
   defp do_check(handler, actor, action) when is_function(handler, 2) do
     case handler.(actor, action) do
       true -> :ok
-      false -> {:error, "Unauthorized access to #{action}"}
+      false -> deny(actor, action, handler, "Unauthorized access to #{action}")
       {:ok, true} -> :ok
-      {:ok, false} -> {:error, "Unauthorized access to #{action}"}
+      {:ok, false} -> deny(actor, action, handler, "Unauthorized access to #{action}")
       {:ok, :scoped, _scope_fn} = scoped -> scoped
-      {:error, reason} -> {:error, reason}
-      _ -> {:error, "Authorization check failed"}
+      {:error, reason} -> deny(actor, action, handler, reason)
+      _ -> deny(actor, action, handler, "Authorization check failed")
     end
   end
 
@@ -114,7 +114,7 @@ defmodule Ectomancer.Authorization do
     if Code.ensure_loaded?(module) do
       call_policy_module(module, actor, action)
     else
-      {:error, "Policy module #{inspect(module)} not found"}
+      deny(actor, action, module, "Policy module #{inspect(module)} not found")
     end
   end
 
@@ -122,12 +122,17 @@ defmodule Ectomancer.Authorization do
     if Code.ensure_loaded?(module) do
       call_policy_module(module, actor, action, opts)
     else
-      {:error, "Policy module #{inspect(module)} not found"}
+      deny(actor, action, module, "Policy module #{inspect(module)} not found")
     end
   end
 
-  defp do_check(handler, _actor, action) do
-    {:error, "Invalid authorization handler for #{action}: #{inspect(handler)}"}
+  defp do_check(handler, actor, action) do
+    deny(
+      actor,
+      action,
+      handler,
+      "Invalid authorization handler for #{action}: #{inspect(handler)}"
+    )
   end
 
   defp call_policy_module(module, actor, action, opts \\ []) do
@@ -142,5 +147,10 @@ defmodule Ectomancer.Authorization do
       true ->
         {:error, "Policy module #{inspect(module)} does not implement authorize/2 or authorize/3"}
     end
+  end
+
+  defp deny(actor, action, handler, reason) do
+    Ectomancer.Telemetry.auth_denied(actor, action, handler)
+    {:error, reason}
   end
 end
