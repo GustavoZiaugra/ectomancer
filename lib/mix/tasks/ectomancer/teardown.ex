@@ -33,12 +33,18 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("compile")
-    Mix.shell().info("\n🧹 Tearing down Ectomancer...")
+
+    unless Mix.env() == :test do
+      Mix.shell().info("\n🧹 Tearing down Ectomancer...")
+    end
 
     app_name = detect_app_name()
 
     unless anything_to_cleanup?(app_name) do
-      Mix.shell().info("\n✅ Nothing to clean up — Ectomancer is not installed.")
+      unless Mix.env() == :test do
+        Mix.shell().info("\n✅ Nothing to clean up — Ectomancer is not installed.")
+      end
+
       exit({:shutdown, 1})
     end
 
