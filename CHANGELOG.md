@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-07-12
+
+### Added
+- change: Add :telemetry events for tools, repo, auth, and rate limiter (#110)
+
+### Fixed
+- Silence installation/teardown logs during test runs (#111)
 
 ## [1.3.1] - 2026-06-24
 
@@ -301,7 +307,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.2.0...v1.2.1
