@@ -121,6 +121,9 @@ if Code.ensure_loaded?(Ecto) do
         config :ectomancer, :repo, MyApp.Repo
     """
 
+    alias Ectomancer.Authorization
+    alias Ectomancer.Expose.Handlers
+    alias Ectomancer.Expose.Params
     alias Ectomancer.SchemaIntrospection
 
     # Action configurations for data-driven generation
@@ -319,77 +322,27 @@ if Code.ensure_loaded?(Ecto) do
     defp parse_authorization_config(:none), do: nil
     defp parse_authorization_config(:public), do: nil
 
-    defp parse_authorization_config(handler) when is_function(handler, 2) do
-      %{global: handler, actions: %{}}
-    end
-
-    defp parse_authorization_config(module) when is_atom(module) do
-      %{global: module, actions: %{}}
-    end
-
-    defp parse_authorization_config({:with, _, [module]}) do
-      %{global: module, actions: %{}}
-    end
-
-    # Handle inline function AST
-    defp parse_authorization_config({:fn, _, _} = fn_ast) do
-      %{global: fn_ast, actions: %{}}
-    end
-
-    # Handle function capture AST
-    defp parse_authorization_config({:&, _, _} = capture_ast) do
-      %{global: capture_ast, actions: %{}}
-    end
-
-    # Handle [with: Module] syntax for policy modules
-    defp parse_authorization_config(with: module) when is_atom(module) do
-      %{global: module, actions: %{}}
-    end
-
     defp parse_authorization_config(action_rules) when is_list(action_rules) do
       global = Keyword.get(action_rules, :all) || Keyword.get(action_rules, :global)
+      global_handler = if global, do: Authorization.parse_handler_for_global(global), else: nil
 
-      # Convert action rules to map, preserving AST nodes
       actions =
         action_rules
         |> Keyword.drop([:all, :global])
         |> Map.new()
 
-      %{global: global, actions: actions}
+      %{global: global_handler, actions: actions}
     end
 
-    defp parse_authorization_config(invalid) do
-      raise ArgumentError,
-            "Invalid authorization configuration: #{inspect(invalid)}. " <>
-              "Expected: function, module, or keyword list of action rules"
+    defp parse_authorization_config(handler) do
+      %{global: Authorization.parse_handler_for_global(handler), actions: %{}}
     end
 
     @doc false
     def parse_auth_config(nil), do: nil
     def parse_auth_config(:none), do: nil
     def parse_auth_config(:public), do: nil
-
-    def parse_auth_config(handler) when is_function(handler, 2), do: handler
-
-    def parse_auth_config(module) when is_atom(module) and module != nil, do: module
-
-    def parse_auth_config({:with, _, [module]}), do: module
-
-    def parse_auth_config({:fn, _, _} = fn_ast), do: fn_ast
-
-    def parse_auth_config({:&, _, _} = capture_ast), do: capture_ast
-
-    def parse_auth_config(with: module) when is_atom(module), do: module
-
-    def parse_auth_config(list) when is_list(list) do
-      Keyword.get(list, :all) || Keyword.get(list, :global)
-    end
-
-    def parse_auth_config(invalid) do
-      raise ArgumentError,
-            "Invalid authorization configuration: #{inspect(invalid)}. " <>
-              "Expected: function, module, or keyword list of action rules"
-    end
+    def parse_auth_config(handler), do: Authorization.parse_handler_for_global(handler)
 
     defp filter_fields(introspection, opts) do
       only = Keyword.get(opts, :only)
@@ -553,15 +506,14 @@ if Code.ensure_loaded?(Ecto) do
 
     defp generate_tool(action, config, tool_name) do
       description = build_description(action, config.resource_name, config.namespace)
-      params = generate_params(action, config)
+      params = Params.generate_params(action, config)
       auth_block = generate_authorization_block(action, config)
 
-      base_handler = select_handler(action, config)
+      base_handler = Handlers.select(action, config)
 
       handler =
         if config.field_authorize do
-          field_auth_fn = config.field_authorize
-          wrap_with_field_auth(base_handler, field_auth_fn)
+          Handlers.wrap_with_field_auth(base_handler, config.field_authorize)
         else
           base_handler
         end
@@ -576,204 +528,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp select_handler(action, config) do
-      repo_module = config.repo
-      preload = config.preload
-
-      cond do
-        action == :upsert ->
-          generate_upsert_handler(repo_module, config)
-
-        action in [:batch_create, :batch_update, :batch_destroy] ->
-          generate_batch_handler(repo_module, config.schema, action, config.batch_size)
-
-        list_action?(action) ->
-          select_preload_handler(repo_module, preload, config, action)
-
-        true ->
-          generate_simple_handler(repo_module, preload, false, config.schema, action)
-      end
-    end
-
-    defp list_action?(action), do: action in [:list, :get]
-
-    defp select_preload_handler(repo_module, preload, config, action) do
-      has_preload = preload != []
-      has_preloadable = config.preloadable != false
-
-      cond do
-        has_preloadable and config.preloadable == :all ->
-          generate_handler_with_all_preloadable(
-            repo_module,
-            preload,
-            has_preload,
-            config.introspection,
-            config.schema,
-            action
-          )
-
-        has_preloadable and is_list(config.preloadable) ->
-          generate_handler_with_specific_preloadable(
-            repo_module,
-            preload,
-            has_preload,
-            config.preloadable,
-            config.schema,
-            action
-          )
-
-        true ->
-          generate_simple_handler(repo_module, preload, has_preload, config.schema, action)
-      end
-    end
-
-    defp generate_simple_handler(repo_module, preload, has_preload, schema, action) do
-      preload_expr =
-        if has_preload do
-          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
-        else
-          quote do: :ok
-        end
-
-      repo_expr =
-        if repo_module do
-          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
-        else
-          quote do: :ok
-        end
-
-      quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
-          unquote(preload_expr)
-          unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
-        end
-      end
-    end
-
-    defp generate_upsert_handler(repo_module, config) do
-      conflict_target = config.conflict_target
-      on_conflict = config.on_conflict
-
-      repo_expr =
-        if repo_module do
-          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
-        else
-          quote do: :ok
-        end
-
-      quote do
-        fn params, _actor, scope ->
-          opts = [
-            scope: scope,
-            conflict_target: unquote(conflict_target),
-            on_conflict: unquote(on_conflict)
-          ]
-
-          unquote(repo_expr)
-          Ectomancer.Repo.upsert(unquote(config.schema), params, opts)
-        end
-      end
-    end
-
-    defp generate_batch_handler(repo_module, schema, action, batch_size) do
-      repo_expr =
-        if repo_module do
-          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
-        else
-          quote do: :ok
-        end
-
-      quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope, batch_size: unquote(batch_size)]
-          unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
-        end
-      end
-    end
-
-    defp generate_handler_with_all_preloadable(
-           repo_module,
-           preload,
-           has_preload,
-           introspection,
-           schema,
-           action
-         ) do
-      assoc_names = Enum.map(introspection.associations, &Atom.to_string(&1.field))
-
-      preload_expr =
-        if has_preload do
-          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
-        else
-          quote do: :ok
-        end
-
-      repo_expr =
-        if repo_module do
-          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
-        else
-          quote do: :ok
-        end
-
-      quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
-          unquote(preload_expr)
-          {include, clean_params} = Map.pop(params, "include", nil)
-          opts = Ectomancer.Repo.validate_includes(include, unquote(assoc_names), opts)
-          unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
-        end
-      end
-    end
-
-    defp generate_handler_with_specific_preloadable(
-           repo_module,
-           preload,
-           has_preload,
-           allowed,
-           schema,
-           action
-         ) do
-      preload_expr =
-        if has_preload do
-          quote do: opts = Keyword.put(opts, :preload, unquote(preload))
-        else
-          quote do: :ok
-        end
-
-      repo_expr =
-        if repo_module do
-          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
-        else
-          quote do: :ok
-        end
-
-      quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
-          unquote(preload_expr)
-          {include, clean_params} = Map.pop(params, "include", nil)
-          opts = Ectomancer.Repo.validate_includes(include, unquote(allowed), opts)
-          unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
-        end
-      end
-    end
-
-    defp wrap_with_field_auth(base_handler, field_auth_fn) do
-      quote do
-        fn params, actor, scope ->
-          with {:ok, data} <- unquote(base_handler).(params, actor, scope) do
-            {:ok, Ectomancer.FieldAuth.filter_fields(data, actor, unquote(field_auth_fn))}
-          end
-        end
-      end
-    end
-
+    # Authorization block generation
     defp generate_authorization_block(action, config) do
       per_auth = config.authorization
       parent_auth = config.parent_authorization
@@ -872,235 +627,22 @@ if Code.ensure_loaded?(Ecto) do
     defp handler_to_raw_ast({:&, _, _} = capture_ast), do: capture_ast
     defp handler_to_raw_ast(handler) when is_function(handler), do: handler
 
-    @filter_suffixes %{
-      string: ~w(contains icontains not in),
-      number: ~w(gt gte lt lte not in),
-      datetime: ~w(gt gte lt lte not)
-    }
-
-    @number_types [:integer, :float, :decimal, :id]
-    @datetime_types [
-      :date,
-      :time,
-      :time_usec,
-      :naive_datetime,
-      :naive_datetime_usec,
-      :utc_datetime,
-      :utc_datetime_usec
-    ]
-
-    defp generate_params(:list, config) do
-      base_params = build_list_base_params(config.exposed_fields, config.introspection.types)
-
-      suffix_params =
-        build_list_filter_params(config.filterable_fields, config.introspection.types)
-
-      meta_params =
-        if config.soft_delete do
-          quote do
-            param(:order_by, :string)
-            param(:order_dir, :string)
-            param(:limit, :integer)
-            param(:offset, :integer)
-            param(:include_deleted, :boolean)
-            unquote(include_param(config.preloadable))
-          end
-        else
-          quote do
-            param(:order_by, :string)
-            param(:order_dir, :string)
-            param(:limit, :integer)
-            param(:offset, :integer)
-            unquote(include_param(config.preloadable))
-          end
-        end
-
-      all_params = base_params ++ suffix_params
-
-      case all_params do
-        [] ->
-          meta_params
-
-        _ ->
-          {:__block__, [], all_params ++ elem(meta_params, 2)}
-      end
-    end
-
-    defp generate_params(:get, config) do
-      # Get action requires the primary key
-      pk_field = hd(config.introspection.primary_key)
-      pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      if config.soft_delete do
-        quote do
-          param(unquote(pk_field), unquote(pk_type), required: true)
-          param(:include_deleted, :boolean)
-          unquote(include_param(config.preloadable))
-        end
-      else
-        quote do
-          param(unquote(pk_field), unquote(pk_type), required: true)
-          unquote(include_param(config.preloadable))
-        end
-      end
-    end
-
-    defp generate_params(:create, config) do
-      # Create action requires all writable fields
-      build_param_block(config.writable_fields, config.introspection.types)
-    end
-
-    defp generate_params(:update, config) do
-      # Update action requires primary key + writable fields
-      pk_field = hd(config.introspection.primary_key)
-      pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      writable_params = build_param_block(config.writable_fields, config.introspection.types)
-
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
-        unquote(writable_params)
-      end
-    end
-
-    defp generate_params(:upsert, config) do
-      build_param_block(config.writable_fields, config.introspection.types)
-    end
-
-    defp generate_params(:destroy, config) do
-      # Destroy action requires the primary key
-      pk_field = hd(config.introspection.primary_key)
-      pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
-      end
-    end
-
-    defp generate_params(:restore, config) do
-      # Restore action requires the primary key
-      pk_field = hd(config.introspection.primary_key)
-      pk_type = get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
-      end
-    end
-
-    defp generate_params(:batch_create, _config) do
-      quote do
-        param(:records, {:array, :map},
-          required: true,
-          description: "Array of records to create"
-        )
-      end
-    end
-
-    defp generate_params(:batch_update, _config) do
-      quote do
-        param(:records, {:array, :map},
-          required: true,
-          description: "Array of records with id and fields to update"
-        )
-      end
-    end
-
-    defp generate_params(:batch_destroy, _config) do
-      quote do
-        param(:ids, :list,
-          required: true,
-          description: "Array of record IDs to delete"
-        )
-      end
-    end
-
-    defp build_list_base_params(fields, types) do
-      Enum.map(fields, fn field ->
-        type = Map.get(types, field)
-        build_single_param(field, type)
-      end)
-    end
-
-    defp build_list_filter_params(fields, types) do
-      Enum.flat_map(fields, fn field ->
-        type = Map.get(types, field)
-        build_suffix_params(field, type)
-      end)
-    end
-
-    defp build_single_param(field, type) do
-      param_type = get_ecto_type_for_param(type)
-
-      quote do
-        param(unquote(field), unquote(param_type))
-      end
-    end
-
-    defp build_suffix_params(field, type) do
-      suffixes = suffixes_for_type(type)
-
-      Enum.map(suffixes, fn suffix ->
-        suffixed_name = :"#{field}_#{suffix}"
-        param_type = suffix_param_type(suffix, type)
-
-        quote do
-          param(unquote(suffixed_name), unquote(param_type))
-        end
-      end)
-    end
-
-    defp suffixes_for_type(type) when type in @number_types, do: @filter_suffixes.number
-    defp suffixes_for_type(type) when type in @datetime_types, do: @filter_suffixes.datetime
-    defp suffixes_for_type(:string), do: @filter_suffixes.string
-    defp suffixes_for_type(:binary_id), do: ["not", "in"]
-    defp suffixes_for_type(Ecto.UUID), do: ["not", "in"]
-    defp suffixes_for_type(:boolean), do: ["not"]
-    defp suffixes_for_type(_), do: []
-
-    defp suffix_param_type("in", _type), do: :list
-    defp suffix_param_type(_suffix, type), do: get_ecto_type_for_param(type)
-
-    defp include_param(false), do: nil
-
-    defp include_param(_preloadable) do
-      quote do
-        param(:include, :list)
-      end
-    end
-
-    defp build_param_block(fields, types) do
-      fields
-      |> Enum.map(fn field ->
-        type = Map.get(types, field)
-        param_type = get_ecto_type_for_param(type)
-
-        quote do
-          param(unquote(field), unquote(param_type))
-        end
-      end)
-      |> case do
-        [] -> quote(do: :ok)
-        [single] -> single
-        multiple -> {:__block__, [], multiple}
-      end
-    end
-
-    # Map Ecto types to Peri/MCP types
-    defp get_ecto_type_for_param(:string), do: :string
-    defp get_ecto_type_for_param(:integer), do: :integer
-    defp get_ecto_type_for_param(:float), do: :float
-    defp get_ecto_type_for_param(:decimal), do: :float
-    defp get_ecto_type_for_param(:boolean), do: :boolean
-    defp get_ecto_type_for_param(:date), do: :string
-    defp get_ecto_type_for_param(:time), do: :string
-    defp get_ecto_type_for_param(:naive_datetime), do: :string
-    defp get_ecto_type_for_param(:utc_datetime), do: :string
-    defp get_ecto_type_for_param(:binary_id), do: :string
-    defp get_ecto_type_for_param(:id), do: :integer
-    defp get_ecto_type_for_param(Ecto.UUID), do: :string
-    defp get_ecto_type_for_param({:array, _}), do: :list
-    defp get_ecto_type_for_param(:map), do: :map
-    defp get_ecto_type_for_param(_), do: :string
+    @doc false
+    def get_ecto_type_for_param(:string), do: :string
+    def get_ecto_type_for_param(:integer), do: :integer
+    def get_ecto_type_for_param(:float), do: :float
+    def get_ecto_type_for_param(:decimal), do: :float
+    def get_ecto_type_for_param(:boolean), do: :boolean
+    def get_ecto_type_for_param(:date), do: :string
+    def get_ecto_type_for_param(:time), do: :string
+    def get_ecto_type_for_param(:naive_datetime), do: :string
+    def get_ecto_type_for_param(:utc_datetime), do: :string
+    def get_ecto_type_for_param(:binary_id), do: :string
+    def get_ecto_type_for_param(:id), do: :integer
+    def get_ecto_type_for_param(Ecto.UUID), do: :string
+    def get_ecto_type_for_param({:array, _}), do: :list
+    def get_ecto_type_for_param(:map), do: :map
+    def get_ecto_type_for_param(_), do: :string
 
     # Tool name building - data-driven approach
 

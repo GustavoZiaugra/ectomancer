@@ -49,6 +49,8 @@ if Code.ensure_loaded?(Oban) do
     authorization at the MCP module level.
     """
 
+    alias Ectomancer.ObanBridge.Queries
+
     @doc """
     Exposes Oban job management tools.
 
@@ -72,9 +74,9 @@ if Code.ensure_loaded?(Oban) do
 
         auth_handler =
           if Keyword.has_key?(opts, :authorize) do
-            Ectomancer.Expose.parse_auth_config(opts[:authorize])
+            Ectomancer.Authorization.parse_handler_for_global(opts[:authorize])
           else
-            Ectomancer.Expose.parse_auth_config(global_auth_raw)
+            Ectomancer.Authorization.parse_handler_for_global(global_auth_raw)
           end
 
         generate_oban_tools(namespace, auth_handler)
@@ -111,30 +113,10 @@ if Code.ensure_loaded?(Oban) do
     end
 
     @doc false
-    def oban_authorize_call(nil), do: quote(do: authorize(:none))
+    def oban_authorize_call(nil), do: Ectomancer.Authorization.authorize_to_ast(nil)
 
-    def oban_authorize_call(module) when is_atom(module) do
-      quote do
-        authorize(with: unquote(module))
-      end
-    end
-
-    def oban_authorize_call(handler) when is_function(handler) do
-      quote do
-        authorize(unquote(handler))
-      end
-    end
-
-    def oban_authorize_call({:fn, _, _} = fn_ast) do
-      quote do
-        authorize(unquote(fn_ast))
-      end
-    end
-
-    def oban_authorize_call({:&, _, _} = capture_ast) do
-      quote do
-        authorize(unquote(capture_ast))
-      end
+    def oban_authorize_call(handler) do
+      Ectomancer.Authorization.authorize_to_ast(handler)
     end
 
     # Tool 1: list_oban_queues
@@ -147,7 +129,7 @@ if Code.ensure_loaded?(Oban) do
           unquote(oban_authorize_call(auth_handler))
 
           handle(fn _params, _actor ->
-            Ectomancer.ObanBridge.list_queues()
+            Queries.list_queues()
           end)
         end
       end
@@ -165,7 +147,7 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             queue_name = params["queue_name"] || params[:queue_name]
-            Ectomancer.ObanBridge.get_queue_depth(queue_name)
+            Queries.get_queue_depth(queue_name)
           end)
         end
       end
@@ -195,7 +177,7 @@ if Code.ensure_loaded?(Oban) do
               |> Enum.reject(fn {_k, v} -> is_nil(v) end)
               |> Enum.into(%{})
 
-            Ectomancer.ObanBridge.list_stuck_jobs(filters)
+            Queries.list_stuck_jobs(filters)
           end)
         end
       end
@@ -213,7 +195,7 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]
-            Ectomancer.ObanBridge.retry_job(job_id)
+            Queries.retry_job(job_id)
           end)
         end
       end
@@ -231,249 +213,44 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]
-            Ectomancer.ObanBridge.cancel_job(job_id)
+            Queries.cancel_job(job_id)
           end)
         end
       end
     end
 
-    # Public API implementations
+    @doc false
+    defdelegate list_queues(), to: Ectomancer.ObanBridge.Queries
+    @doc false
+    def get_queue_depth(queue_name) when is_binary(queue_name),
+      do: Queries.get_queue_depth(queue_name)
 
     @doc false
-    def list_queues do
-      import Ecto.Query
-
-      # Check repo is configured before attempting query
-      _ = repo()
-
-      try do
-        queues =
-          Oban.Job
-          |> select(
-            [j],
-            {j.queue, fragment("COUNT(*)"),
-             fragment("SUM(CASE WHEN state = 'executing' THEN 1 ELSE 0 END)"),
-             fragment("SUM(CASE WHEN state = 'available' THEN 1 ELSE 0 END)"),
-             fragment("SUM(CASE WHEN state = 'retryable' THEN 1 ELSE 0 END)"),
-             fragment("SUM(CASE WHEN state = 'discarded' THEN 1 ELSE 0 END)")}
-          )
-          |> group_by([j], j.queue)
-          |> order_by([j], j.queue)
-          |> repo_all()
-
-        formatted_queues =
-          Enum.map(queues, fn {queue, total, executing, available, retryable, discarded} ->
-            %{
-              queue: queue,
-              total: total || 0,
-              executing: executing || 0,
-              available: available || 0,
-              retryable: retryable || 0,
-              discarded: discarded || 0
-            }
-          end)
-
-        {:ok, %{queues: formatted_queues}}
-      rescue
-        e ->
-          {:error, "Failed to list queues: #{Exception.message(e)}"}
-      end
-    end
+    def get_queue_depth(other),
+      do: Queries.get_queue_depth(other)
 
     @doc false
-    def get_queue_depth(queue_name) when is_binary(queue_name) do
-      import Ecto.Query
-
-      # Check repo is configured before attempting query
-      _ = repo()
-
-      try do
-        counts =
-          Oban.Job
-          |> where([j], j.queue == ^queue_name)
-          |> select([j], {
-            fragment("COUNT(*)"),
-            fragment("SUM(CASE WHEN state = 'executing' THEN 1 ELSE 0 END)"),
-            fragment("SUM(CASE WHEN state = 'available' THEN 1 ELSE 0 END)"),
-            fragment("SUM(CASE WHEN state = 'retryable' THEN 1 ELSE 0 END)"),
-            fragment("SUM(CASE WHEN state = 'discarded' THEN 1 ELSE 0 END)")
-          })
-          |> repo_one()
-
-        case counts do
-          nil ->
-            {:ok,
-             %{
-               queue: queue_name,
-               total: 0,
-               executing: 0,
-               available: 0,
-               retryable: 0,
-               discarded: 0
-             }}
-
-          {total, executing, available, retryable, discarded} ->
-            {:ok,
-             %{
-               queue: queue_name,
-               total: total || 0,
-               executing: executing || 0,
-               available: available || 0,
-               retryable: retryable || 0,
-               discarded: discarded || 0
-             }}
-        end
-      rescue
-        e ->
-          {:error, "Failed to get queue depth: #{Exception.message(e)}"}
-      end
-    end
-
-    def get_queue_depth(_), do: {:error, "queue_name must be a string"}
+    def list_stuck_jobs, do: Queries.list_stuck_jobs()
+    @doc false
+    defdelegate list_stuck_jobs(filters), to: Ectomancer.ObanBridge.Queries
+    @doc false
+    def retry_job(job_id) when is_integer(job_id),
+      do: Queries.retry_job(job_id)
 
     @doc false
-    def list_stuck_jobs(filters \\ %{}) do
-      import Ecto.Query
-
-      # Check repo is configured before attempting query
-      _ = repo()
-
-      try do
-        query =
-          Oban.Job
-          |> where([j], j.state == "executing")
-
-        # Apply optional filters
-        query =
-          Enum.reduce(filters, query, fn
-            {:queue, queue}, q ->
-              where(q, [j], j.queue == ^queue)
-
-            {:worker, worker}, q ->
-              where(q, [j], j.worker == ^worker)
-
-            {:min_age_minutes, minutes}, q ->
-              cutoff = DateTime.utc_now() |> DateTime.add(-minutes, :minute)
-              where(q, [j], j.attempted_at < ^cutoff)
-
-            _, q ->
-              q
-          end)
-
-        query =
-          query
-          |> order_by([j], desc: j.attempted_at)
-          |> limit(^Map.get(filters, :limit, 100))
-
-        jobs = repo_all(query)
-
-        formatted_jobs =
-          Enum.map(jobs, fn job ->
-            %{
-              id: job.id,
-              queue: job.queue,
-              worker: job.worker,
-              args: job.args,
-              state: job.state,
-              attempt: job.attempt,
-              max_attempts: job.max_attempts,
-              attempted_at: job.attempted_at,
-              inserted_at: job.inserted_at,
-              errors: job.errors
-            }
-          end)
-
-        {:ok, %{jobs: formatted_jobs, count: length(formatted_jobs)}}
-      rescue
-        e ->
-          {:error, "Failed to list stuck jobs: #{Exception.message(e)}"}
-      end
-    end
+    def retry_job(other),
+      do: Queries.retry_job(other)
 
     @doc false
-    def retry_job(job_id) when is_integer(job_id) do
-      import Ecto.Query
-
-      # Check repo is configured before attempting query
-      _ = repo()
-
-      try do
-        # Update the job to be available again
-        {count, _} =
-          Oban.Job
-          |> where([j], j.id == ^job_id)
-          |> where([j], j.state in ["retryable", "discarded"])
-          |> repo_update_all(set: [state: "available", scheduled_at: DateTime.utc_now()])
-
-        if count > 0 do
-          {:ok, %{message: "Job #{job_id} scheduled for retry", job_id: job_id}}
-        else
-          {:error, "Job #{job_id} not found or not in retryable/discarded state"}
-        end
-      rescue
-        e ->
-          {:error, "Failed to retry job: #{Exception.message(e)}"}
-      end
-    end
-
-    def retry_job(_), do: {:error, "job_id must be an integer"}
+    def cancel_job(job_id) when is_integer(job_id),
+      do: Queries.cancel_job(job_id)
 
     @doc false
-    def cancel_job(job_id) when is_integer(job_id) do
-      import Ecto.Query
-
-      # Check repo is configured before attempting query
-      _ = repo()
-
-      try do
-        # Cancel the job if it's not already completed
-        {count, _} =
-          Oban.Job
-          |> where([j], j.id == ^job_id)
-          |> where([j], j.state != "completed")
-          |> repo_delete_all()
-
-        if count > 0 do
-          {:ok, %{message: "Job #{job_id} cancelled", job_id: job_id}}
-        else
-          {:error, "Job #{job_id} not found or already completed"}
-        end
-      rescue
-        e ->
-          {:error, "Failed to cancel job: #{Exception.message(e)}"}
-      end
-    end
-
-    def cancel_job(_), do: {:error, "job_id must be an integer"}
-
-    # Helper functions to work with configured repo
+    def cancel_job(other),
+      do: Queries.cancel_job(other)
 
     @doc false
-    def repo do
-      Application.get_env(:ectomancer, :repo) ||
-        raise ArgumentError,
-              "Ectomancer repo not configured. Set config :ectomancer, :repo, YourApp.Repo"
-    end
-
-    @doc false
-    def repo_all(query) do
-      repo().all(query)
-    end
-
-    @doc false
-    def repo_one(query) do
-      repo().one(query)
-    end
-
-    @doc false
-    def repo_update_all(query, opts) do
-      repo().update_all(query, opts)
-    end
-
-    @doc false
-    def repo_delete_all(query) do
-      repo().delete_all(query)
-    end
+    def repo, do: Queries.repo()
   end
 else
   defmodule Ectomancer.ObanBridge do

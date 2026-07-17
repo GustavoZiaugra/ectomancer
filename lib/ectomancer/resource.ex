@@ -77,6 +77,8 @@ defmodule Ectomancer.Resource do
     a custom string (returned as generic error)
   """
 
+  alias Ectomancer.Authorization
+
   @doc """
   Defines a new resource within an Ectomancer module.
 
@@ -284,7 +286,7 @@ defmodule Ectomancer.Resource do
             {desc, uri, text, auth_handler, handler}
 
           {:authorize, _, [handler_ast]} ->
-            auth = parse_authorize_handler(handler_ast)
+            auth = Authorization.parse_handler(handler_ast)
             {desc, uri, mime, auth, handler}
 
           {:read, _, [handler_block]} ->
@@ -298,38 +300,8 @@ defmodule Ectomancer.Resource do
   end
 
   @doc false
-  def parse_authorize_handler(handler) do
-    case handler do
-      :none ->
-        nil
+  defdelegate flatten_block_items(items), to: Ectomancer.Tool
 
-      [with: module] ->
-        module
-
-      {:with, _, [module]} ->
-        module
-
-      {:fn, _, _} = fn_ast ->
-        fn_ast
-
-      {:&, _, _} = capture_ast ->
-        capture_ast
-
-      handler when is_function(handler) ->
-        handler
-
-      _ ->
-        raise ArgumentError,
-              "Invalid authorization handler. Use: authorize(fn actor, action -> ...), authorize(with: Module), or authorize(:none)"
-    end
-  end
-
-  # Flatten nested __block__ items
   @doc false
-  def flatten_block_items(items) do
-    Enum.flat_map(items, fn
-      {:__block__, _, inner} -> flatten_block_items(inner)
-      other -> [other]
-    end)
-  end
+  defdelegate parse_authorize_handler(handler), to: Ectomancer.Authorization, as: :parse_handler
 end
