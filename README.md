@@ -54,7 +54,7 @@ mix phx.server
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 1.2"}
+    {:ectomancer, "~> 1.5"}
   ]
 end
 ```
@@ -240,7 +240,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **1.4.0**
+Current version: **1.5.0**
 
 ## License
 
