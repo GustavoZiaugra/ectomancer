@@ -672,7 +672,7 @@ if Code.ensure_loaded?(Ecto) do
           ]
 
           unquote(repo_expr)
-          apply(Ectomancer.Repo, :upsert, [unquote(config.schema), params, opts])
+          Ectomancer.Repo.upsert(unquote(config.schema), params, opts)
         end
       end
     end
