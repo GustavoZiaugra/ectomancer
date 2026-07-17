@@ -166,6 +166,10 @@ defmodule Ectomancer do
 
   @doc false
   defmacro __using__(opts) do
+    global_auth = Keyword.get(opts, :authorize)
+    caller_module = __CALLER__.module
+    Ectomancer.store_global_auth(caller_module, global_auth)
+
     quote do
       use Anubis.Server,
         name: Keyword.get(unquote(opts), :name, "ectomancer-server"),
@@ -175,12 +179,28 @@ defmodule Ectomancer do
       Module.register_attribute(__MODULE__, :ectomancer_resources, accumulate: true)
 
       @before_compile Ectomancer
+      @after_compile Ectomancer
 
       import Ectomancer.Tool, only: [tool: 2, authorize: 1]
       import Ectomancer.Resource, only: [resource: 2]
       import Ectomancer.Expose, only: [expose: 1, expose: 2]
       import Ectomancer.RouteIntrospection, only: [expose_routes: 1, expose_routes: 2]
       import Ectomancer.ObanBridge, only: [expose_oban_jobs: 0, expose_oban_jobs: 1]
+    end
+  end
+
+  @doc false
+  def store_global_auth(_module, nil), do: :ok
+
+  def store_global_auth(module, auth) do
+    :persistent_term.put({:ectomancer_global_auth, module}, auth)
+  end
+
+  @doc false
+  def fetch_global_auth(module) do
+    case :persistent_term.get({:ectomancer_global_auth, module}, nil) do
+      nil -> nil
+      auth -> auth
     end
   end
 
@@ -224,5 +244,15 @@ defmodule Ectomancer do
         Anubis.Server.component(Resource.Schemas)
       end
     end
+  end
+
+  @doc false
+  def __after_compile__(env, _bytecode) do
+    Ectomancer.delete_global_auth(env.module)
+  end
+
+  @doc false
+  def delete_global_auth(module) do
+    :persistent_term.erase({:ectomancer_global_auth, module})
   end
 end

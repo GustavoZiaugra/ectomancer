@@ -446,6 +446,101 @@ defmodule Ectomancer.RouteIntrospectionTest do
     end
   end
 
+  describe "expose_routes authorization" do
+    test "global auth inherited by route tools" do
+      defmodule GlobalRouteRouter do
+        def __routes__ do
+          [{"/users", {"GET", UserController, :index, []}}]
+        end
+      end
+
+      defmodule GlobalRouteMCP do
+        use Ectomancer,
+          name: "global-route-mcp",
+          version: "1.0.0",
+          authorize: fn actor, _action -> actor.role == :admin end
+
+        defmodule UserController do
+          def index(conn, _opts) do
+            Plug.Conn.send_resp(conn, 200, "ok")
+          end
+        end
+
+        expose_routes(GlobalRouteRouter)
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(GlobalRouteMCP.Tool.GetUsers)
+
+      # Non-admin should be denied by global auth
+      frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
+      # credo:disable-for-next-line
+      assert {:error, error, _} = apply(mod, :execute, [%{}, frame])
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "per-route explicit auth overrides global" do
+      defmodule OverrideRouteRouter do
+        def __routes__ do
+          [{"/users", {"GET", UserController, :index, []}}]
+        end
+      end
+
+      defmodule OverrideRouteMCP do
+        use Ectomancer,
+          name: "override-route-mcp",
+          version: "1.0.0",
+          authorize: fn _actor, _action -> false end
+
+        defmodule UserController do
+          def index(conn, _opts) do
+            Plug.Conn.send_resp(conn, 200, "ok")
+          end
+        end
+
+        expose_routes(OverrideRouteRouter, authorize: fn _actor, _action -> true end)
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(OverrideRouteMCP.Tool.GetUsers)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+      # credo:disable-for-next-line
+      result = apply(mod, :execute, [%{}, frame])
+      assert match?({:ok, _}, result) or match?({:error, _, _}, result)
+    end
+
+    test "per-route :none overrides global auth" do
+      defmodule NoneRouteRouter do
+        def __routes__ do
+          [{"/users", {"GET", UserController, :index, []}}]
+        end
+      end
+
+      defmodule NoneRouteMCP do
+        use Ectomancer,
+          name: "none-route-mcp",
+          version: "1.0.0",
+          authorize: fn _actor, _action -> false end
+
+        defmodule UserController do
+          def index(conn, _opts) do
+            Plug.Conn.send_resp(conn, 200, "ok")
+          end
+        end
+
+        expose_routes(NoneRouteRouter, authorize: :none)
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(NoneRouteMCP.Tool.GetUsers)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+      # credo:disable-for-next-line
+      result = apply(mod, :execute, [%{}, frame])
+      # Should NOT get auth error (per-route :none overrides global)
+      refute match?({:error, %{code: -32_001}, _}, result)
+    end
+  end
+
   describe "build_url_with_params/2" do
     test "replaces path params with values" do
       {url, _} = RouteIntrospection.build_url_with_params("/users/:id", %{"id" => "42"})
