@@ -23,6 +23,7 @@ if Code.ensure_loaded?(Ecto) do
     """
 
     alias Ectomancer.SchemaIntrospection
+    alias Ectomancer.Repo.Filtering
 
     @doc """
     Gets the configured Repo module.
@@ -66,15 +67,15 @@ if Code.ensure_loaded?(Ecto) do
         try do
           with_repo(opts, fn repo ->
             introspection = SchemaIntrospection.analyze(schema_module)
-            {meta_params, filter_params} = extract_meta_params(params)
+            {meta_params, filter_params} = Filtering.extract_meta_params(params)
 
             query =
               schema_module
-              |> build_filter_query(filter_params, introspection.fields)
-              |> apply_scope(Keyword.get(opts, :scope))
-              |> apply_soft_delete_filter(schema_module, meta_params)
-              |> apply_ordering(meta_params, introspection.fields)
-              |> apply_pagination(meta_params, opts)
+              |> Filtering.build_filter_query(filter_params, introspection.fields)
+              |> Filtering.apply_scope(Keyword.get(opts, :scope))
+              |> Filtering.apply_soft_delete_filter(schema_module, meta_params)
+              |> Filtering.apply_ordering(meta_params, introspection.fields)
+              |> Filtering.apply_pagination(meta_params, opts)
 
             results = repo.all(query)
             {:ok, maybe_preload(repo, results, opts)}
@@ -153,14 +154,7 @@ if Code.ensure_loaded?(Ecto) do
           with_repo(opts, fn repo ->
             struct = struct(schema_module)
             attrs = normalize_params(params || %{}, schema_module)
-
-            changeset =
-              if function_exported?(schema_module, :changeset, 2) do
-                schema_module.changeset(struct, attrs)
-              else
-                writable = writable_fields(schema_module)
-                Ecto.Changeset.cast(struct, attrs, writable)
-              end
+            changeset = changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
 
             case repo.insert(changeset) do
               {:ok, record} -> {:ok, record}
@@ -293,7 +287,7 @@ if Code.ensure_loaded?(Ecto) do
 
         query =
           query
-          |> apply_scope(Keyword.get(opts, :scope))
+          |> Filtering.apply_scope(Keyword.get(opts, :scope))
 
         case repo.one(query) do
           nil -> insert_for_upsert(repo, schema_module, attrs, :inserted)
@@ -332,24 +326,19 @@ if Code.ensure_loaded?(Ecto) do
       update_attrs =
         if is_nil(sd_field), do: update_attrs, else: Map.put(update_attrs, sd_field, nil)
 
-      changeset =
-        if function_exported?(schema_module, :changeset, 2) do
-          schema_module.changeset(existing, update_attrs)
+      writable =
+        schema_module
+        |> writable_fields()
+        |> Enum.reject(fn f -> f in pk_fields end)
+
+      writable =
+        if not is_nil(sd_field) and sd_field not in writable do
+          [sd_field | writable]
         else
-          writable =
-            schema_module
-            |> writable_fields()
-            |> Enum.reject(fn f -> f in pk_fields end)
-
-          writable =
-            if not is_nil(sd_field) and sd_field not in writable do
-              [sd_field | writable]
-            else
-              writable
-            end
-
-          Ecto.Changeset.cast(existing, update_attrs, writable)
+          writable
         end
+
+      changeset = changeset_for(schema_module, existing, update_attrs, writable)
 
       case repo.update(changeset) do
         {:ok, record} -> {:ok, {record, :updated}}
@@ -552,12 +541,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp build_create_changeset(schema_module, struct, attrs) do
-      if function_exported?(schema_module, :changeset, 2) do
-        schema_module.changeset(struct, attrs)
-      else
-        writable = writable_fields(schema_module)
-        Ecto.Changeset.cast(struct, attrs, writable)
-      end
+      changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
     end
 
     defp perform_batch_destroy(repo, schema_module, raw_id, opts) do
@@ -571,7 +555,7 @@ if Code.ensure_loaded?(Ecto) do
       query =
         schema_module
         |> build_pk_query(pk_values)
-        |> apply_scope(scope)
+        |> Filtering.apply_scope(scope)
 
       case repo.one(query) do
         nil ->
@@ -615,7 +599,7 @@ if Code.ensure_loaded?(Ecto) do
       query =
         schema_module
         |> build_pk_query(pk_values)
-        |> apply_scope(scope)
+        |> Filtering.apply_scope(scope)
 
       case repo.one(query) do
         nil ->
@@ -638,16 +622,12 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp build_changeset(schema_module, record, update_attrs, pk_fields) do
-      if function_exported?(schema_module, :changeset, 2) do
-        schema_module.changeset(record, update_attrs)
-      else
-        writable =
-          schema_module
-          |> writable_fields()
-          |> Enum.reject(fn f -> f in pk_fields end)
+      writable =
+        schema_module
+        |> writable_fields()
+        |> Enum.reject(fn f -> f in pk_fields end)
 
-        Ecto.Changeset.cast(record, update_attrs, writable)
-      end
+      changeset_for(schema_module, record, update_attrs, writable)
     end
 
     defp run_batch(repo, _schema_module, items, _opts, operation) do
@@ -775,7 +755,7 @@ if Code.ensure_loaded?(Ecto) do
       query =
         schema_module
         |> build_pk_query(pk_values)
-        |> apply_scope(Keyword.get(opts, :scope))
+        |> Filtering.apply_scope(Keyword.get(opts, :scope))
 
       case repo.one(query) do
         nil -> {:error, :not_found}
@@ -790,19 +770,12 @@ if Code.ensure_loaded?(Ecto) do
         |> Enum.reject(fn {k, _v} -> k in pk_fields end)
         |> Enum.into(%{})
 
-      # Use the schema's changeset function if available, otherwise fallback to cast
-      changeset =
-        if function_exported?(schema_module, :changeset, 2) do
-          schema_module.changeset(record, update_attrs)
-        else
-          writable =
-            schema_module
-            |> writable_fields()
-            |> Enum.reject(fn f -> f in pk_fields end)
+      writable =
+        schema_module
+        |> writable_fields()
+        |> Enum.reject(fn f -> f in pk_fields end)
 
-          Ecto.Changeset.cast(record, update_attrs, writable)
-        end
-
+      changeset = changeset_for(schema_module, record, update_attrs, writable)
       repo.update(changeset)
     end
 
@@ -827,20 +800,11 @@ if Code.ensure_loaded?(Ecto) do
       repo.update(changeset)
     end
 
-    defp apply_soft_delete_filter(query, schema_module, meta_params) do
-      import Ecto.Query
-
-      sd_field = SchemaIntrospection.soft_delete_field(schema_module)
-
-      if sd_field && !Map.get(meta_params, "include_deleted", false) do
-        where(query, [r], is_nil(field(r, ^sd_field)))
-      else
-        query
-      end
-    end
-
-    defp apply_scope(query, nil), do: query
-    defp apply_scope(query, scope_fn) when is_function(scope_fn, 1), do: scope_fn.(query)
+    defdelegate extract_meta_params(params), to: Filtering
+    defdelegate parse_filter_key(key), to: Filtering
+    defdelegate sanitize_like(value), to: Filtering
+    defdelegate parse_order_dir(dir), to: Filtering
+    defdelegate parse_int(val), to: Filtering
 
     defp normalize_params(params, schema_module) do
       introspection = SchemaIntrospection.analyze(schema_module)
@@ -890,160 +854,13 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
-    @meta_keys ~w(order_by order_dir limit offset include_deleted)
-
-    @doc false
-    def extract_meta_params(params) do
-      {meta, filters} =
-        Enum.split_with(params, fn {key, _} -> to_string(key) in @meta_keys end)
-
-      {Map.new(meta, fn {k, v} -> {to_string(k), v} end), Map.new(filters)}
-    end
-
-    defp build_filter_query(schema_module, params, fields) do
-      import Ecto.Query
-
-      base_query = from(r in schema_module)
-
-      Enum.reduce(params, base_query, fn {field_str, value}, query ->
-        {field, operator} = parse_filter_key(to_string(field_str))
-
-        if field in fields do
-          apply_filter(query, field, operator, value)
-        else
-          query
-        end
-      end)
-    end
-
-    @doc false
-    def parse_filter_key(key) do
-      suffixes = ~w(_gte _gt _lte _lt _contains _icontains _in _not)
-
-      Enum.find_value(suffixes, {String.to_atom(key), :eq}, fn suffix ->
-        if String.ends_with?(key, suffix) do
-          base = String.replace_trailing(key, suffix, "")
-          op = suffix |> String.trim_leading("_") |> String.to_atom()
-          {String.to_atom(base), op}
-        end
-      end)
-    end
-
-    defp apply_filter(query, field, :eq, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) == ^value)
-    end
-
-    defp apply_filter(query, field, :gt, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) > ^value)
-    end
-
-    defp apply_filter(query, field, :gte, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) >= ^value)
-    end
-
-    defp apply_filter(query, field, :lt, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) < ^value)
-    end
-
-    defp apply_filter(query, field, :lte, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) <= ^value)
-    end
-
-    defp apply_filter(query, field, :not, value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) != ^value)
-    end
-
-    defp apply_filter(query, field, :contains, value) do
-      import Ecto.Query
-      pattern = "%#{sanitize_like(value)}%"
-      where(query, [r], like(field(r, ^field), ^pattern))
-    end
-
-    defp apply_filter(query, field, :icontains, value) do
-      import Ecto.Query
-      pattern = "%#{sanitize_like(value)}%" |> String.downcase()
-      where(query, [r], like(fragment("LOWER(?)", field(r, ^field)), ^pattern))
-    end
-
-    defp apply_filter(query, field, :in, value) when is_list(value) do
-      import Ecto.Query
-      where(query, [r], field(r, ^field) in ^value)
-    end
-
-    defp apply_filter(query, _field, :in, _value), do: query
-
-    @doc false
-    def sanitize_like(value) do
-      value
-      |> to_string()
-      |> String.replace("\\", "\\\\")
-      |> String.replace("%", "\\%")
-      |> String.replace("_", "\\_")
-    end
-
-    defp apply_ordering(query, meta, fields) do
-      import Ecto.Query
-
-      case meta do
-        %{"order_by" => order_field} ->
-          field = String.to_atom(to_string(order_field))
-          dir = parse_order_dir(Map.get(meta, "order_dir", "asc"))
-
-          if field in fields do
-            order_by(query, [r], [{^dir, field(r, ^field)}])
-          else
-            query
-          end
-
-        _ ->
-          query
+    defp changeset_for(schema_module, struct, attrs, writable_fields) do
+      if function_exported?(schema_module, :changeset, 2) do
+        schema_module.changeset(struct, attrs)
+      else
+        Ecto.Changeset.cast(struct, attrs, writable_fields)
       end
     end
-
-    @doc false
-    def parse_order_dir(dir) when is_binary(dir) do
-      case String.downcase(dir) do
-        "desc" -> :desc
-        _ -> :asc
-      end
-    end
-
-    @doc false
-    def parse_order_dir(_), do: :asc
-
-    defp apply_pagination(query, meta, opts) do
-      import Ecto.Query
-
-      limit_val = parse_int(Map.get(meta, "limit")) || Keyword.get(opts, :limit, 100)
-      offset_val = parse_int(Map.get(meta, "offset")) || Keyword.get(opts, :offset, 0)
-
-      limit_val = min(limit_val, 100)
-
-      query
-      |> limit(^limit_val)
-      |> offset(^offset_val)
-    end
-
-    @doc false
-    def parse_int(nil), do: nil
-    @doc false
-    def parse_int(val) when is_integer(val), do: val
-    @doc false
-    def parse_int(val) when is_binary(val) do
-      case Integer.parse(val) do
-        {int, ""} -> int
-        _ -> nil
-      end
-    end
-
-    @doc false
-    def parse_int(_), do: nil
 
     @doc """
     Validates dynamic include requests against allowed preloadable associations.
