@@ -67,7 +67,17 @@ if Code.ensure_loaded?(Oban) do
     defmacro expose_oban_jobs(opts \\ []) do
       if Code.ensure_loaded?(Oban) do
         namespace = Keyword.get(opts, :namespace)
-        generate_oban_tools(namespace)
+
+        global_auth_raw = Ectomancer.fetch_global_auth(__CALLER__.module)
+
+        auth_handler =
+          if Keyword.has_key?(opts, :authorize) do
+            Ectomancer.Expose.parse_auth_config(opts[:authorize])
+          else
+            Ectomancer.Expose.parse_auth_config(global_auth_raw)
+          end
+
+        generate_oban_tools(namespace, auth_handler)
       else
         # Oban not available, generate nothing
         quote do
@@ -77,13 +87,13 @@ if Code.ensure_loaded?(Oban) do
     end
 
     # Generate all Oban management tools
-    defp generate_oban_tools(namespace) do
+    defp generate_oban_tools(namespace, auth_handler) do
       tools = [
-        generate_list_queues_tool(namespace),
-        generate_get_queue_depth_tool(namespace),
-        generate_list_stuck_jobs_tool(namespace),
-        generate_retry_job_tool(namespace),
-        generate_cancel_job_tool(namespace)
+        generate_list_queues_tool(namespace, auth_handler),
+        generate_get_queue_depth_tool(namespace, auth_handler),
+        generate_list_stuck_jobs_tool(namespace, auth_handler),
+        generate_retry_job_tool(namespace, auth_handler),
+        generate_cancel_job_tool(namespace, auth_handler)
       ]
 
       quote do
@@ -100,14 +110,41 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
+    @doc false
+    def oban_authorize_call(nil), do: quote(do: authorize(:none))
+
+    def oban_authorize_call(module) when is_atom(module) do
+      quote do
+        authorize(with: unquote(module))
+      end
+    end
+
+    def oban_authorize_call(handler) when is_function(handler) do
+      quote do
+        authorize(unquote(handler))
+      end
+    end
+
+    def oban_authorize_call({:fn, _, _} = fn_ast) do
+      quote do
+        authorize(unquote(fn_ast))
+      end
+    end
+
+    def oban_authorize_call({:&, _, _} = capture_ast) do
+      quote do
+        authorize(unquote(capture_ast))
+      end
+    end
+
     # Tool 1: list_oban_queues
-    defp generate_list_queues_tool(namespace) do
+    defp generate_list_queues_tool(namespace, auth_handler) do
       tool_name = build_tool_name("list_oban_queues", namespace)
 
       quote do
         tool unquote(tool_name) do
           description("List all Oban queues with job statistics")
-          authorize(:none)
+          unquote(oban_authorize_call(auth_handler))
 
           handle(fn _params, _actor ->
             Ectomancer.ObanBridge.list_queues()
@@ -117,14 +154,14 @@ if Code.ensure_loaded?(Oban) do
     end
 
     # Tool 2: get_queue_depth
-    defp generate_get_queue_depth_tool(namespace) do
+    defp generate_get_queue_depth_tool(namespace, auth_handler) do
       tool_name = build_tool_name("get_queue_depth", namespace)
 
       quote do
         tool unquote(tool_name) do
           description("Get job count for a specific Oban queue")
           param(:queue_name, :string, required: true)
-          authorize(:none)
+          unquote(oban_authorize_call(auth_handler))
 
           handle(fn params, _actor ->
             queue_name = params["queue_name"] || params[:queue_name]
@@ -135,7 +172,7 @@ if Code.ensure_loaded?(Oban) do
     end
 
     # Tool 3: list_stuck_jobs
-    defp generate_list_stuck_jobs_tool(namespace) do
+    defp generate_list_stuck_jobs_tool(namespace, auth_handler) do
       tool_name = build_tool_name("list_stuck_jobs", namespace)
 
       quote do
@@ -145,7 +182,7 @@ if Code.ensure_loaded?(Oban) do
           param(:worker, :string)
           param(:min_age_minutes, :integer)
           param(:limit, :integer)
-          authorize(:none)
+          unquote(oban_authorize_call(auth_handler))
 
           handle(fn params, _actor ->
             filters =
@@ -165,14 +202,14 @@ if Code.ensure_loaded?(Oban) do
     end
 
     # Tool 4: retry_job
-    defp generate_retry_job_tool(namespace) do
+    defp generate_retry_job_tool(namespace, auth_handler) do
       tool_name = build_tool_name("retry_job", namespace)
 
       quote do
         tool unquote(tool_name) do
           description("Retry a failed or discarded Oban job by ID")
           param(:job_id, :integer, required: true)
-          authorize(:none)
+          unquote(oban_authorize_call(auth_handler))
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]
@@ -183,14 +220,14 @@ if Code.ensure_loaded?(Oban) do
     end
 
     # Tool 5: cancel_job
-    defp generate_cancel_job_tool(namespace) do
+    defp generate_cancel_job_tool(namespace, auth_handler) do
       tool_name = build_tool_name("cancel_job", namespace)
 
       quote do
         tool unquote(tool_name) do
           description("Cancel or delete an Oban job by ID")
           param(:job_id, :integer, required: true)
-          authorize(:none)
+          unquote(oban_authorize_call(auth_handler))
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]

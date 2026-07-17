@@ -487,4 +487,63 @@ defmodule Ectomancer.ObanBridgeTest do
       assert msg =~ "not found or already completed"
     end
   end
+
+  describe "expose_oban_jobs authorization" do
+    test "global auth inherited by oban tools" do
+      defmodule GlobalObanMCP do
+        use Ectomancer,
+          name: "global-oban-mcp",
+          version: "1.0.0",
+          authorize: fn actor, _action -> actor.role == :admin end
+
+        expose_oban_jobs()
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(GlobalObanMCP.Tool.ListObanQueues)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
+      # credo:disable-for-next-line
+      assert {:error, error, _} = apply(mod, :execute, [%{}, frame])
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "per-call explicit auth overrides global on oban tools" do
+      defmodule OverrideObanMCP do
+        use Ectomancer,
+          name: "override-oban-mcp",
+          version: "1.0.0",
+          authorize: fn _actor, _action -> false end
+
+        expose_oban_jobs(authorize: fn _actor, _action -> true end)
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(OverrideObanMCP.Tool.ListObanQueues)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+      # credo:disable-for-next-line
+      result = apply(mod, :execute, [%{}, frame])
+      # Should not get auth error
+      refute match?({:error, %{code: -32_001}, _}, result)
+    end
+
+    test "per-call :none overrides global auth on oban tools" do
+      defmodule NoneObanMCP do
+        use Ectomancer,
+          name: "none-oban-mcp",
+          version: "1.0.0",
+          authorize: fn _actor, _action -> false end
+
+        expose_oban_jobs(authorize: :none)
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(NoneObanMCP.Tool.ListObanQueues)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+      # credo:disable-for-next-line
+      result = apply(mod, :execute, [%{}, frame])
+      # Should not get auth error (per-call :none overrides global)
+      refute match?({:error, %{code: -32_001}, _}, result)
+    end
+  end
 end

@@ -179,7 +179,7 @@ if Code.ensure_loaded?(Ecto) do
       # Compile-time validations and data extraction
       validate_schema_compiled!(schema)
 
-      config = build_expose_config(schema, opts)
+      config = build_expose_config(schema, opts, Ectomancer.fetch_global_auth(__CALLER__.module))
 
       # Generate tool definitions for each action
       tool_definitions =
@@ -212,9 +212,12 @@ if Code.ensure_loaded?(Ecto) do
 
     # Configuration building
 
-    defp build_expose_config(schema, opts) do
+    defp build_expose_config(schema, opts, global_auth_raw) do
       introspection = SchemaIntrospection.analyze(schema)
+
+      auth_explicitly_configured = Keyword.has_key?(opts, :authorize)
       auth_config = parse_authorization_config(Keyword.get(opts, :authorize))
+      parent_authorization = parse_authorization_config(global_auth_raw)
       readonly = Keyword.get(opts, :readonly, false)
 
       base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
@@ -237,6 +240,8 @@ if Code.ensure_loaded?(Ecto) do
         namespace: opts[:namespace],
         introspection: introspection,
         authorization: auth_config,
+        parent_authorization: parent_authorization,
+        auth_explicitly_configured: auth_explicitly_configured,
         readonly: readonly,
         preload: Keyword.get(opts, :preload, []),
         soft_delete: soft_delete,
@@ -273,6 +278,7 @@ if Code.ensure_loaded?(Ecto) do
 
     defp parse_authorization_config(nil), do: nil
     defp parse_authorization_config(:none), do: nil
+    defp parse_authorization_config(:public), do: nil
 
     defp parse_authorization_config(handler) when is_function(handler, 2) do
       %{global: handler, actions: %{}}
@@ -314,6 +320,33 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp parse_authorization_config(invalid) do
+      raise ArgumentError,
+            "Invalid authorization configuration: #{inspect(invalid)}. " <>
+              "Expected: function, module, or keyword list of action rules"
+    end
+
+    @doc false
+    def parse_auth_config(nil), do: nil
+    def parse_auth_config(:none), do: nil
+    def parse_auth_config(:public), do: nil
+
+    def parse_auth_config(handler) when is_function(handler, 2), do: handler
+
+    def parse_auth_config(module) when is_atom(module) and module != nil, do: module
+
+    def parse_auth_config({:with, _, [module]}), do: module
+
+    def parse_auth_config({:fn, _, _} = fn_ast), do: fn_ast
+
+    def parse_auth_config({:&, _, _} = capture_ast), do: capture_ast
+
+    def parse_auth_config(with: module) when is_atom(module), do: module
+
+    def parse_auth_config(list) when is_list(list) do
+      Keyword.get(list, :all) || Keyword.get(list, :global)
+    end
+
+    def parse_auth_config(invalid) do
       raise ArgumentError,
             "Invalid authorization configuration: #{inspect(invalid)}. " <>
               "Expected: function, module, or keyword list of action rules"
@@ -639,63 +672,102 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp generate_authorization_block(action, config) do
-      auth_config = config.authorization
-      do_generate_authorization_block(auth_config, action)
+      per_auth = config.authorization
+      parent_auth = config.parent_authorization
+      per_explicit? = config.auth_explicitly_configured
+      do_generate_authorization_block(per_auth, parent_auth, action, per_explicit?)
     end
 
-    defp do_generate_authorization_block(nil, _action) do
-      quote do
-        authorize(:none)
-      end
-    end
+    defp get_effective_handler(nil, _action), do: nil
 
-    defp do_generate_authorization_block(%{global: global, actions: actions}, action)
+    defp get_effective_handler(%{global: global, actions: actions}, action)
          when map_size(actions) > 0 do
-      # Check for action-specific authorization first
       case Map.get(actions, action) do
-        nil -> resolve_global_auth(global)
-        action_auth -> parse_auth_handler(action_auth)
+        :none -> nil
+        :public -> nil
+        nil -> global
+        handler -> handler
       end
     end
 
-    defp do_generate_authorization_block(%{global: global}, _action) do
-      resolve_global_auth(global)
+    defp get_effective_handler(%{global: global}, _action), do: global
+
+    defp do_generate_authorization_block(auth_config, parent_auth, action, per_explicit?) do
+      per_handler = get_effective_handler(auth_config, action)
+      global_handler = get_effective_handler(parent_auth, action)
+
+      cond do
+        # No auth anywhere
+        is_nil(per_handler) and is_nil(global_handler) ->
+          quote(do: authorize(:none))
+
+        # Explicit opt-out via authorize: :none → public, skipping global
+        is_nil(per_handler) and is_nil(auth_config) and per_explicit? ->
+          quote(do: authorize(:none))
+
+        # No per-schema handler → use global
+        is_nil(per_handler) ->
+          generate_single_auth(global_handler)
+
+        # Only per-schema handler, no global
+        is_nil(global_handler) ->
+          generate_single_auth(per_handler)
+
+        # Both present → cascade (both must pass)
+        true ->
+          generate_cascade_auth(per_handler, global_handler)
+      end
     end
 
-    defp resolve_global_auth(nil), do: quote(do: authorize(:none))
-    defp resolve_global_auth(handler), do: parse_auth_handler(handler)
+    defp generate_single_auth(:none), do: quote(do: authorize(:none))
+    defp generate_single_auth(:public), do: quote(do: authorize(:none))
 
-    defp parse_auth_handler(:none), do: quote(do: authorize(:none))
-    defp parse_auth_handler(:public), do: quote(do: authorize(:none))
+    defp generate_single_auth(handler) do
+      handler_to_auth_ast(handler)
+    end
 
-    defp parse_auth_handler(module) when is_atom(module) do
+    defp handler_to_auth_ast(module) when is_atom(module) do
       quote do
         authorize(with: unquote(module))
       end
     end
 
-    defp parse_auth_handler(handler) when is_function(handler) do
+    defp handler_to_auth_ast(handler) when is_function(handler) do
       quote do
         authorize(unquote(handler))
       end
     end
 
-    defp parse_auth_handler({:fn, _, _} = fn_ast) do
+    defp handler_to_auth_ast({:fn, _, _} = fn_ast) do
       quote do
         authorize(unquote(fn_ast))
       end
     end
 
-    defp parse_auth_handler({:&, _, _} = capture_ast) do
+    defp handler_to_auth_ast({:&, _, _} = capture_ast) do
       quote do
         authorize(unquote(capture_ast))
       end
     end
 
-    defp parse_auth_handler(handler) do
+    defp handler_to_auth_ast(handler) do
       raise ArgumentError,
             "Invalid authorization handler: #{inspect(handler)}"
     end
+
+    defp generate_cascade_auth(per_handler, global_handler) do
+      per_ast = handler_to_raw_ast(per_handler)
+      global_ast = handler_to_raw_ast(global_handler)
+
+      quote do
+        authorize(unquote(per_ast), parent_auth: unquote(global_ast))
+      end
+    end
+
+    defp handler_to_raw_ast(module) when is_atom(module), do: {:with, [], [module]}
+    defp handler_to_raw_ast({:fn, _, _} = fn_ast), do: fn_ast
+    defp handler_to_raw_ast({:&, _, _} = capture_ast), do: capture_ast
+    defp handler_to_raw_ast(handler) when is_function(handler), do: handler
 
     @filter_suffixes %{
       string: ~w(contains icontains not in),

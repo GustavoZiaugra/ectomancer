@@ -160,4 +160,171 @@ defmodule Ectomancer.ExposeAuthorizationTest do
       assert error.message =~ "Repository not configured"
     end
   end
+
+  describe "expose inherits global auth from use Ectomancer" do
+    defmodule GlobalOnlyMCP do
+      use Ectomancer,
+        name: "global-only-mcp",
+        version: "1.0.0",
+        authorize: fn actor, _action -> actor.role == :admin end
+
+      expose(TestUser, actions: [:list, :get])
+    end
+
+    alias GlobalOnlyMCP.Tool.{GetTestUser, ListTestUsers}
+
+    test "global auth allows admin" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+
+    test "global auth denies non-admin" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+
+      assert {:error, error, _} = GetTestUser.execute(%{"id" => "1"}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+  end
+
+  describe "expose :none overrides global auth (opt-out)" do
+    defmodule NoneOverrideMCP do
+      use Ectomancer,
+        name: "none-override-mcp",
+        version: "1.0.0",
+        authorize: fn _actor, _action -> false end
+
+      expose(TestUser, actions: [:list], authorize: :none)
+    end
+
+    alias NoneOverrideMCP.Tool.ListTestUsers
+
+    test "explicit :none skips global auth" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+  end
+
+  describe "cascade: global + per-schema auth" do
+    defmodule CascadeMCP do
+      use Ectomancer,
+        name: "cascade-mcp",
+        version: "1.0.0",
+        authorize: fn actor, _action -> actor.org_id != nil end
+
+      expose(TestUser,
+        actions: [:list, :get],
+        authorize: fn actor, _action -> actor.role == :admin end
+      )
+    end
+
+    alias CascadeMCP.Tool.{GetTestUser, ListTestUsers}
+
+    test "both auth pass → allowed" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin, org_id: 1}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+
+    test "global passes but per-schema fails → denied" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :user, org_id: 1}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "per-schema passes but global fails → denied" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin, org_id: nil}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "both fail → denied" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :user, org_id: nil}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+
+      assert {:error, error, _} = GetTestUser.execute(%{"id" => "1"}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+  end
+
+  describe "action-specific per-schema + global auth" do
+    defmodule ActionGlobalCascadeMCP do
+      use Ectomancer,
+        name: "action-global-cascade-mcp",
+        version: "1.0.0",
+        authorize: fn actor, _action -> actor.org_id != nil end
+
+      expose(TestUser,
+        actions: [:list, :get, :create],
+        authorize: [
+          list: :public,
+          get: fn actor, _action -> actor.role == :admin end,
+          create: fn actor, _action -> actor.role == :admin end
+        ]
+      )
+    end
+
+    alias ActionGlobalCascadeMCP.Tool.{CreateTestUser, GetTestUser, ListTestUsers}
+
+    test "public action + global → global still checked" do
+      frame = %{assigns: %{ectomancer_actor: %{org_id: 1}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+
+    test "public action + global fails → denied by global" do
+      frame = %{assigns: %{ectomancer_actor: %{org_id: nil}}}
+
+      assert {:error, error, _} = ListTestUsers.execute(%{}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "admin action + global both pass → allowed" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin, org_id: 1}}}
+
+      assert {:error, error, _} = GetTestUser.execute(%{"id" => "1"}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+
+    test "admin action passes but global fails → denied" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin, org_id: nil}}}
+
+      assert {:error, error, _} = GetTestUser.execute(%{"id" => "1"}, frame)
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+    end
+
+    test "admin action + global all pass" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :admin, org_id: 1}}}
+
+      assert {:error, error, _} = CreateTestUser.execute(%{"email" => "x@x.com"}, frame)
+      assert error.message =~ "Repository not configured"
+    end
+
+    test "admin fails but global passes → denied" do
+      frame = %{assigns: %{ectomancer_actor: %{role: :user, org_id: 1}}}
+
+      assert {:error, error, _} = CreateTestUser.execute(%{"email" => "x@x.com"}, frame)
+      assert error.code == -32_001
+    end
+  end
 end

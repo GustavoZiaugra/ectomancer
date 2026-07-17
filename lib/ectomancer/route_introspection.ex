@@ -222,11 +222,20 @@ defmodule Ectomancer.RouteIntrospection do
 
     namespace = Keyword.get(opts, :namespace)
 
+    global_auth_raw = Ectomancer.fetch_global_auth(__CALLER__.module)
+
+    auth_handler =
+      if Keyword.has_key?(opts, :authorize) do
+        Ectomancer.Expose.parse_auth_config(opts[:authorize])
+      else
+        Ectomancer.Expose.parse_auth_config(global_auth_raw)
+      end
+
     tool_definitions =
       Enum.map(filtered_routes, fn route ->
         tool_name = build_tool_name(route, namespace)
         check_collision!(__CALLER__.module, tool_name)
-        generate_route_tool(route, tool_name, namespace)
+        generate_route_tool(route, tool_name, namespace, auth_handler)
       end)
 
     quote do
@@ -265,7 +274,7 @@ defmodule Ectomancer.RouteIntrospection do
     end
   end
 
-  defp generate_route_tool(route, tool_name, namespace) do
+  defp generate_route_tool(route, tool_name, namespace, auth_handler) do
     {method, path, controller, action} = route
 
     {_path_template, route_params} = parse_path_params(path)
@@ -293,9 +302,36 @@ defmodule Ectomancer.RouteIntrospection do
       tool unquote(tool_name) do
         description(unquote(description))
         unquote(param_declarations)
-        authorize(:none)
+        unquote(generate_authorize_call(auth_handler))
         handle(unquote(handler))
       end
+    end
+  end
+
+  @doc false
+  def generate_authorize_call(nil), do: quote(do: authorize(:none))
+
+  def generate_authorize_call(module) when is_atom(module) do
+    quote do
+      authorize(with: unquote(module))
+    end
+  end
+
+  def generate_authorize_call(handler) when is_function(handler) do
+    quote do
+      authorize(unquote(handler))
+    end
+  end
+
+  def generate_authorize_call({:fn, _, _} = fn_ast) do
+    quote do
+      authorize(unquote(fn_ast))
+    end
+  end
+
+  def generate_authorize_call({:&, _, _} = capture_ast) do
+    quote do
+      authorize(unquote(capture_ast))
     end
   end
 

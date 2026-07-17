@@ -64,7 +64,9 @@ if Code.ensure_loaded?(Ecto) do
     """
     defmacro tool(name, do: block) do
       tool_name_str = to_string(name)
-      {description, params, auth_handler, handler_ast} = parse_tool_block(block)
+
+      {description, params, auth_handler, parent_auth_handler, handler_ast} =
+        parse_tool_block(block)
 
       # Build Peri schema for Anubis validation (atom keys)
       peri_schema = build_peri_schema(params)
@@ -86,7 +88,8 @@ if Code.ensure_loaded?(Ecto) do
           unquote(Macro.escape(peri_schema)),
           unquote(Macro.escape(json_schema)),
           unquote(auth_handler),
-          unquote(handler_ast)
+          unquote(handler_ast),
+          unquote(parent_auth_handler)
         )
 
         require Anubis.Server
@@ -95,7 +98,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc false
-    # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+    # credo:disable-for-next-line
     defmacro define_tool_module(
                module_name,
                tool_name,
@@ -104,11 +107,12 @@ if Code.ensure_loaded?(Ecto) do
                peri_schema,
                json_schema_for_clients,
                auth_handler,
-               handler_ast
+               handler_ast,
+               parent_auth_handler \\ nil
              ) do
-      has_auth = not is_nil(auth_handler)
+      has_auth = not is_nil(auth_handler) or not is_nil(parent_auth_handler)
       execute_clause = build_execute_clause(has_auth, handler_ast)
-      auth_clause = build_check_authorization_clause(has_auth, auth_handler)
+      auth_clause = build_check_authorization_clause(has_auth, auth_handler, parent_auth_handler)
 
       quote do
         defmodule unquote(module_name) do
@@ -258,19 +262,32 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp build_check_authorization_clause(true, auth_handler) do
-      quote do
-        defp check_authorization(actor, action) do
-          Ectomancer.Authorization.check(
-            actor,
-            action,
-            handler: unquote(auth_handler)
-          )
+    defp build_check_authorization_clause(true, auth_handler, parent_auth_handler) do
+      if is_nil(parent_auth_handler) do
+        quote do
+          defp check_authorization(actor, action) do
+            Ectomancer.Authorization.check(
+              actor,
+              action,
+              handler: unquote(auth_handler)
+            )
+          end
+        end
+      else
+        quote do
+          defp check_authorization(actor, action) do
+            Ectomancer.Authorization.check(
+              actor,
+              action,
+              handler: unquote(auth_handler),
+              parent_auth: [handler: unquote(parent_auth_handler)]
+            )
+          end
         end
       end
     end
 
-    defp build_check_authorization_clause(false, _auth_handler) do
+    defp build_check_authorization_clause(false, _auth_handler, _parent_auth_handler) do
       quote do
         defp check_authorization(_actor, _action), do: :ok
       end
@@ -288,25 +305,30 @@ if Code.ensure_loaded?(Ecto) do
 
       Enum.reduce(
         items,
-        {"", [], nil, quote(do: fn _, _ -> {:ok, nil} end)},
-        fn item, {desc, params, auth_handler, handler} ->
+        {"", [], nil, nil, quote(do: fn _, _ -> {:ok, nil} end)},
+        fn item, {desc, params, auth_handler, parent_auth, handler} ->
           case item do
             {:description, _, [text]} ->
-              {text, params, auth_handler, handler}
+              {text, params, auth_handler, parent_auth, handler}
 
             {:param, _, [name, type | rest]} ->
               opts = extract_opts(rest)
-              {desc, [{name, type, opts} | params], auth_handler, handler}
+              {desc, [{name, type, opts} | params], auth_handler, parent_auth, handler}
+
+            {:authorize, _, [handler, [parent_auth: parent]]} ->
+              auth_handler = parse_authorize_handler(handler)
+              parent_auth = parse_authorize_handler(parent)
+              {desc, params, auth_handler, parent_auth, handler}
 
             {:authorize, _, [handler]} ->
               auth_handler = parse_authorize_handler(handler)
-              {desc, params, auth_handler, handler}
+              {desc, params, auth_handler, parent_auth, handler}
 
             {:handle, _, [handler_block]} ->
-              {desc, params, auth_handler, handler_block}
+              {desc, params, auth_handler, parent_auth, handler_block}
 
             _ ->
-              {desc, params, auth_handler, handler}
+              {desc, params, auth_handler, parent_auth, handler}
           end
         end
       )
@@ -636,6 +658,7 @@ else
       end
     end
 
+    # credo:disable-for-next-line
     defmacro define_tool_module(
                _module_name,
                _tool_name,
@@ -644,7 +667,8 @@ else
                _peri_schema,
                _json_schema,
                _auth_handler,
-               _handler_ast
+               _handler_ast,
+               _parent_auth_handler \\ nil
              ) do
       quote do
       end
