@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(Ecto) do
-    defmodule Ectomancer.Tool do
+  defmodule Ectomancer.Tool do
     @moduledoc """
     Custom tool DSL for defining MCP tools.
 

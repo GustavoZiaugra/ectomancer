@@ -222,9 +222,11 @@ if Code.ensure_loaded?(Oban) do
     @doc false
     def get_queue_depth(queue_name) when is_binary(queue_name),
       do: Ectomancer.ObanBridge.Queries.get_queue_depth(queue_name)
+
     @doc false
     def get_queue_depth(other),
       do: Ectomancer.ObanBridge.Queries.get_queue_depth(other)
+
     @doc false
     def list_stuck_jobs(), do: Ectomancer.ObanBridge.Queries.list_stuck_jobs()
     @doc false
@@ -232,15 +234,19 @@ if Code.ensure_loaded?(Oban) do
     @doc false
     def retry_job(job_id) when is_integer(job_id),
       do: Ectomancer.ObanBridge.Queries.retry_job(job_id)
+
     @doc false
     def retry_job(other),
       do: Ectomancer.ObanBridge.Queries.retry_job(other)
+
     @doc false
     def cancel_job(job_id) when is_integer(job_id),
       do: Ectomancer.ObanBridge.Queries.cancel_job(job_id)
+
     @doc false
     def cancel_job(other),
       do: Ectomancer.ObanBridge.Queries.cancel_job(other)
+
     @doc false
     def repo, do: Ectomancer.ObanBridge.Queries.repo()
   end

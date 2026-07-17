@@ -174,7 +174,7 @@ defmodule Ectomancer.Authorization do
 
   def parse_handler(with: module) when is_atom(module), do: module
 
-  def parse_handler([with: module]) when is_atom(module), do: module
+  def parse_handler(with: module) when is_atom(module), do: module
 
   def parse_handler(list) when is_list(list) do
     Keyword.get(list, :all) || Keyword.get(list, :global)

@@ -98,12 +98,18 @@ if Code.ensure_loaded?(Oban) do
 
         query =
           Enum.reduce(filters, query, fn
-            {:queue, queue}, q -> where(q, [j], j.queue == ^queue)
-            {:worker, worker}, q -> where(q, [j], j.worker == ^worker)
+            {:queue, queue}, q ->
+              where(q, [j], j.queue == ^queue)
+
+            {:worker, worker}, q ->
+              where(q, [j], j.worker == ^worker)
+
             {:min_age_minutes, minutes}, q ->
               cutoff = DateTime.utc_now() |> DateTime.add(-minutes, :minute)
               where(q, [j], j.attempted_at < ^cutoff)
-            _, q -> q
+
+            _, q ->
+              q
           end)
 
         query =

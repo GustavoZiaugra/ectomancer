@@ -154,7 +154,9 @@ if Code.ensure_loaded?(Ecto) do
           with_repo(opts, fn repo ->
             struct = struct(schema_module)
             attrs = normalize_params(params || %{}, schema_module)
-            changeset = changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
+
+            changeset =
+              changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
 
             case repo.insert(changeset) do
               {:ok, record} -> {:ok, record}

@@ -63,7 +63,9 @@ if Code.ensure_loaded?(Ecto) do
 
     def generate_params(:get, config) do
       pk_field = hd(config.introspection.primary_key)
-      pk_type = Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+      pk_type =
+        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       if config.soft_delete do
         quote do
@@ -85,7 +87,9 @@ if Code.ensure_loaded?(Ecto) do
 
     def generate_params(:update, config) do
       pk_field = hd(config.introspection.primary_key)
-      pk_type = Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+      pk_type =
+        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       writable_params = build_param_block(config.writable_fields, config.introspection.types)
 
@@ -101,7 +105,9 @@ if Code.ensure_loaded?(Ecto) do
 
     def generate_params(:destroy, config) do
       pk_field = hd(config.introspection.primary_key)
-      pk_type = Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+      pk_type =
+        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       quote do
         param(unquote(pk_field), unquote(pk_type), required: true)
@@ -110,7 +116,9 @@ if Code.ensure_loaded?(Ecto) do
 
     def generate_params(:restore, config) do
       pk_field = hd(config.introspection.primary_key)
-      pk_type = Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+      pk_type =
+        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       quote do
         param(unquote(pk_field), unquote(pk_type), required: true)
