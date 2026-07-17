@@ -252,6 +252,131 @@ defmodule Ectomancer.RepoTest do
     end
   end
 
+  describe "upsert without repo" do
+    setup do
+      original = Application.get_env(:ectomancer, :repo)
+      Application.delete_env(:ectomancer, :repo)
+
+      on_exit(fn ->
+        if original do
+          Application.put_env(:ectomancer, :repo, original)
+        end
+      end)
+
+      :ok
+    end
+
+    test "upsert returns error when repo not configured" do
+      assert {:error, :repo_not_configured} =
+               Repo.upsert(TestUser, %{"email" => "test@test.com"})
+    end
+  end
+
+  describe "upsert with repo" do
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(TestUser)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "inserts a new record when no conflict exists" do
+      {:ok, {record, action}} =
+        Repo.upsert(TestUser, %{"email" => "new@test.com", "name" => "New"},
+          conflict_target: :email
+        )
+
+      assert action == :inserted
+      assert record.email == "new@test.com"
+      assert record.name == "New"
+    end
+
+    test "updates existing record when conflict exists" do
+      {:ok, _} = Repo.create(TestUser, %{email: "existing@test.com", name: "Original", age: 25})
+
+      {:ok, {record, action}} =
+        Repo.upsert(TestUser, %{"email" => "existing@test.com", "name" => "Updated"},
+          conflict_target: :email
+        )
+
+      assert action == :updated
+      assert record.email == "existing@test.com"
+      assert record.name == "Updated"
+    end
+
+    test "upserts with :replace_all updates all fields" do
+      {:ok, _} = Repo.create(TestUser, %{email: "replace@test.com", name: "Old", age: 10})
+
+      {:ok, {record, action}} =
+        Repo.upsert(TestUser, %{"email" => "replace@test.com", "name" => "New", "age" => 99},
+          conflict_target: :email,
+          on_conflict: :replace_all
+        )
+
+      assert action == :updated
+      assert record.name == "New"
+      assert record.age == 99
+    end
+
+    test "upserts with on_conflict [set: ...] only updates specified fields" do
+      {:ok, _original} =
+        Repo.create(TestUser, %{email: "partial@test.com", name: "Keep", age: 50})
+
+      {:ok, {record, action}} =
+        Repo.upsert(TestUser, %{"email" => "partial@test.com", "name" => "Changed", "age" => 99},
+          conflict_target: :email,
+          on_conflict: [set: [:name]]
+        )
+
+      assert action == :updated
+      assert record.name == "Changed"
+      assert record.age == 50
+    end
+
+    test "inserts when no conflict_target provided" do
+      {:ok, {record, action}} =
+        Repo.upsert(TestUser, %{"email" => "no-target@test.com"})
+
+      assert action == :inserted
+      assert record.email == "no-target@test.com"
+    end
+
+    test "upserts with composite conflict target" do
+      {:ok, _} =
+        Repo.create(TestUser, %{email: "composite@test.com", name: "Composite User", age: 30})
+
+      {:ok, {record, action}} =
+        Repo.upsert(
+          TestUser,
+          %{"email" => "composite@test.com", "name" => "Composite User", "age" => 99},
+          conflict_target: [:email, :name]
+        )
+
+      assert action == :updated
+      assert record.age == 99
+    end
+
+    test "inserts new record when composite conflict does not match" do
+      {:ok, _} =
+        Repo.create(TestUser, %{email: "existing@test.com", name: "Existing", age: 30})
+
+      {:ok, {record, action}} =
+        Repo.upsert(
+          TestUser,
+          %{"email" => "existing@test.com", "name" => "Different", "age" => 50},
+          conflict_target: [:email, :name]
+        )
+
+      assert action == :inserted
+      assert record.age == 50
+    end
+  end
+
   describe "extract_primary_key/3" do
     setup do
       original = Application.get_env(:ectomancer, :repo)

@@ -191,6 +191,10 @@ if Code.ensure_loaded?(Ecto) do
 
       {fields, required} =
         case action do
+          :upsert ->
+            # For upsert, use all writable fields (same as create)
+            {base_fields, nil}
+
           :create ->
             # For create, use all writable fields with auto-required
             {base_fields, nil}

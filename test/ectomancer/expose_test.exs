@@ -204,6 +204,74 @@ defmodule Ectomancer.ExposeTest do
     end
   end
 
+  describe "upsert action" do
+    defmodule UpsertMCP do
+      use Ectomancer, name: "upsert-mcp", version: "1.0.0"
+
+      expose(TestUserSchema,
+        actions: [:upsert],
+        conflict_target: :email
+      )
+    end
+
+    alias UpsertMCP.Tool.UpsertTestUserSchema
+
+    test "generates upsert tool" do
+      assert Code.ensure_loaded?(UpsertTestUserSchema)
+    end
+
+    test "has correct name" do
+      assert UpsertTestUserSchema.name() == "upsert_test_user_schema"
+    end
+
+    test "has JSON Schema with writable fields" do
+      schema = UpsertTestUserSchema.input_schema()
+      assert schema["type"] == "object"
+      assert schema["properties"]["email"]["type"] == "string"
+      assert schema["properties"]["name"]["type"] == "string"
+      assert schema["properties"]["age"]["type"] == "integer"
+    end
+
+    test "does not include primary key in params" do
+      schema = UpsertTestUserSchema.input_schema()
+      refute schema["properties"]["id"]
+    end
+
+    test "has execute function" do
+      assert function_exported?(UpsertTestUserSchema, :execute, 2)
+    end
+
+    test "is registered as a component" do
+      tools = UpsertMCP.__components__(:tool)
+      tool_names = Enum.map(tools, & &1.name)
+      assert "upsert_test_user_schema" in tool_names
+    end
+  end
+
+  describe "upsert compile-time validation" do
+    test "raises when conflict_target is missing with :upsert action" do
+      assert_raise ArgumentError, ~r/conflict_target/, fn ->
+        Code.eval_string("""
+        defmodule NoConflictTargetMCP do
+          use Ectomancer, name: "no-ct-mcp", version: "1.0.0"
+          expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:upsert])
+        end
+        """)
+      end
+    end
+
+    test "raises with descriptive message when conflict_target is missing" do
+      assert_raise ArgumentError, ~r/conflict_target/, fn ->
+        Code.eval_string("""
+        defmodule NoConflictTargetMsgMCP do
+          use Ectomancer, name: "no-ct-msg-mcp", version: "1.0.0"
+          expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:list, :upsert])
+        end
+        """)
+      end
+    end
+  end
+
   describe "batch operations" do
     defmodule BatchMCP do
       use Ectomancer, name: "batch-mcp", version: "1.0.0"
