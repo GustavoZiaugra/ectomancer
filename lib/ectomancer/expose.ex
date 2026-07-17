@@ -22,7 +22,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Options
 
-      * `:actions` - List of actions to expose: `:list`, `:get`, `:create`, `:update`, `:destroy`
+      * `:actions` - List of actions to expose: `:list`, `:get`, `:create`, `:update`, `:destroy`, `:batch_create`, `:batch_update`, `:batch_destroy`
       * `:only` - Whitelist of fields to include
       * `:except` - Blacklist of fields to exclude
       * `:filterable` - Fields that allow advanced filter operators (defaults to all exposed fields)
@@ -39,6 +39,12 @@ if Code.ensure_loaded?(Ecto) do
       * `list_users` - List all users with optional filters
       * `get_user` - Get a user by ID
       * `create_user` - Create a new user
+
+    With batch actions `[:batch_create, :batch_update, :batch_destroy]`:
+
+      * `batch_create_users` - Batch create users (array of records)
+      * `batch_update_users` - Batch update users (array of records with IDs)
+      * `batch_destroy_users` - Batch delete users (array of IDs)
 
     ## Field Filtering
 
@@ -83,6 +89,9 @@ if Code.ensure_loaded?(Ecto) do
       * `:create` - Creates new record with provided attributes
       * `:update` - Updates existing record by primary key
       * `:destroy` - Deletes record by primary key
+      * `:batch_create` - Batch create records in a transaction, returns partial failures
+      * `:batch_update` - Batch update records by primary key in a transaction
+      * `:batch_destroy` - Batch delete records by primary key in a transaction
 
     ## Authorization
 
@@ -129,6 +138,21 @@ if Code.ensure_loaded?(Ecto) do
         prefix: "restore",
         suffix: "",
         description_template: "Restore a soft-deleted %{resource}"
+      },
+      batch_create: %{
+        prefix: "batch_create",
+        suffix: "s",
+        description_template: "Batch create %{resource}s"
+      },
+      batch_update: %{
+        prefix: "batch_update",
+        suffix: "s",
+        description_template: "Batch update %{resource}s"
+      },
+      batch_destroy: %{
+        prefix: "batch_destroy",
+        suffix: "s",
+        description_template: "Batch delete %{resource}s"
       }
     }
 
@@ -248,7 +272,8 @@ if Code.ensure_loaded?(Ecto) do
         field_authorize: Keyword.get(opts, :field_authorize),
         repo: Keyword.get(opts, :repo),
         resource: Keyword.get(opts, :resource, true),
-        preloadable: resolve_preloadable(introspection, opts)
+        preloadable: resolve_preloadable(introspection, opts),
+        batch_size: Keyword.get(opts, :batch_size, 100)
       }
     end
 
@@ -517,36 +542,7 @@ if Code.ensure_loaded?(Ecto) do
       params = generate_params(action, config)
       auth_block = generate_authorization_block(action, config)
 
-      repo_module = config.repo
-      preload = config.preload
-      has_preload = action in [:list, :get] and preload != []
-      has_preloadable = action in [:list, :get] and config.preloadable != false
-
-      base_handler =
-        cond do
-          has_preloadable and config.preloadable == :all ->
-            generate_handler_with_all_preloadable(
-              repo_module,
-              preload,
-              has_preload,
-              config.introspection,
-              config.schema,
-              action
-            )
-
-          has_preloadable and is_list(config.preloadable) ->
-            generate_handler_with_specific_preloadable(
-              repo_module,
-              preload,
-              has_preload,
-              config.preloadable,
-              config.schema,
-              action
-            )
-
-          true ->
-            generate_simple_handler(repo_module, preload, has_preload, config.schema, action)
-        end
+      base_handler = select_handler(action, config)
 
       handler =
         if config.field_authorize do
@@ -563,6 +559,41 @@ if Code.ensure_loaded?(Ecto) do
           unquote(auth_block)
           handle(unquote(handler))
         end
+      end
+    end
+
+    defp select_handler(action, config) do
+      repo_module = config.repo
+      preload = config.preload
+      has_preload = action in [:list, :get] and preload != []
+      has_preloadable = action in [:list, :get] and config.preloadable != false
+
+      cond do
+        action in [:batch_create, :batch_update, :batch_destroy] ->
+          generate_batch_handler(repo_module, config.schema, action, config.batch_size)
+
+        has_preloadable and config.preloadable == :all ->
+          generate_handler_with_all_preloadable(
+            repo_module,
+            preload,
+            has_preload,
+            config.introspection,
+            config.schema,
+            action
+          )
+
+        has_preloadable and is_list(config.preloadable) ->
+          generate_handler_with_specific_preloadable(
+            repo_module,
+            preload,
+            has_preload,
+            config.preloadable,
+            config.schema,
+            action
+          )
+
+        true ->
+          generate_simple_handler(repo_module, preload, has_preload, config.schema, action)
       end
     end
 
@@ -585,6 +616,23 @@ if Code.ensure_loaded?(Ecto) do
         fn params, _actor, scope ->
           opts = [scope: scope]
           unquote(preload_expr)
+          unquote(repo_expr)
+          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
+        end
+      end
+    end
+
+    defp generate_batch_handler(repo_module, schema, action, batch_size) do
+      repo_expr =
+        if repo_module do
+          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
+        else
+          quote do: :ok
+        end
+
+      quote do
+        fn params, _actor, scope ->
+          opts = [scope: scope, batch_size: unquote(batch_size)]
           unquote(repo_expr)
           apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
         end
@@ -877,6 +925,33 @@ if Code.ensure_loaded?(Ecto) do
 
       quote do
         param(unquote(pk_field), unquote(pk_type), required: true)
+      end
+    end
+
+    defp generate_params(:batch_create, _config) do
+      quote do
+        param(:records, {:array, :map},
+          required: true,
+          description: "Array of records to create"
+        )
+      end
+    end
+
+    defp generate_params(:batch_update, _config) do
+      quote do
+        param(:records, {:array, :map},
+          required: true,
+          description: "Array of records with id and fields to update"
+        )
+      end
+    end
+
+    defp generate_params(:batch_destroy, _config) do
+      quote do
+        param(:ids, :list,
+          required: true,
+          description: "Array of record IDs to delete"
+        )
       end
     end
 

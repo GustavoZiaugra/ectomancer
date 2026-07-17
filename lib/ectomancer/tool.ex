@@ -383,7 +383,7 @@ if Code.ensure_loaded?(Ecto) do
     defp build_json_schema(params) do
       properties =
         Enum.map(params, fn {name, type, _} ->
-          {to_string(name), %{"type" => type_to_json(type)}}
+          {to_string(name), json_property_for_type(type)}
         end)
         |> Enum.into(%{})
 
@@ -395,6 +395,12 @@ if Code.ensure_loaded?(Ecto) do
       if required != [], do: Map.put(schema, "required", required), else: schema
     end
 
+    defp json_property_for_type(type) when is_atom(type), do: %{"type" => type_to_json(type)}
+
+    defp json_property_for_type({:array, inner}) do
+      %{"type" => "array", "items" => json_property_for_type(inner)}
+    end
+
     # Map DSL types to Peri types
     defp type_to_peri(:string), do: :string
     defp type_to_peri(:integer), do: :integer
@@ -402,6 +408,7 @@ if Code.ensure_loaded?(Ecto) do
     defp type_to_peri(:boolean), do: :boolean
     defp type_to_peri(:list), do: {:list, :string}
     defp type_to_peri(:map), do: :map
+    defp type_to_peri({:array, inner}), do: {:list, type_to_peri(inner)}
     defp type_to_peri(_), do: :string
 
     # Map DSL types to JSON Schema types
@@ -440,15 +447,32 @@ if Code.ensure_loaded?(Ecto) do
 
     # Infer action type from tool name for authorization
     defp tool_action_from_name(tool_name) do
-      tool_name
-      |> String.downcase()
-      |> case do
-        name when name in ["list", "index", "all"] -> :list
-        name when name in ["get", "find", "show"] -> :get
-        name when name in ["create", "new", "add"] -> :create
-        name when name in ["update", "edit", "modify"] -> :update
-        name when name in ["destroy", "delete", "remove"] -> :destroy
-        _ -> :execute
+      name = String.downcase(tool_name)
+
+      prefixes = %{
+        "list" => :list,
+        "index" => :list,
+        "all" => :list,
+        "get" => :get,
+        "find" => :get,
+        "show" => :get,
+        "create" => :create,
+        "new" => :create,
+        "add" => :create,
+        "update" => :update,
+        "edit" => :update,
+        "modify" => :update,
+        "destroy" => :destroy,
+        "delete" => :destroy,
+        "remove" => :destroy
+      }
+
+      cond do
+        Map.has_key?(prefixes, name) -> Map.get(prefixes, name)
+        String.starts_with?(name, "batch_create") -> :batch_create
+        String.starts_with?(name, "batch_update") -> :batch_update
+        String.starts_with?(name, "batch_destroy") -> :batch_destroy
+        true -> :execute
       end
     end
 
@@ -478,6 +502,10 @@ if Code.ensure_loaded?(Ecto) do
 
     def format_error(:not_soft_deletable) do
       {-32_602, "Invalid params: Schema does not support soft-delete", %{}}
+    end
+
+    def format_error({:batch_size_exceeded, limit}) do
+      {-32_602, "Batch size exceeds maximum of #{limit}", %{max_batch_size: limit}}
     end
 
     def format_error(%Ecto.Changeset{} = changeset) do
@@ -696,6 +724,10 @@ else
 
     def format_error(:not_found) do
       {-32_002, "Resource not found", %{}}
+    end
+
+    def format_error({:batch_size_exceeded, limit}) do
+      {-32_602, "Batch size exceeds maximum of #{limit}", %{max_batch_size: limit}}
     end
 
     def format_error(reason) when is_binary(reason) do

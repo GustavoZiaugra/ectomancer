@@ -79,6 +79,7 @@ iex -S mix
 - Optional dependencies are loaded only if parent app uses them
 - The library provides macros and utilities, not a standalone service
 - Always maintain backward compatibility when possible
+- **Every new feature must update `README.md** — add it to the Features list, add usage examples, and update the Action Details / Generated Tools sections as needed
 
 ## MCP Context
 

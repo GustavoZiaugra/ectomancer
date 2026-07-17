@@ -17,6 +17,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Authorization system** — inline functions, policy modules, or action-specific rules
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
+- **Batch operations** — `batch_create`, `batch_update`, `batch_destroy` for transactional multi-record operations
 - **Custom resources** — `resource :system_status do ... end` with URI templates, MIME types, and authorization
 - **Rate limiting** — configurable token bucket per tool or globally
 - **Multi-repo support** — expose schemas from different repos simultaneously
@@ -34,7 +35,7 @@ Watch Ectomancer in action — a full Phoenix app with User, Post, and Comment s
 *3 Ecto schemas → 15 MCP tools with zero boilerplate. Replay locally with `asciinema play priv/demo.cast`.*
 
 The demo shows:
-- **3 Ecto schemas** → **15 MCP tools** (list, get, create, update, destroy) with zero boilerplate
+- **3 Ecto schemas** → **15+ MCP tools** (list, get, create, update, destroy + batch operations) with zero boilerplate
 - **Advanced filtering** — `list_posts(title_contains: "MCP")` with automatic LIKE operators
 - **Association support** — create posts linked to users through MCP tool calls
 - **Real-time interaction** — query, create, and update records conversationally
@@ -240,6 +241,30 @@ end, nil)
 ```elixir
 expose MyApp.OtherSchema, repo: MyApp.ReplicaRepo
 ```
+
+## Batch operations
+
+Perform multi-record mutations in a single transactional call:
+
+```elixir
+expose MyApp.Accounts.User,
+  actions: [:list, :get, :batch_create, :batch_update, :batch_destroy],
+  batch_size: 200
+```
+
+| Action | Tool Name | Input | Behavior |
+|--------|-----------|-------|----------|
+| `batch_create` | `batch_create_users` | `records: [%{...}]` | Validates all, inserts in transaction |
+| `batch_update` | `batch_update_users` | `records: [%{id, ...}]` | Fetches each, updates in transaction |
+| `batch_destroy` | `batch_destroy_users` | `ids: [...]` | Fetches each, soft/hard-deletes atomically |
+
+Partial failures are reported alongside successes — the AI assistant can retry or report the failed records:
+
+```elixir
+# Result shape: %{succeeded: [%{status: :ok, record: ...}], failed: [...], total: 3}
+```
+
+Batch operations respect authorization, scope, soft-delete, and field auth just like single-record operations.
 
 ## Pages
 

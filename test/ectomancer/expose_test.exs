@@ -203,4 +203,103 @@ defmodule Ectomancer.ExposeTest do
       assert Code.ensure_loaded?(ExceptMCP.Tool.CreateTestUserSchema)
     end
   end
+
+  describe "batch operations" do
+    defmodule BatchMCP do
+      use Ectomancer, name: "batch-mcp", version: "1.0.0"
+
+      expose(TestUserSchema,
+        actions: [:batch_create, :batch_update, :batch_destroy]
+      )
+    end
+
+    alias BatchMCP.Tool.BatchCreateTestUserSchemas
+    alias BatchMCP.Tool.BatchDestroyTestUserSchemas
+    alias BatchMCP.Tool.BatchUpdateTestUserSchemas
+
+    test "generates batch_create tool" do
+      assert Code.ensure_loaded?(BatchCreateTestUserSchemas)
+    end
+
+    test "generates batch_update tool" do
+      assert Code.ensure_loaded?(BatchUpdateTestUserSchemas)
+    end
+
+    test "generates batch_destroy tool" do
+      assert Code.ensure_loaded?(BatchDestroyTestUserSchemas)
+    end
+
+    test "batch tools have correct names" do
+      assert BatchCreateTestUserSchemas.name() == "batch_create_test_user_schemas"
+      assert BatchUpdateTestUserSchemas.name() == "batch_update_test_user_schemas"
+      assert BatchDestroyTestUserSchemas.name() == "batch_destroy_test_user_schemas"
+    end
+
+    test "batch_create has records param as array of objects" do
+      schema = BatchCreateTestUserSchemas.input_schema()
+
+      assert %{"type" => "array", "items" => %{"type" => "object"}} =
+               schema["properties"]["records"]
+
+      assert "records" in schema["required"]
+    end
+
+    test "batch_update has records param as array of objects" do
+      schema = BatchUpdateTestUserSchemas.input_schema()
+
+      assert %{"type" => "array", "items" => %{"type" => "object"}} =
+               schema["properties"]["records"]
+
+      assert "records" in schema["required"]
+    end
+
+    test "batch_destroy has ids param as list" do
+      schema = BatchDestroyTestUserSchemas.input_schema()
+      assert schema["properties"]["ids"]["type"] == "array"
+      assert "ids" in schema["required"]
+    end
+
+    test "batch_destroy tool is not generated when not in actions" do
+      defmodule NoBatchDestroyMCP do
+        use Ectomancer, name: "no-bd-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:batch_create])
+      end
+
+      assert Code.ensure_loaded?(NoBatchDestroyMCP.Tool.BatchCreateTestUserSchemas)
+      refute Code.ensure_loaded?(NoBatchDestroyMCP.Tool.BatchDestroyTestUserSchemas)
+    end
+
+    test "readonly mode excludes batch operations" do
+      defmodule ReadonlyBatchMCP do
+        use Ectomancer, name: "readonly-batch-mcp", version: "1.0.0"
+
+        expose(TestUserSchema,
+          actions: [:list, :batch_create, :batch_update, :batch_destroy],
+          readonly: true
+        )
+      end
+
+      tools = ReadonlyBatchMCP.__components__(:tool)
+      tool_names = Enum.map(tools, & &1.name)
+      assert "list_test_user_schemas" in tool_names
+      refute "batch_create_test_user_schemas" in tool_names
+      refute "batch_update_test_user_schemas" in tool_names
+      refute "batch_destroy_test_user_schemas" in tool_names
+    end
+
+    test "batch_size option is accepted" do
+      defmodule BatchSizeMCP do
+        use Ectomancer, name: "batch-size-mcp", version: "1.0.0"
+        expose(TestUserSchema, actions: [:batch_create], batch_size: 50)
+      end
+
+      assert Code.ensure_loaded?(BatchSizeMCP.Tool.BatchCreateTestUserSchemas)
+    end
+
+    test "batch tools have execute function" do
+      assert function_exported?(BatchCreateTestUserSchemas, :execute, 2)
+      assert function_exported?(BatchUpdateTestUserSchemas, :execute, 2)
+      assert function_exported?(BatchDestroyTestUserSchemas, :execute, 2)
+    end
+  end
 end

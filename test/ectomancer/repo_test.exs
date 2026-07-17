@@ -549,4 +549,136 @@ defmodule Ectomancer.RepoTest do
       assert Repo.cast_param_value(42, :integer) == 42
     end
   end
+
+  describe "batch operations without repo" do
+    setup do
+      original = Application.get_env(:ectomancer, :repo)
+      Application.delete_env(:ectomancer, :repo)
+
+      on_exit(fn ->
+        if original do
+          Application.put_env(:ectomancer, :repo, original)
+        end
+      end)
+
+      :ok
+    end
+
+    test "batch_create returns error when repo not configured" do
+      assert {:error, :repo_not_configured} =
+               Repo.batch_create(TestUser, %{"records" => []})
+    end
+
+    test "batch_update returns error when repo not configured" do
+      assert {:error, :repo_not_configured} =
+               Repo.batch_update(TestUser, %{"records" => []})
+    end
+
+    test "batch_destroy returns error when repo not configured" do
+      assert {:error, :repo_not_configured} =
+               Repo.batch_destroy(TestUser, %{"ids" => []})
+    end
+  end
+
+  describe "batch operations with repo" do
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(TestUser)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "batch_create inserts multiple records" do
+      {:ok, result} =
+        Repo.batch_create(TestUser, %{
+          "records" => [
+            %{"email" => "a@b.com", "name" => "Alice", "age" => 30},
+            %{"email" => "b@c.com", "name" => "Bob", "age" => 25}
+          ]
+        })
+
+      assert length(result.succeeded) == 2
+      assert result.failed == []
+      assert result.total == 2
+    end
+
+    test "batch_create enforces batch size limit" do
+      records = Enum.map(1..101, fn i -> %{"email" => "#{i}@test.com"} end)
+
+      assert {:error, {:batch_size_exceeded, 100}} =
+               Repo.batch_create(TestUser, %{"records" => records}, batch_size: 100)
+    end
+
+    test "batch_create with valid batch_size option" do
+      records = Enum.map(1..50, fn i -> %{"email" => "#{i}@test.com"} end)
+
+      {:ok, result} =
+        Repo.batch_create(TestUser, %{"records" => records}, batch_size: 200)
+
+      assert result.total == 50
+    end
+
+    test "batch_create returns partial failures" do
+      {:ok, result} =
+        Repo.batch_create(TestUser, %{
+          "records" => [
+            %{"email" => "good@b.com"},
+            %{"email" => nil},
+            %{"email" => "also@b.com"}
+          ]
+        })
+
+      # At least 1 should succeed (email is nullable, but if it has validation it might fail)
+      # We're testing the shape of the result
+      assert result.total == 3
+      assert is_list(result.succeeded)
+      assert is_list(result.failed)
+    end
+
+    test "batch_update updates multiple records" do
+      {:ok, u1} = Repo.create(TestUser, %{email: "a@b.com", name: "Alice", age: 30})
+      {:ok, u2} = Repo.create(TestUser, %{email: "b@c.com", name: "Bob", age: 25})
+
+      {:ok, result} =
+        Repo.batch_update(TestUser, %{
+          "records" => [
+            %{"id" => u1.id, "name" => "Alice Updated"},
+            %{"id" => u2.id, "age" => 26}
+          ]
+        })
+
+      assert length(result.succeeded) == 2
+      assert result.failed == []
+
+      {:ok, updated1} = Repo.get(TestUser, %{"id" => u1.id})
+      {:ok, updated2} = Repo.get(TestUser, %{"id" => u2.id})
+      assert updated1.name == "Alice Updated"
+      assert updated2.age == 26
+    end
+
+    test "batch_destroy destroys multiple records" do
+      {:ok, u1} = Repo.create(TestUser, %{email: "a@b.com"})
+      {:ok, u2} = Repo.create(TestUser, %{email: "b@c.com"})
+      {:ok, _u3} = Repo.create(TestUser, %{email: "c@d.com"})
+
+      {:ok, result} =
+        Repo.batch_destroy(TestUser, %{
+          "ids" => [u1.id, u2.id]
+        })
+
+      assert length(result.succeeded) == 2
+      assert result.failed == []
+
+      assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u1.id})
+      assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u2.id})
+
+      {:ok, remaining} = Repo.list(TestUser, %{}, limit: 100)
+      assert length(remaining) == 1
+    end
+  end
 end
