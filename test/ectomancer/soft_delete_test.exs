@@ -128,6 +128,34 @@ defmodule Ectomancer.SoftDeleteTest do
     end
   end
 
+  describe "Repo.upsert with soft-delete" do
+    test "upserting a soft-deleted record restores it" do
+      Ectomancer.DataCase.insert!(Post, %{title: "Restore Me", body: "Will be deleted"})
+
+      {:ok, _} = Repo.destroy(Post, %{"id" => 1})
+
+      assert Repo.get(Post, %{"id" => 1}) == {:error, :not_found}
+
+      {:ok, {record, action}} =
+        Repo.upsert(Post, %{"title" => "Restore Me", "body" => "Updated body"},
+          conflict_target: :title
+        )
+
+      assert action == :updated
+      assert record.body == "Updated body"
+      assert record.deleted_at == nil
+    end
+
+    test "upsert inserts new record and sets timestamps" do
+      {:ok, {record, action}} =
+        Repo.upsert(Post, %{"title" => "Brand New", "body" => "Fresh"}, conflict_target: :title)
+
+      assert action == :inserted
+      assert record.title == "Brand New"
+      assert record.deleted_at == nil
+    end
+  end
+
   describe "Repo.restore" do
     test "restores a soft-deleted record" do
       # Update the record to be soft-deleted directly

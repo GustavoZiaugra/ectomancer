@@ -235,6 +235,150 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc """
+    Upserts a record - inserts a new record or updates an existing one based on conflict target.
+
+    ## Parameters
+
+      * `schema_module` - The Ecto schema module
+      * `params` - Map of attributes
+      * `opts` - Options including `:conflict_target` and `:on_conflict`
+
+    ## Options
+
+      * `:conflict_target` - Field(s) to check for conflicts. Single atom or list of atoms.
+      * `:on_conflict` - What to do on conflict. `:replace_all` (default) or `[set: [...]]`
+
+    ## Examples
+
+        upsert(MyApp.Accounts.User, %{"email" => "test@example.com", "name" => "Test"},
+          conflict_target: :email,
+          on_conflict: :replace_all
+        )
+
+    Returns `{:ok, {record, :inserted}}` or `{:ok, {record, :updated}}`.
+    """
+    @spec upsert(module(), map(), keyword()) ::
+            {:ok, {struct(), atom()}} | {:error, Ecto.Changeset.t()}
+    def upsert(schema_module, params, opts \\ []) do
+      Ectomancer.Telemetry.repo_span(:upsert, schema_module, fn ->
+        try do
+          with {:ok, repo} <- get_repo(opts) do
+            attrs = normalize_params(params || %{}, schema_module)
+            do_upsert(repo, schema_module, attrs, opts)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          Ecto.StaleEntryError -> {:error, :stale_entry}
+          e -> {:error, {:unexpected, "Upsert failed: #{Exception.message(e)}"}}
+        end
+      end)
+    end
+
+    defp do_upsert(repo, schema_module, attrs, opts) do
+      conflict_target = Keyword.get(opts, :conflict_target)
+
+      if conflict_target do
+        upsert_with_conflict(repo, schema_module, attrs, conflict_target, opts)
+      else
+        insert_for_upsert(repo, schema_module, attrs, :inserted)
+      end
+    end
+
+    defp upsert_with_conflict(repo, schema_module, attrs, conflict_target, opts) do
+      conflict_fields = List.wrap(conflict_target)
+      conflict_values = Map.take(attrs, conflict_fields)
+
+      if has_all_conflict_values?(conflict_values, conflict_fields) do
+        query = build_upsert_find_query(schema_module, conflict_values)
+
+        query =
+          query
+          |> apply_scope(Keyword.get(opts, :scope))
+
+        case repo.one(query) do
+          nil -> insert_for_upsert(repo, schema_module, attrs, :inserted)
+          existing -> upsert_update_existing(repo, schema_module, existing, attrs, opts)
+        end
+      else
+        insert_for_upsert(repo, schema_module, attrs, :inserted)
+      end
+    end
+
+    defp has_all_conflict_values?(conflict_values, conflict_fields) do
+      map_size(conflict_values) == length(conflict_fields) and conflict_values != %{}
+    end
+
+    defp insert_for_upsert(repo, schema_module, attrs, action) do
+      struct = struct(schema_module)
+
+      changeset = build_create_changeset(schema_module, struct, attrs)
+
+      case repo.insert(changeset) do
+        {:ok, record} -> {:ok, {record, action}}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+
+    defp upsert_update_existing(repo, schema_module, existing, attrs, opts) do
+      on_conflict = Keyword.get(opts, :on_conflict, :replace_all)
+      conflict_target = Keyword.get(opts, :conflict_target)
+      conflict_fields = List.wrap(conflict_target)
+      pk_fields = SchemaIntrospection.analyze(schema_module).primary_key
+
+      update_attrs = resolve_upsert_update_attrs(attrs, on_conflict, conflict_fields)
+
+      sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+      update_attrs =
+        if is_nil(sd_field), do: update_attrs, else: Map.put(update_attrs, sd_field, nil)
+
+      changeset =
+        if function_exported?(schema_module, :changeset, 2) do
+          schema_module.changeset(existing, update_attrs)
+        else
+          writable =
+            schema_module
+            |> writable_fields()
+            |> Enum.reject(fn f -> f in pk_fields end)
+
+          writable =
+            if not is_nil(sd_field) and sd_field not in writable do
+              [sd_field | writable]
+            else
+              writable
+            end
+
+          Ecto.Changeset.cast(existing, update_attrs, writable)
+        end
+
+      case repo.update(changeset) do
+        {:ok, record} -> {:ok, {record, :updated}}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+
+    defp resolve_upsert_update_attrs(attrs, :replace_all, _conflict_fields) do
+      attrs
+    end
+
+    defp resolve_upsert_update_attrs(attrs, [set: fields], _conflict_fields)
+         when is_list(fields) do
+      Map.take(attrs, fields)
+    end
+
+    defp resolve_upsert_update_attrs(_attrs, _on_conflict, _conflict_fields) do
+      %{}
+    end
+
+    defp build_upsert_find_query(schema_module, conflict_values) do
+      import Ecto.Query
+
+      Enum.reduce(conflict_values, from(r in schema_module), fn {field, value}, query ->
+        where(query, [r], field(r, ^field) == ^value)
+      end)
+    end
+
+    @doc """
     Restores a soft-deleted record by setting its soft-delete field to `nil`.
 
     ## Parameters

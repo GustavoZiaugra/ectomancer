@@ -111,6 +111,25 @@ defmodule Ectomancer.DataCase do
   end
 
   @doc """
+  Creates a unique index on the given fields for a schema's table.
+
+  Used by upsert tests to enforce uniqueness on conflict target fields.
+
+  ## Examples
+
+      Ectomancer.DataCase.create_unique_index!(MyApp.Accounts.User, :email)
+      Ectomancer.DataCase.create_unique_index!(MyApp.Accounts.User, [:org_id, :sku])
+  """
+  def create_unique_index!(schema_module, fields) do
+    table_name = schema_module.__schema__(:source)
+    fields_list = List.wrap(fields)
+    index_name = "#{table_name}_#{Enum.map_join(fields_list, "_", &to_string/1)}_unique"
+    cols = Enum.map_join(fields_list, ", ", &to_string/1)
+
+    SQL.query!(TestRepo, "CREATE UNIQUE INDEX #{index_name} ON #{table_name} (#{cols})")
+  end
+
+  @doc """
   Counts records in a schema's table.
   """
   def count(schema_module) do

@@ -153,6 +153,11 @@ if Code.ensure_loaded?(Ecto) do
         prefix: "batch_destroy",
         suffix: "s",
         description_template: "Batch delete %{resource}s"
+      },
+      upsert: %{
+        prefix: "upsert",
+        suffix: "",
+        description_template: "Create or update a %{resource} (upsert)"
       }
     }
 
@@ -245,6 +250,13 @@ if Code.ensure_loaded?(Ecto) do
       readonly = Keyword.get(opts, :readonly, false)
 
       base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
+
+      if :upsert in base_actions and not Keyword.has_key?(opts, :conflict_target) do
+        raise ArgumentError,
+              "`:conflict_target` is required when `:upsert` is in the actions list. " <>
+                "Example: expose #{inspect(schema)}, actions: [:upsert], conflict_target: :email"
+      end
+
       actions = filter_actions_for_readonly(base_actions, readonly)
       soft_delete = resolve_soft_delete(schema, opts)
 
@@ -273,7 +285,9 @@ if Code.ensure_loaded?(Ecto) do
         repo: Keyword.get(opts, :repo),
         resource: Keyword.get(opts, :resource, true),
         preloadable: resolve_preloadable(introspection, opts),
-        batch_size: Keyword.get(opts, :batch_size, 100)
+        batch_size: Keyword.get(opts, :batch_size, 100),
+        conflict_target: opts[:conflict_target],
+        on_conflict: Keyword.get(opts, :on_conflict, :replace_all)
       }
     end
 
@@ -565,13 +579,29 @@ if Code.ensure_loaded?(Ecto) do
     defp select_handler(action, config) do
       repo_module = config.repo
       preload = config.preload
-      has_preload = action in [:list, :get] and preload != []
-      has_preloadable = action in [:list, :get] and config.preloadable != false
 
       cond do
+        action == :upsert ->
+          generate_upsert_handler(repo_module, config)
+
         action in [:batch_create, :batch_update, :batch_destroy] ->
           generate_batch_handler(repo_module, config.schema, action, config.batch_size)
 
+        list_action?(action) ->
+          select_preload_handler(repo_module, preload, config, action)
+
+        true ->
+          generate_simple_handler(repo_module, preload, false, config.schema, action)
+      end
+    end
+
+    defp list_action?(action), do: action in [:list, :get]
+
+    defp select_preload_handler(repo_module, preload, config, action) do
+      has_preload = preload != []
+      has_preloadable = config.preloadable != false
+
+      cond do
         has_preloadable and config.preloadable == :all ->
           generate_handler_with_all_preloadable(
             repo_module,
@@ -618,6 +648,31 @@ if Code.ensure_loaded?(Ecto) do
           unquote(preload_expr)
           unquote(repo_expr)
           apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
+        end
+      end
+    end
+
+    defp generate_upsert_handler(repo_module, config) do
+      conflict_target = config.conflict_target
+      on_conflict = config.on_conflict
+
+      repo_expr =
+        if repo_module do
+          quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
+        else
+          quote do: :ok
+        end
+
+      quote do
+        fn params, _actor, scope ->
+          opts = [
+            scope: scope,
+            conflict_target: unquote(conflict_target),
+            on_conflict: unquote(on_conflict)
+          ]
+
+          unquote(repo_expr)
+          apply(Ectomancer.Repo, :upsert, [unquote(config.schema), params, opts])
         end
       end
     end
@@ -906,6 +961,10 @@ if Code.ensure_loaded?(Ecto) do
         param(unquote(pk_field), unquote(pk_type), required: true)
         unquote(writable_params)
       end
+    end
+
+    defp generate_params(:upsert, config) do
+      build_param_block(config.writable_fields, config.introspection.types)
     end
 
     defp generate_params(:destroy, config) do
