@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Batch operations: `batch_create`, `batch_update`, `batch_destroy` actions (#109)
+  - `batch_create` — insert multiple records in a single transaction
+  - `batch_update` — update multiple records (by primary key) atomically
+  - `batch_destroy` — delete/soft-delete multiple records in one call
+  - Partial failure reporting: returns `%{succeeded: [...], failed: [...]}` per batch
+  - Configurable `:batch_size` option (default: 100) per exposed schema
+  - Full authorization, scope, and soft-delete support for all batch actions
+
 ## [1.5.0] - 2026-07-17
 
 ### Added

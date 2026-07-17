@@ -270,6 +270,301 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
+    @doc """
+    Batch creates multiple records in a single transaction.
+
+    ## Parameters
+
+      * `schema_module` - The Ecto schema module
+      * `params` - Map containing `"records"` key with a list of attribute maps
+      * `opts` - Options including `:scope`, `:repo`, `:batch_size`
+
+    ## Examples
+
+        batch_create(MyApp.Accounts.User, %{
+          "records" => [
+            %{"email" => "a@b.com", "name" => "Alice"},
+            %{"email" => "b@c.com", "name" => "Bob"}
+          ]
+        })
+    """
+    @spec batch_create(module(), map(), keyword()) ::
+            {:ok, %{succeeded: list(), failed: list(), total: non_neg_integer()}}
+            | {:error, any()}
+    def batch_create(schema_module, params, opts \\ []) do
+      Ectomancer.Telemetry.repo_span(:batch_create, schema_module, fn ->
+        try do
+          records = Map.get(params || %{}, "records", [])
+          batch_size = Keyword.get(opts, :batch_size, 100)
+
+          if length(records) > batch_size do
+            {:error, {:batch_size_exceeded, batch_size}}
+          else
+            with_repo(opts, fn repo ->
+              run_batch(repo, schema_module, records, opts, fn attrs ->
+                perform_batch_create(repo, schema_module, attrs)
+              end)
+            end)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          e -> {:error, {:unexpected, "Batch create failed: #{Exception.message(e)}"}}
+        end
+      end)
+    end
+
+    @doc """
+    Batch updates multiple records in a single transaction.
+
+    ## Parameters
+
+      * `schema_module` - The Ecto schema module
+      * `params` - Map containing `"records"` key with a list of maps (each must include the primary key)
+      * `opts` - Options including `:scope`, `:repo`, `:batch_size`
+
+    ## Examples
+
+        batch_update(MyApp.Accounts.User, %{
+          "records" => [
+            %{"id" => 1, "name" => "Alice Updated"},
+            %{"id" => 2, "email" => "b@new.com"}
+          ]
+        })
+    """
+    @spec batch_update(module(), map(), keyword()) ::
+            {:ok, %{succeeded: list(), failed: list(), total: non_neg_integer()}}
+            | {:error, any()}
+    def batch_update(schema_module, params, opts \\ []) do
+      Ectomancer.Telemetry.repo_span(:batch_update, schema_module, fn ->
+        try do
+          records = Map.get(params || %{}, "records", [])
+          batch_size = Keyword.get(opts, :batch_size, 100)
+
+          if length(records) > batch_size do
+            {:error, {:batch_size_exceeded, batch_size}}
+          else
+            with_repo(opts, fn repo ->
+              run_batch(repo, schema_module, records, opts, fn record_attrs ->
+                perform_batch_update(repo, schema_module, record_attrs, opts)
+              end)
+            end)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          e -> {:error, {:unexpected, "Batch update failed: #{Exception.message(e)}"}}
+        end
+      end)
+    end
+
+    @doc """
+    Batch destroys multiple records in a single transaction.
+
+    ## Parameters
+
+      * `schema_module` - The Ecto schema module
+      * `params` - Map containing `"ids"` key with a list of primary key values
+      * `opts` - Options including `:scope`, `:repo`, `:batch_size`
+
+    ## Examples
+
+        batch_destroy(MyApp.Accounts.User, %{
+          "ids" => [1, 2, 3]
+        })
+    """
+    @spec batch_destroy(module(), map(), keyword()) ::
+            {:ok, %{succeeded: list(), failed: list(), total: non_neg_integer()}}
+            | {:error, any()}
+    def batch_destroy(schema_module, params, opts \\ []) do
+      Ectomancer.Telemetry.repo_span(:batch_destroy, schema_module, fn ->
+        try do
+          ids = Map.get(params || %{}, "ids", [])
+          batch_size = Keyword.get(opts, :batch_size, 100)
+
+          if length(ids) > batch_size do
+            {:error, {:batch_size_exceeded, batch_size}}
+          else
+            with_repo(opts, fn repo ->
+              run_batch(repo, schema_module, ids, opts, fn raw_id ->
+                perform_batch_destroy(repo, schema_module, raw_id, opts)
+              end)
+            end)
+          end
+        rescue
+          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
+          e -> {:error, {:unexpected, "Batch destroy failed: #{Exception.message(e)}"}}
+        end
+      end)
+    end
+
+    defp perform_batch_create(repo, schema_module, attrs) do
+      struct = struct(schema_module)
+      attrs = normalize_params(attrs, schema_module)
+      changeset = build_create_changeset(schema_module, struct, attrs)
+
+      case repo.insert(changeset) do
+        {:ok, record} -> {:ok, record}
+        {:error, changeset} -> {:error, attrs, changeset}
+      end
+    end
+
+    defp build_create_changeset(schema_module, struct, attrs) do
+      if function_exported?(schema_module, :changeset, 2) do
+        schema_module.changeset(struct, attrs)
+      else
+        writable = writable_fields(schema_module)
+        Ecto.Changeset.cast(struct, attrs, writable)
+      end
+    end
+
+    defp perform_batch_destroy(repo, schema_module, raw_id, opts) do
+      introspection = SchemaIntrospection.analyze(schema_module)
+      pk_field = hd(introspection.primary_key)
+      field_type = Map.get(introspection.types, pk_field)
+      cast_id = cast_primary_key_value(raw_id, field_type)
+      pk_values = [{pk_field, cast_id}]
+      scope = Keyword.get(opts, :scope)
+
+      query =
+        schema_module
+        |> build_pk_query(pk_values)
+        |> apply_scope(scope)
+
+      case repo.one(query) do
+        nil ->
+          {:error, raw_id, :not_found}
+
+        record ->
+          sd_field = SchemaIntrospection.soft_delete_field(schema_module)
+
+          result =
+            if sd_field do
+              now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+              changeset = Ecto.Changeset.change(record, %{sd_field => now})
+              repo.update(changeset)
+            else
+              repo.delete(record)
+            end
+
+          case result do
+            {:ok, record} -> {:ok, record}
+            {:error, changeset} -> {:error, raw_id, changeset}
+          end
+      end
+    end
+
+    defp perform_batch_update(repo, schema_module, record_attrs, opts) do
+      pk_fields = SchemaIntrospection.analyze(schema_module).primary_key
+      pk_values = extract_pk_values(record_attrs, pk_fields, schema_module)
+
+      case pk_values do
+        {:error, reason} ->
+          {:error, record_attrs, reason}
+
+        {:ok, pk_values} ->
+          update_record_by_pk(repo, schema_module, pk_values, record_attrs, pk_fields, opts)
+      end
+    end
+
+    defp update_record_by_pk(repo, schema_module, pk_values, record_attrs, pk_fields, opts) do
+      scope = Keyword.get(opts, :scope)
+
+      query =
+        schema_module
+        |> build_pk_query(pk_values)
+        |> apply_scope(scope)
+
+      case repo.one(query) do
+        nil ->
+          {:error, record_attrs, :not_found}
+
+        record ->
+          update_attrs =
+            record_attrs
+            |> normalize_params(schema_module)
+            |> Enum.reject(fn {k, _v} -> k in pk_fields end)
+            |> Enum.into(%{})
+
+          changeset = build_changeset(schema_module, record, update_attrs, pk_fields)
+
+          case repo.update(changeset) do
+            {:ok, record} -> {:ok, record}
+            {:error, changeset} -> {:error, record_attrs, changeset}
+          end
+      end
+    end
+
+    defp build_changeset(schema_module, record, update_attrs, pk_fields) do
+      if function_exported?(schema_module, :changeset, 2) do
+        schema_module.changeset(record, update_attrs)
+      else
+        writable =
+          schema_module
+          |> writable_fields()
+          |> Enum.reject(fn f -> f in pk_fields end)
+
+        Ecto.Changeset.cast(record, update_attrs, writable)
+      end
+    end
+
+    defp run_batch(repo, _schema_module, items, _opts, operation) do
+      results =
+        repo.transaction(fn ->
+          Enum.map(items, fn item ->
+            try do
+              case operation.(item) do
+                {:ok, record} -> %{status: :ok, record: record}
+                {:error, input, errors} -> %{status: :error, input: input, errors: errors}
+              end
+            rescue
+              e ->
+                %{status: :error, input: item, errors: Exception.message(e)}
+            end
+          end)
+        end)
+
+      case results do
+        {:ok, results} ->
+          succeeded = Enum.filter(results, &(&1.status == :ok))
+          failed = Enum.filter(results, &(&1.status != :ok))
+          {:ok, %{succeeded: succeeded, failed: failed, total: length(results)}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+
+    defp extract_pk_values(params, pk_fields, schema_module) when is_list(pk_fields) do
+      field_types = SchemaIntrospection.analyze(schema_module).types
+
+      values =
+        Enum.map(pk_fields, fn pk_field ->
+          value =
+            case Map.get(params, Atom.to_string(pk_field)) do
+              nil -> Map.get(params, pk_field)
+              v -> v
+            end
+
+          case value do
+            nil ->
+              {:error, {:missing_primary_key, pk_field}}
+
+            raw_value ->
+              field_type = Map.get(field_types, pk_field)
+              cast_value = cast_primary_key_value(raw_value, field_type)
+              {:ok, {pk_field, cast_value}}
+          end
+        end)
+
+      case Enum.filter(values, fn {status, _} -> status == :error end) do
+        [] ->
+          pk_values = Enum.map(values, fn {:ok, {field, value}} -> {field, value} end)
+          {:ok, pk_values}
+
+        _errors ->
+          {:error, :missing_primary_key}
+      end
+    end
+
     # Private functions
 
     @doc false
