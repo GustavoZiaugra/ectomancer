@@ -67,7 +67,8 @@ end
 defmodule MyApp.MCP do
   use Ectomancer,
     name: "myapp-mcp",
-    version: "0.1.0"
+    version: "0.1.0",
+    authorize: with: MyApp.Policies.GlobalPolicy
 
   expose MyApp.Accounts.User,
     actions: [:list, :get, :create, :update]
@@ -139,6 +140,28 @@ Three strategies, choose what fits:
 | **Inline** | `authorize fn actor, _ -> actor.role == :admin end` | Quick rules |
 | **Policy module** | `authorize with: MyApp.Policies.UserPolicy` | Complex logic, reusable |
 | **None** | `authorize :none` | Public endpoints |
+
+### Global authorization
+
+Set a policy for the entire server — it cascades to all schemas, custom tools, and route introspection tools:
+
+```elixir
+use Ectomancer,
+  name: "myapp-mcp",
+  authorize: fn actor, _ -> actor.role == :admin end
+```
+
+You can also use a policy module:
+
+```elixir
+use Ectomancer,
+  name: "myapp-mcp",
+  authorize: with: MyApp.Policies.GlobalPolicy
+```
+
+Per-schema `authorize` overrides the global policy for that schema. Action-specific rules override further. Both must pass when both are set (cascading).
+
+### Per-schema and per-action rules
 
 Schema-level and action-specific rules work too:
 
