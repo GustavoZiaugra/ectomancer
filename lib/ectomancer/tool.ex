@@ -337,7 +337,8 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     # Flatten nested __block__ items
-    defp flatten_block_items(items) do
+    @doc false
+    def flatten_block_items(items) do
       Enum.flat_map(items, fn
         {:__block__, _, inner} -> flatten_block_items(inner)
         other -> [other]

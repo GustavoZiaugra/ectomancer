@@ -299,14 +299,8 @@ defmodule Ectomancer.Resource do
     )
   end
 
-  # Flatten nested __block__ items
   @doc false
-  def flatten_block_items(items) do
-    Enum.flat_map(items, fn
-      {:__block__, _, inner} -> flatten_block_items(inner)
-      other -> [other]
-    end)
-  end
+  defdelegate flatten_block_items(items), to: Ectomancer.Tool
 
   @doc false
   defdelegate parse_authorize_handler(handler), to: Ectomancer.Authorization, as: :parse_handler
