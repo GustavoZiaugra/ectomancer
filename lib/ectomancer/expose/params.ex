@@ -67,7 +67,7 @@ if Code.ensure_loaded?(Ecto) do
       pk_field = hd(config.introspection.primary_key)
 
       pk_type =
-        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       if config.soft_delete do
         quote do
@@ -91,7 +91,7 @@ if Code.ensure_loaded?(Ecto) do
       pk_field = hd(config.introspection.primary_key)
 
       pk_type =
-        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       writable_params = build_param_block(config.writable_fields, config.introspection.types)
 
@@ -109,7 +109,7 @@ if Code.ensure_loaded?(Ecto) do
       pk_field = hd(config.introspection.primary_key)
 
       pk_type =
-        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       quote do
         param(unquote(pk_field), unquote(pk_type), required: true)
@@ -120,7 +120,7 @@ if Code.ensure_loaded?(Ecto) do
       pk_field = hd(config.introspection.primary_key)
 
       pk_type =
-        Ectomancer.Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
 
       quote do
         param(unquote(pk_field), unquote(pk_type), required: true)
@@ -169,7 +169,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp build_single_param(field, type) do
-      param_type = Ectomancer.Expose.get_ecto_type_for_param(type)
+      param_type = Expose.get_ecto_type_for_param(type)
 
       quote do
         param(unquote(field), unquote(param_type))
@@ -198,7 +198,7 @@ if Code.ensure_loaded?(Ecto) do
     defp suffixes_for_type(_), do: []
 
     defp suffix_param_type("in", _type), do: :list
-    defp suffix_param_type(_suffix, type), do: Ectomancer.Expose.get_ecto_type_for_param(type)
+    defp suffix_param_type(_suffix, type), do: Expose.get_ecto_type_for_param(type)
 
     defp include_param(false), do: nil
 
@@ -212,7 +212,7 @@ if Code.ensure_loaded?(Ecto) do
       fields
       |> Enum.map(fn field ->
         type = Map.get(types, field)
-        param_type = Ectomancer.Expose.get_ecto_type_for_param(type)
+        param_type = Expose.get_ecto_type_for_param(type)
 
         quote do
           param(unquote(field), unquote(param_type))
