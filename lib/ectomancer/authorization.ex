@@ -153,4 +153,77 @@ defmodule Ectomancer.Authorization do
     Ectomancer.Telemetry.auth_denied(actor, action, handler)
     {:error, reason}
   end
+
+  @doc """
+  Parses an authorization handler into a canonical form.
+
+  Returns the handler value (function, module atom, or AST tuple), or `nil` for no auth.
+  Raises `ArgumentError` for unknown atoms (strict parsing, used for per-tool auth).
+  """
+  @spec parse_handler(any()) :: term() | nil
+  def parse_handler(nil), do: nil
+  def parse_handler(:none), do: nil
+  def parse_handler(:public), do: nil
+
+  def parse_handler(handler) when is_function(handler, 2), do: handler
+
+  def parse_handler({:with, _, [module]}), do: module
+
+  def parse_handler({:fn, _, _} = fn_ast), do: fn_ast
+  def parse_handler({:&, _, _} = capture_ast), do: capture_ast
+
+  def parse_handler(with: module) when is_atom(module), do: module
+
+  def parse_handler([with: module]) when is_atom(module), do: module
+
+  def parse_handler(list) when is_list(list) do
+    Keyword.get(list, :all) || Keyword.get(list, :global)
+  end
+
+  def parse_handler(invalid) do
+    raise ArgumentError,
+          "Invalid authorization handler. Use: authorize(fn actor, action -> ...), authorize(with: Module), or authorize(:none)"
+  end
+
+  @doc """
+  Like `parse_handler/1` but also accepts bare atoms as policy module names.
+  Used for global authorization configs where `MyPolicyModule` is a valid form.
+  """
+  def parse_handler_for_global(module) when is_atom(module) and module != nil, do: module
+  def parse_handler_for_global(handler), do: parse_handler(handler)
+
+  @doc """
+  Generates an AST quote for the `authorize` macro call.
+  """
+  def authorize_to_ast(nil), do: quote(do: authorize(:none))
+  def authorize_to_ast(:none), do: quote(do: authorize(:none))
+
+  def authorize_to_ast(module) when is_atom(module) do
+    quote do
+      authorize(with: unquote(module))
+    end
+  end
+
+  def authorize_to_ast(handler) when is_function(handler) do
+    quote do
+      authorize(unquote(handler))
+    end
+  end
+
+  def authorize_to_ast({:fn, _, _} = fn_ast) do
+    quote do
+      authorize(unquote(fn_ast))
+    end
+  end
+
+  def authorize_to_ast({:&, _, _} = capture_ast) do
+    quote do
+      authorize(unquote(capture_ast))
+    end
+  end
+
+  def authorize_to_ast(invalid) do
+    raise ArgumentError,
+          "Invalid authorization handler AST: #{inspect(invalid)}"
+  end
 end

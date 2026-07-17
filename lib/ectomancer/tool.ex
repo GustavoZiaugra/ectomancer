@@ -1,5 +1,5 @@
 if Code.ensure_loaded?(Ecto) do
-  defmodule Ectomancer.Tool do
+    defmodule Ectomancer.Tool do
     @moduledoc """
     Custom tool DSL for defining MCP tools.
 
@@ -12,6 +12,8 @@ if Code.ensure_loaded?(Ecto) do
     Validation is handled internally rather than by Anubis's Peri validator
     to avoid JSON encoding issues with Peri's tuple-based schema format.
     """
+
+    alias Ectomancer.Authorization
 
     @doc """
     Defines a new tool within an Ectomancer module.
@@ -316,12 +318,12 @@ if Code.ensure_loaded?(Ecto) do
               {desc, [{name, type, opts} | params], auth_handler, parent_auth, handler}
 
             {:authorize, _, [handler, [parent_auth: parent]]} ->
-              auth_handler = parse_authorize_handler(handler)
-              parent_auth = parse_authorize_handler(parent)
+              auth_handler = Authorization.parse_handler(handler)
+              parent_auth = Authorization.parse_handler(parent)
               {desc, params, auth_handler, parent_auth, handler}
 
             {:authorize, _, [handler]} ->
-              auth_handler = parse_authorize_handler(handler)
+              auth_handler = Authorization.parse_handler(handler)
               {desc, params, auth_handler, parent_auth, handler}
 
             {:handle, _, [handler_block]} ->
@@ -332,32 +334,6 @@ if Code.ensure_loaded?(Ecto) do
           end
         end
       )
-    end
-
-    defp parse_authorize_handler(handler) do
-      case handler do
-        :none ->
-          nil
-
-        [with: module] ->
-          module
-
-        {:with, _, [module]} ->
-          module
-
-        {:fn, _, _} = fn_ast ->
-          fn_ast
-
-        {:&, _, _} = capture_ast ->
-          capture_ast
-
-        handler when is_function(handler) ->
-          handler
-
-        _ ->
-          raise ArgumentError,
-                "Invalid authorization handler. Use: authorize(fn actor, action -> ...), authorize(with: Module), or authorize(:none)"
-      end
     end
 
     # Flatten nested __block__ items

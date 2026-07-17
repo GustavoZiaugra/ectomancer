@@ -226,9 +226,9 @@ defmodule Ectomancer.RouteIntrospection do
 
     auth_handler =
       if Keyword.has_key?(opts, :authorize) do
-        Ectomancer.Expose.parse_auth_config(opts[:authorize])
+        Ectomancer.Authorization.parse_handler_for_global(opts[:authorize])
       else
-        Ectomancer.Expose.parse_auth_config(global_auth_raw)
+        Ectomancer.Authorization.parse_handler_for_global(global_auth_raw)
       end
 
     tool_definitions =
@@ -309,30 +309,10 @@ defmodule Ectomancer.RouteIntrospection do
   end
 
   @doc false
-  def generate_authorize_call(nil), do: quote(do: authorize(:none))
+  def generate_authorize_call(nil), do: Ectomancer.Authorization.authorize_to_ast(nil)
 
-  def generate_authorize_call(module) when is_atom(module) do
-    quote do
-      authorize(with: unquote(module))
-    end
-  end
-
-  def generate_authorize_call(handler) when is_function(handler) do
-    quote do
-      authorize(unquote(handler))
-    end
-  end
-
-  def generate_authorize_call({:fn, _, _} = fn_ast) do
-    quote do
-      authorize(unquote(fn_ast))
-    end
-  end
-
-  def generate_authorize_call({:&, _, _} = capture_ast) do
-    quote do
-      authorize(unquote(capture_ast))
-    end
+  def generate_authorize_call(handler) do
+    Ectomancer.Authorization.authorize_to_ast(handler)
   end
 
   @doc false

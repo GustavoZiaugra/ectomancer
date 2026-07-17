@@ -122,6 +122,7 @@ if Code.ensure_loaded?(Ecto) do
     """
 
     alias Ectomancer.SchemaIntrospection
+    alias Ectomancer.Authorization
     alias Ectomancer.Expose.Params
     alias Ectomancer.Expose.Handlers
 
@@ -321,77 +322,27 @@ if Code.ensure_loaded?(Ecto) do
     defp parse_authorization_config(:none), do: nil
     defp parse_authorization_config(:public), do: nil
 
-    defp parse_authorization_config(handler) when is_function(handler, 2) do
-      %{global: handler, actions: %{}}
-    end
-
-    defp parse_authorization_config(module) when is_atom(module) do
-      %{global: module, actions: %{}}
-    end
-
-    defp parse_authorization_config({:with, _, [module]}) do
-      %{global: module, actions: %{}}
-    end
-
-    # Handle inline function AST
-    defp parse_authorization_config({:fn, _, _} = fn_ast) do
-      %{global: fn_ast, actions: %{}}
-    end
-
-    # Handle function capture AST
-    defp parse_authorization_config({:&, _, _} = capture_ast) do
-      %{global: capture_ast, actions: %{}}
-    end
-
-    # Handle [with: Module] syntax for policy modules
-    defp parse_authorization_config(with: module) when is_atom(module) do
-      %{global: module, actions: %{}}
-    end
-
     defp parse_authorization_config(action_rules) when is_list(action_rules) do
       global = Keyword.get(action_rules, :all) || Keyword.get(action_rules, :global)
+      global_handler = if global, do: Authorization.parse_handler_for_global(global), else: nil
 
-      # Convert action rules to map, preserving AST nodes
       actions =
         action_rules
         |> Keyword.drop([:all, :global])
         |> Map.new()
 
-      %{global: global, actions: actions}
+      %{global: global_handler, actions: actions}
     end
 
-    defp parse_authorization_config(invalid) do
-      raise ArgumentError,
-            "Invalid authorization configuration: #{inspect(invalid)}. " <>
-              "Expected: function, module, or keyword list of action rules"
+    defp parse_authorization_config(handler) do
+      %{global: Authorization.parse_handler_for_global(handler), actions: %{}}
     end
 
     @doc false
     def parse_auth_config(nil), do: nil
     def parse_auth_config(:none), do: nil
     def parse_auth_config(:public), do: nil
-
-    def parse_auth_config(handler) when is_function(handler, 2), do: handler
-
-    def parse_auth_config(module) when is_atom(module) and module != nil, do: module
-
-    def parse_auth_config({:with, _, [module]}), do: module
-
-    def parse_auth_config({:fn, _, _} = fn_ast), do: fn_ast
-
-    def parse_auth_config({:&, _, _} = capture_ast), do: capture_ast
-
-    def parse_auth_config(with: module) when is_atom(module), do: module
-
-    def parse_auth_config(list) when is_list(list) do
-      Keyword.get(list, :all) || Keyword.get(list, :global)
-    end
-
-    def parse_auth_config(invalid) do
-      raise ArgumentError,
-            "Invalid authorization configuration: #{inspect(invalid)}. " <>
-              "Expected: function, module, or keyword list of action rules"
-    end
+    def parse_auth_config(handler), do: Authorization.parse_handler_for_global(handler)
 
     defp filter_fields(introspection, opts) do
       only = Keyword.get(opts, :only)
