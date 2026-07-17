@@ -49,6 +49,8 @@ if Code.ensure_loaded?(Oban) do
     authorization at the MCP module level.
     """
 
+    alias Ectomancer.ObanBridge.Queries
+
     @doc """
     Exposes Oban job management tools.
 
@@ -127,7 +129,7 @@ if Code.ensure_loaded?(Oban) do
           unquote(oban_authorize_call(auth_handler))
 
           handle(fn _params, _actor ->
-            Ectomancer.ObanBridge.Queries.list_queues()
+            Queries.list_queues()
           end)
         end
       end
@@ -145,7 +147,7 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             queue_name = params["queue_name"] || params[:queue_name]
-            Ectomancer.ObanBridge.Queries.get_queue_depth(queue_name)
+            Queries.get_queue_depth(queue_name)
           end)
         end
       end
@@ -175,7 +177,7 @@ if Code.ensure_loaded?(Oban) do
               |> Enum.reject(fn {_k, v} -> is_nil(v) end)
               |> Enum.into(%{})
 
-            Ectomancer.ObanBridge.Queries.list_stuck_jobs(filters)
+            Queries.list_stuck_jobs(filters)
           end)
         end
       end
@@ -193,7 +195,7 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]
-            Ectomancer.ObanBridge.Queries.retry_job(job_id)
+            Queries.retry_job(job_id)
           end)
         end
       end
@@ -211,7 +213,7 @@ if Code.ensure_loaded?(Oban) do
 
           handle(fn params, _actor ->
             job_id = params["job_id"] || params[:job_id]
-            Ectomancer.ObanBridge.Queries.cancel_job(job_id)
+            Queries.cancel_job(job_id)
           end)
         end
       end
@@ -221,34 +223,34 @@ if Code.ensure_loaded?(Oban) do
     defdelegate list_queues(), to: Ectomancer.ObanBridge.Queries
     @doc false
     def get_queue_depth(queue_name) when is_binary(queue_name),
-      do: Ectomancer.ObanBridge.Queries.get_queue_depth(queue_name)
+      do: Queries.get_queue_depth(queue_name)
 
     @doc false
     def get_queue_depth(other),
-      do: Ectomancer.ObanBridge.Queries.get_queue_depth(other)
+      do: Queries.get_queue_depth(other)
 
     @doc false
-    def list_stuck_jobs(), do: Ectomancer.ObanBridge.Queries.list_stuck_jobs()
+    def list_stuck_jobs, do: Queries.list_stuck_jobs()
     @doc false
     defdelegate list_stuck_jobs(filters), to: Ectomancer.ObanBridge.Queries
     @doc false
     def retry_job(job_id) when is_integer(job_id),
-      do: Ectomancer.ObanBridge.Queries.retry_job(job_id)
+      do: Queries.retry_job(job_id)
 
     @doc false
     def retry_job(other),
-      do: Ectomancer.ObanBridge.Queries.retry_job(other)
+      do: Queries.retry_job(other)
 
     @doc false
     def cancel_job(job_id) when is_integer(job_id),
-      do: Ectomancer.ObanBridge.Queries.cancel_job(job_id)
+      do: Queries.cancel_job(job_id)
 
     @doc false
     def cancel_job(other),
-      do: Ectomancer.ObanBridge.Queries.cancel_job(other)
+      do: Queries.cancel_job(other)
 
     @doc false
-    def repo, do: Ectomancer.ObanBridge.Queries.repo()
+    def repo, do: Queries.repo()
   end
 else
   defmodule Ectomancer.ObanBridge do

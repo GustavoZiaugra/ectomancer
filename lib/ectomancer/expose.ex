@@ -121,10 +121,10 @@ if Code.ensure_loaded?(Ecto) do
         config :ectomancer, :repo, MyApp.Repo
     """
 
-    alias Ectomancer.SchemaIntrospection
     alias Ectomancer.Authorization
-    alias Ectomancer.Expose.Params
     alias Ectomancer.Expose.Handlers
+    alias Ectomancer.Expose.Params
+    alias Ectomancer.SchemaIntrospection
 
     # Action configurations for data-driven generation
     @action_configs %{

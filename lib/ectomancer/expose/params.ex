@@ -2,6 +2,8 @@ if Code.ensure_loaded?(Ecto) do
   defmodule Ectomancer.Expose.Params do
     @moduledoc false
 
+    alias Ectomancer.Expose
+
     @filter_suffixes %{
       string: ~w(contains icontains not in),
       number: ~w(gt gte lt lte not in),
@@ -21,7 +23,7 @@ if Code.ensure_loaded?(Ecto) do
 
     @doc false
     def generate(action, config) do
-      Ectomancer.Expose.Params.generate_params(action, config)
+      generate_params(action, config)
     end
 
     def generate_params(:list, config) do

@@ -22,8 +22,8 @@ if Code.ensure_loaded?(Ecto) do
     module namespace.
     """
 
-    alias Ectomancer.SchemaIntrospection
     alias Ectomancer.Repo.Filtering
+    alias Ectomancer.SchemaIntrospection
 
     @doc """
     Gets the configured Repo module.
