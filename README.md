@@ -17,6 +17,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Authorization system** — inline functions, policy modules, or action-specific rules
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
+- **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
 - **Batch operations** — `batch_create`, `batch_update`, `batch_destroy` for transactional multi-record operations
 - **Custom resources** — `resource :system_status do ... end` with URI templates, MIME types, and authorization
 - **Rate limiting** — configurable token bucket per tool or globally
@@ -265,6 +266,50 @@ Partial failures are reported alongside successes — the AI assistant can retry
 ```
 
 Batch operations respect authorization, scope, soft-delete, and field auth just like single-record operations.
+
+## Upsert
+
+Insert a new record or update an existing one in a single call based on a conflict target:
+
+```elixir
+expose MyApp.Products.Product,
+  actions: [:upsert],
+  conflict_target: :sku,
+  on_conflict: :replace_all
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `conflict_target` | `atom \| [atom]` | (required) | Field(s) to check for existing records |
+| `on_conflict` | `:replace_all \| [set: [...]]` | `:replace_all` | Which fields to update when a conflict is found |
+
+Generated tool `upsert_product` accepts all writable fields. If a record matching the `conflict_target` exists, it's updated; otherwise, a new record is inserted.
+
+**Return metadata** — the response indicates whether the record was inserted or updated:
+
+```
+{%MyApp.Products.Product{...}, :inserted}
+{%MyApp.Products.Product{...}, :updated}
+```
+
+**Composite keys** — use a list for multi-field matching:
+
+```elixir
+expose MyApp.Inventory.Item,
+  actions: [:upsert],
+  conflict_target: [:org_id, :sku]
+```
+
+**Selective updates** — control which fields change on conflict:
+
+```elixir
+expose MyApp.Accounts.User,
+  actions: [:upsert],
+  conflict_target: :email,
+  on_conflict: [set: [:name, :avatar_url]]
+```
+
+Upsert is **soft-delete aware** — upserting onto a soft-deleted record restores it (sets `deleted_at` to `nil`).
 
 ## Pages
 
