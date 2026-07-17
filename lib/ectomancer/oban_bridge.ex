@@ -242,15 +242,7 @@ if Code.ensure_loaded?(Oban) do
     def cancel_job(other),
       do: Ectomancer.ObanBridge.Queries.cancel_job(other)
     @doc false
-    defdelegate repo(), to: Ectomancer.ObanBridge.Queries
-    @doc false
-    defdelegate repo_all(query), to: Ectomancer.ObanBridge.Queries
-    @doc false
-    defdelegate repo_one(query), to: Ectomancer.ObanBridge.Queries
-    @doc false
-    defdelegate repo_update_all(query, opts), to: Ectomancer.ObanBridge.Queries
-    @doc false
-    defdelegate repo_delete_all(query), to: Ectomancer.ObanBridge.Queries
+    def repo, do: Ectomancer.ObanBridge.Queries.repo()
   end
 else
   defmodule Ectomancer.ObanBridge do

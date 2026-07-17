@@ -180,7 +180,7 @@ defmodule Ectomancer.Authorization do
     Keyword.get(list, :all) || Keyword.get(list, :global)
   end
 
-  def parse_handler(invalid) do
+  def parse_handler(_invalid) do
     raise ArgumentError,
           "Invalid authorization handler. Use: authorize(fn actor, action -> ...), authorize(with: Module), or authorize(:none)"
   end
