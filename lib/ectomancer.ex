@@ -190,18 +190,18 @@ defmodule Ectomancer do
   end
 
   @doc false
-  def store_global_auth(_module, nil), do: :ok
-
   def store_global_auth(module, auth) do
     :persistent_term.put({:ectomancer_global_auth, module}, auth)
   end
 
   @doc false
   def fetch_global_auth(module) do
-    case :persistent_term.get({:ectomancer_global_auth, module}, nil) do
-      nil -> nil
-      auth -> auth
-    end
+    :persistent_term.get({:ectomancer_global_auth, module}, nil)
+  end
+
+  @doc false
+  def delete_global_auth(module) do
+    :persistent_term.erase({:ectomancer_global_auth, module})
   end
 
   @doc false
@@ -213,7 +213,6 @@ defmodule Ectomancer do
         :ok
       end
     else
-      # The resources attribute accumulates entries in reverse order (LIFO)
       resources = Enum.reverse(resources)
 
       quote do
@@ -249,10 +248,5 @@ defmodule Ectomancer do
   @doc false
   def __after_compile__(env, _bytecode) do
     Ectomancer.delete_global_auth(env.module)
-  end
-
-  @doc false
-  def delete_global_auth(module) do
-    :persistent_term.erase({:ectomancer_global_auth, module})
   end
 end
