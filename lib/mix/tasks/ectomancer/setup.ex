@@ -189,7 +189,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end)
   end
 
-  defp prompt_for_schema_selection(schemas) do
+  @doc false
+  def prompt_for_schema_selection(schemas) do
     schemas
     |> Enum.with_index(1)
     |> Enum.each(fn {schema, index} ->
@@ -205,7 +206,8 @@ defmodule Mix.Tasks.Ectomancer.Setup do
     end)
   end
 
-  defp prompt_for_selections(schemas) do
+  @doc false
+  def prompt_for_selections(schemas) do
     Mix.shell().info("? Select schemas to expose (comma-separated numbers, e.g., 1,2,3)")
 
     input = get_input()
