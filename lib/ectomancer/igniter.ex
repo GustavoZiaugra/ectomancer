@@ -27,6 +27,7 @@ defmodule Ectomancer.Igniter do
   alias Ectomancer.Installer.DependencyChecker
   alias Ectomancer.Installer.SchemaDiscovery
   alias Ectomancer.Installer.TemplateRenderer
+  alias Mix.Tasks.Ectomancer.Setup, as: SetupTask
 
   @doc """
   Igniter installer callback.
@@ -106,7 +107,7 @@ defmodule Ectomancer.Igniter do
     if Mix.env() == :test do
       schemas
     else
-      selected = Mix.Tasks.Ectomancer.Setup.prompt_for_schema_selection(schemas)
+      selected = SetupTask.prompt_for_schema_selection(schemas)
 
       if selected == [] do
         Mix.shell().error("\n❌ No schemas selected!")
@@ -227,21 +228,21 @@ defmodule Ectomancer.Igniter do
 
   @doc false
   def detect_app_name do
-    Mix.Tasks.Ectomancer.Setup.detect_app_name()
+    SetupTask.detect_app_name()
   end
 
   @doc false
   def get_mcp_module_path(app_name) do
-    Mix.Tasks.Ectomancer.Setup.get_mcp_module_path(app_name)
+    SetupTask.get_mcp_module_path(app_name)
   end
 
   @doc false
   def mcp_module_name(app_name) do
-    Mix.Tasks.Ectomancer.Setup.mcp_module_name(app_name)
+    SetupTask.mcp_module_name(app_name)
   end
 
   @doc false
   def find_router_path(app_name) do
-    Mix.Tasks.Ectomancer.Setup.find_router_path(app_name)
+    SetupTask.find_router_path(app_name)
   end
 end
