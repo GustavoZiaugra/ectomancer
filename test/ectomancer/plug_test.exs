@@ -113,10 +113,24 @@ defmodule Ectomancer.PlugTest do
       end
     end
 
-    test "initializes with server option" do
+    test "initializes with server option (default transport)" do
       opts = Plug.init(server: MyApp.MCP)
       assert is_map(opts)
+      assert opts.transport == :streamable_http
       assert opts.anubis_opts[:server] == MyApp.MCP
+    end
+
+    test "initializes with :sse transport" do
+      opts = Plug.init(server: MyApp.MCP, transport: :sse)
+      assert is_map(opts)
+      assert opts.transport == :sse
+      assert is_map(opts.sse_state)
+    end
+
+    test "raises on :websocket transport via init" do
+      assert_raise ArgumentError, ~r/WebSocket transport cannot be used/, fn ->
+        Plug.init(server: MyApp.MCP, transport: :websocket)
+      end
     end
   end
 end

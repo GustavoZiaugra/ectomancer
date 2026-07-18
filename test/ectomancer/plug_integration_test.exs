@@ -4,6 +4,7 @@ defmodule Ectomancer.PlugIntegrationTest do
   import Plug.Test
 
   alias Ectomancer.Plug, as: EctomancerPlug
+  alias Ectomancer.Plug.WebSocket, as: WSPlug
 
   defmodule TestAuth do
     def verify_token("valid-token"), do: {:ok, %{id: 1, email: "user@example.com"}}
@@ -71,15 +72,16 @@ defmodule Ectomancer.PlugIntegrationTest do
       end
     end
 
-    test "initializes with server option" do
+    test "initializes with server option (default streamable_http)" do
       opts = EctomancerPlug.init(server: TestMCP)
       assert is_map(opts)
+      assert opts.transport == :streamable_http
       assert opts.anubis_opts[:server] == TestMCP
       assert opts.anubis_opts[:session_header] == "mcp-session-id"
       assert opts.anubis_opts[:request_timeout] == 30_000
     end
 
-    test "accepts custom options" do
+    test "accepts custom options (streamable_http)" do
       opts =
         EctomancerPlug.init(
           server: TestMCP,
@@ -89,6 +91,33 @@ defmodule Ectomancer.PlugIntegrationTest do
 
       assert opts.anubis_opts[:session_header] == "x-custom-session"
       assert opts.anubis_opts[:request_timeout] == 60_000
+    end
+
+    test "initializes with :sse transport" do
+      opts = EctomancerPlug.init(server: TestMCP, transport: :sse)
+      assert opts.transport == :sse
+      assert is_map(opts.sse_state)
+    end
+  end
+
+  describe "SSE transport" do
+    test "init creates correct state" do
+      opts = EctomancerPlug.init(server: TestMCP, transport: :sse)
+      assert opts.transport == :sse
+      assert is_map(opts.sse_state)
+    end
+
+    test "rejects non-GET/POST methods via sse wrapper" do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      opts = apply(Ectomancer.Plug.SSE, :init, [[server: TestMCP]])
+
+      conn =
+        conn(:delete, "/mcp/sse")
+
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      result_conn = apply(Ectomancer.Plug.SSE, :call, [conn, opts])
+
+      assert result_conn.status == 405
     end
   end
 
@@ -219,8 +248,7 @@ defmodule Ectomancer.PlugIntegrationTest do
   end
 
   describe "Router integration" do
-    test "plug works in router pipeline" do
-      # Simulating how it would be used in a router
+    test "plug works in router pipeline (streamable_http)" do
       defmodule TestRouter do
         use Plug.Router
 
@@ -230,8 +258,47 @@ defmodule Ectomancer.PlugIntegrationTest do
         forward("/mcp", to: Ectomancer.Plug, init_opts: [server: TestMCP])
       end
 
-      # This just verifies the module compiles and can be called
       assert Code.ensure_loaded?(TestRouter)
+    end
+
+    test "plug works with sse transport in router" do
+      defmodule TestSSERouter do
+        use Plug.Router
+
+        plug(:match)
+        plug(:dispatch)
+
+        get("/mcp/sse", to: Ectomancer.Plug, init_opts: [server: TestMCP, transport: :sse])
+        post("/mcp/sse", to: Ectomancer.Plug, init_opts: [server: TestMCP, transport: :sse])
+      end
+
+      assert Code.ensure_loaded?(TestSSERouter)
+    end
+  end
+
+  describe "WebSocket module" do
+    test "module is loaded when Phoenix is available" do
+      assert Code.ensure_loaded?(WSPlug)
+    end
+
+    test "child_spec returns :ignore" do
+      assert WSPlug.child_spec([]) == :ignore
+    end
+
+    test "drainer_spec returns :ignore" do
+      assert WSPlug.drainer_spec([]) == :ignore
+    end
+
+    test "connect with missing server option returns error" do
+      result =
+        WSPlug.connect(%{
+          endpoint: nil,
+          transport: :websocket,
+          params: %{},
+          options: []
+        })
+
+      assert result == {:error, :missing_server_option}
     end
   end
 end
