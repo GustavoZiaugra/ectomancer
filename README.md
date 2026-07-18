@@ -26,6 +26,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Browser playground** — zero-dep HTML client at `priv/ectomancer.html`, no build step
 - **Oban integration** — optional bridge for inspecting queue depth and workers
 - **Interactive installer** — `mix ectomancer.setup` auto-discovers schemas and patches your project
+- **Igniter installer** — `mix igniter.install ectomancer` auto-configures Ectomancer with schema selection, config files, router routes, and supervision tree
 
 ## Demo
 
@@ -53,6 +54,8 @@ mix phx.server
 
 ## Installation
 
+Add `ectomancer` to your dependencies:
+
 ```elixir
 def deps do
   [
@@ -61,9 +64,32 @@ def deps do
 end
 ```
 
-## Quick Start
+Then run one of the installers:
 
-### 1. Create your MCP module
+### Option A: Igniter installer (recommended)
+
+```bash
+mix igniter.install ectomancer
+```
+
+This automatically:
+1. Adds the `ectomancer` dependency
+2. Checks for required dependencies (Ecto, Plug)
+3. Discovers Ecto schemas in your project and prompts you to select which to expose
+4. Generates an MCP module (`lib/my_app/mcp.ex`) with the selected schemas
+5. Configures Ectomancer in `config/config.exs`
+6. Adds the MCP route to your Phoenix router
+7. Adds the Anubis supervisor to your application supervision tree
+
+### Option B: Interactive setup
+
+```bash
+mix ectomancer.setup
+```
+
+An interactive wizard that does the same as above but runs as a standalone Mix task.
+
+### Option C: Manual setup
 
 ```elixir
 defmodule MyApp.MCP do
@@ -100,9 +126,7 @@ defmodule MyApp.MCP do
 end
 ```
 
-### 2. Start the MCP server
-
-Add to your Application supervisor:
+Then start the MCP server by adding to your Application supervisor:
 
 ```elixir
 children = [
@@ -112,7 +136,7 @@ children = [
 ]
 ```
 
-### 3. Mount in your router
+And mount in your router:
 
 ```elixir
 scope "/mcp" do
@@ -121,7 +145,7 @@ scope "/mcp" do
 end
 ```
 
-### 4. Configure actor extraction (optional)
+Finally, configure actor extraction:
 
 ```elixir
 config :ectomancer,

@@ -66,7 +66,8 @@ defmodule Ectomancer.MixProject do
           Ectomancer.Installer.ConfigUpdater,
           Ectomancer.Installer.DependencyChecker,
           Ectomancer.Installer.SchemaDiscovery,
-          Ectomancer.Installer.TemplateRenderer
+          Ectomancer.Installer.TemplateRenderer,
+          Ectomancer.Igniter
         ]
       ]
     ]
@@ -86,6 +87,7 @@ defmodule Ectomancer.MixProject do
       {:ecto, "~> 3.12", optional: true},
       {:plug, "~> 1.16", optional: true},
       {:oban, "~> 2.18", optional: true},
+      {:igniter, "~> 0.8", optional: true},
 
       # Development and testing
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
