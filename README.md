@@ -157,6 +157,99 @@ config :ectomancer,
 
 Done. Claude can now query your database through natural language at `/mcp`.
 
+## Transports
+
+Ectomancer supports three transport options. Streamable HTTP is the default and recommended transport.
+
+### Transport Comparison
+
+| Feature | Streamable HTTP | SSE (legacy) | WebSocket |
+|---------|----------------|-------------|-----------|
+| MCP protocol | 2025-03-26+ | 2024-11-05 | Any version |
+| Status | **Recommended** | Deprecated | Available |
+| Endpoints | Single (`forward`) | Dual (GET + POST) | Phoenix socket |
+| Server notifications | Yes (SSE streaming) | Yes | Stub (future) |
+| Router method | `forward` | `get` + `post` | `socket` in endpoint |
+| Actor extraction | Plug.Conn | Plug.Conn | map (see below) |
+
+### Streamable HTTP (default)
+
+```elixir
+# Supervision
+{Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}}
+
+# Router
+forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
+```
+
+### SSE (legacy, deprecated)
+
+For clients that only support the MCP 2024-11-05 HTTP+SSE protocol:
+
+```elixir
+# Supervision
+{Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}}
+
+# Router
+get  "/mcp/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
+post "/mcp/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
+```
+
+### WebSocket
+
+For bidirectional communication via WebSocket. Requires Phoenix's `socket` macro in your endpoint:
+
+```elixir
+# In lib/my_app/endpoint.ex
+socket "/mcp/ws", Ectomancer.Plug.WebSocket,
+  server: MyApp.MCP,
+  websocket: [connect_info: [:x_headers, :uri, :peer_data]]
+```
+
+The server module is resolved from application config (not from socket-level options,
+which Phoenix does not pass to transport callbacks):
+
+```elixir
+# In config/config.exs
+config :ectomancer, :ws_server, MyApp.MCP
+```
+
+WebSocket actor extraction receives a map instead of a `Plug.Conn`:
+
+```elixir
+config :ectomancer,
+  actor_from: fn
+    %Plug.Conn{} = conn ->
+      # HTTP: standard Plug.Conn extraction
+      Ectomancer.Plug.extract_bearer_token(conn) |> MyApp.Auth.verify_token()
+
+    info when is_map(info) ->
+      # WebSocket: extract from query params or x_headers
+      case info.params["token"] do
+        nil ->
+          headers = info.connect_info[:x_headers] || []
+          {_, header_token} = List.keyfind(headers, "authorization", 0, {nil, nil})
+          String.replace_prefix(header_token || "", "Bearer ", "")
+          |> MyApp.Auth.verify_token()
+        token ->
+          MyApp.Auth.verify_token(token)
+      end
+  end
+```
+
+### Multiple Transports
+
+Start multiple transport backends to serve different clients:
+
+```elixir
+children = [
+  Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :sse]),
+  MyAppWeb.Endpoint
+]
+```
+
+Then mount each transport in your router as shown above.
+
 ## Authorization
 
 Three strategies, choose what fits:
@@ -339,7 +432,9 @@ Upsert is **soft-delete aware** — upserting onto a soft-deleted record restore
 
 | Path | Description |
 |------|-------------|
-| `/mcp` | MCP endpoint (SSE + JSON-RPC) |
+| `/mcp` | MCP endpoint (Streamable HTTP) |
+| `/mcp/sse` | SSE endpoint (legacy, transport: :sse) |
+| `/mcp/ws` | WebSocket endpoint (via Phoenix socket) |
 
 Open `priv/ectomancer.html` in a browser for a visual playground — browse tools, fill params, call them, and inspect results. No build step, no npm install, no dependencies.
 

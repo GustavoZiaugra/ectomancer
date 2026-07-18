@@ -3,25 +3,75 @@ if Code.ensure_loaded?(Plug) do
     @moduledoc """
     Phoenix Plug for MCP server integration.
 
+    Supports multiple transports:
+
+      - `:streamable_http` (default) — MCP Streamable HTTP transport
+      - `:sse` — Legacy HTTP+SSE transport (MCP 2024-11-05, deprecated)
+      - `:websocket` — WebSocket transport via `Phoenix.Socket.Transport`
+
     ## Prerequisites
 
-    Before using this plug, you must start the Anubis MCP server in your application:
+    Before using this plug, you must start the Anubis MCP server in your application.
+    The transport backend must match the transport used by the plug.
+
+    ### Streamable HTTP (default)
 
         # In your application.ex
         children = [
-          # ... other children ...
           {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
           MyAppWeb.Endpoint
         ]
 
+    ### SSE (legacy)
+
+        children = [
+          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}},
+          MyAppWeb.Endpoint
+        ]
+
+    ### Multiple transports
+
+        children = [
+          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}},
+          MyAppWeb.Endpoint
+        ]
+
+    See `Ectomancer.child_spec/2` for a helper that generates supervision entries
+    for multiple transports.
+
     ## Router Integration
 
-    Add to your router:
+    ### Streamable HTTP (default)
 
         scope "/mcp" do
           pipe_through :api
           forward "/", Ectomancer.Plug, server: MyApp.MCP
         end
+
+    ### SSE (legacy)
+
+        scope "/mcp" do
+          get  "/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
+          post "/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
+        end
+
+    ### WebSocket
+
+    WebSocket requires a `Phoenix.Socket.Transport` in your endpoint, not a Plug route.
+    Use the `socket` macro instead of `forward`:
+
+        socket "/mcp/ws", Ectomancer.Plug.WebSocket,
+          server: MyApp.MCP,
+          websocket: [connect_info: [:x_headers, :uri, :peer_data]]
+
+    ## Transport Options
+
+    | Transport | Option Value | Route Method | Backend |
+    |-----------|-------------|-------------|---------|
+    | Streamable HTTP | `:streamable_http` (default) | `forward` | `Anubis.Server.Transport.StreamableHTTP.Plug` |
+    | SSE (legacy) | `:sse` | `get` + `post` | `Anubis.Server.Transport.SSE.Plug` (deprecated) |
+    | WebSocket | `:websocket` | `socket` (endpoint) | `Ectomancer.Plug.WebSocket` |
 
     ## Actor Extraction
 
@@ -41,10 +91,29 @@ if Code.ensure_loaded?(Plug) do
 
     If no `actor_from` is configured, the actor defaults to `nil`.
 
+    ### WebSocket Actor Extraction
+
+    For WebSocket connections, `actor_from` receives a map (not a `Plug.Conn`):
+
+        config :ectomancer,
+          actor_from: fn
+            %Plug.Conn{} = conn ->
+              # HTTP actor extraction
+              Ectomancer.Plug.extract_bearer_token(conn) |> verify_token()
+
+            info when is_map(info) ->
+              # WebSocket: extract from query params or x_headers
+              case info.params["token"] do
+                nil -> {:error, :unauthorized}
+                token -> verify_token(token)
+              end
+          end
+
     ## Options
 
     - `:server` - The MCP server module (required)
-    - `:session_header` - Custom header name for session ID (default: "mcp-session-id")
+    - `:transport` - Transport type: `:streamable_http`, `:sse`, or `:websocket` (default: `:streamable_http`)
+    - `:session_header` - Custom header name for session ID (default: "mcp-session-id", streamable_http only)
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
 
     The actor will be available in tool handlers via `frame.assigns[:ectomancer_actor]`.
@@ -58,33 +127,48 @@ if Code.ensure_loaded?(Plug) do
 
     @impl Plug
     def init(opts) do
-      # Require server option
+      transport = Keyword.get(opts, :transport, :streamable_http)
       _server = Keyword.fetch!(opts, :server)
 
-      # Initialize Anubis plug with our options
-      anubis_opts =
-        opts
-        |> Keyword.put_new(:session_header, "mcp-session-id")
-        |> Keyword.put_new(:request_timeout, 30_000)
+      case transport do
+        :streamable_http ->
+          anubis_opts =
+            opts
+            |> Keyword.put_new(:session_header, "mcp-session-id")
+            |> Keyword.put_new(:request_timeout, 30_000)
 
-      anubis_state = AnubisPlug.init(anubis_opts)
+          anubis_state = AnubisPlug.init(anubis_opts)
 
-      %{
-        anubis_state: anubis_state,
-        anubis_opts: anubis_opts
-      }
+          %{
+            transport: :streamable_http,
+            anubis_state: anubis_state,
+            anubis_opts: anubis_opts
+          }
+
+        :sse ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          sse_state = apply(Ectomancer.Plug.SSE, :init, [opts])
+
+          %{transport: :sse, sse_state: sse_state}
+
+        :websocket ->
+          raise ArgumentError,
+                "WebSocket transport cannot be used with `forward`. " <>
+                  "Use the `socket` macro in your endpoint with Ectomancer.Plug.WebSocket instead. " <>
+                  "See Ectomancer.Plug docs for details."
+      end
     end
 
     @doc """
     Handles the MCP request by extracting the actor from the connection and
-    delegating to the Anubis StreamableHTTP transport plug.
+    delegating to the appropriate transport plug based on the `:transport` option.
 
     Calls `extract_actor/1` to resolve the actor, then either rejects with
     401 (if `{:error, _}` returned) or stores the actor in
-    `conn.assigns[:ectomancer_actor]` and forwards to Anubis.
+    `conn.assigns[:ectomancer_actor]` and forwards to the transport plug.
     """
     @impl Plug
-    def call(conn, %{anubis_state: anubis_state}) do
+    def call(conn, state) do
       actor = extract_actor(conn)
 
       case actor do
@@ -97,8 +181,17 @@ if Code.ensure_loaded?(Plug) do
         _ ->
           conn
           |> assign(:ectomancer_actor, actor)
-          |> AnubisPlug.call(anubis_state)
+          |> dispatch_by_transport(state)
       end
+    end
+
+    defp dispatch_by_transport(conn, %{transport: :streamable_http, anubis_state: anubis_state}) do
+      AnubisPlug.call(conn, anubis_state)
+    end
+
+    defp dispatch_by_transport(conn, %{transport: :sse, sse_state: sse_state}) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      apply(Ectomancer.Plug.SSE, :call, [conn, sse_state])
     end
 
     @doc """

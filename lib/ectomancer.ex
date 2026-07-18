@@ -164,6 +164,32 @@ defmodule Ectomancer do
     Application.spec(:ectomancer, :vsn) |> to_string()
   end
 
+  @doc """
+  Generates child specifications for one or more Anubis transport supervisors.
+
+  Use in your application's supervision tree to start the transport backends
+  required by the Ectomancer plug:
+
+      # In your application.ex
+      children = [
+        Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :sse]),
+        MyAppWeb.Endpoint
+      ]
+
+  ## Options
+
+    * `:transports` — a list of transport atoms to start (required).
+      Supported values: `:streamable_http`, `:sse`.
+  """
+  @spec child_spec(module(), keyword()) :: list(Supervisor.child_spec())
+  def child_spec(server, opts) do
+    transports = Keyword.fetch!(opts, :transports)
+
+    Enum.map(transports, fn transport when transport in [:streamable_http, :sse] ->
+      {Anubis.Server.Supervisor, {server, transport: {transport, start: true}}}
+    end)
+  end
+
   @doc false
   defmacro __using__(opts) do
     global_auth = Keyword.get(opts, :authorize)

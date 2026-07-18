@@ -191,26 +191,79 @@ defmodule Ectomancer.Igniter do
     end
 
     module_name = mcp_module_name(app_name)
+    module_atom = Module.concat([module_name])
     app_mod = Igniter.Project.Application
 
-    if Code.ensure_loaded?(app_mod) && function_exported?(app_mod, :add_new_child, 2) do
-      igniter
-      |> app_mod.add_new_child(
-        {Anubis.Server.Supervisor,
-         {Module.concat([module_name]), transport: {:streamable_http, start: true}}}
-      )
-    else
-      unless Mix.env() == :test do
-        Mix.shell().info(
-          "   ⚠️  Could not add supervisor child (Igniter not available). Add it manually:"
-        )
+    transport = prompt_for_transport()
 
-        Mix.shell().info(
-          "      {Anubis.Server.Supervisor, {#{module_name}, transport: {:streamable_http, start: true}}}"
-        )
+    if transport == :websocket do
+      unless Mix.env() == :test do
+        print_websocket_setup_instructions(module_name)
       end
 
       igniter
+    else
+      if Code.ensure_loaded?(app_mod) && function_exported?(app_mod, :add_new_child, 2) do
+        specs =
+          Ectomancer.child_spec(module_atom, transports: [transport])
+          |> Enum.map(fn {mod, args} -> {mod, args} end)
+
+        Enum.reduce(specs, igniter, fn spec, acc ->
+          app_mod.add_new_child(acc, spec)
+        end)
+      else
+        unless Mix.env() == :test do
+          print_manual_supervisor_instruction(module_name, transport)
+        end
+
+        igniter
+      end
+    end
+  end
+
+  defp print_websocket_setup_instructions(module_name) do
+    Mix.shell().info("\n📋 WebSocket requires additional manual setup:")
+    Mix.shell().info("")
+    Mix.shell().info("  1. Add to your endpoint (lib/my_app_web/endpoint.ex):")
+    Mix.shell().info("")
+    Mix.shell().info("       socket \"/mcp/ws\", Ectomancer.Plug.WebSocket,")
+    Mix.shell().info("         server: #{module_name},")
+    Mix.shell().info("         websocket: [connect_info: [:x_headers, :uri, :peer_data]]")
+    Mix.shell().info("")
+    Mix.shell().info("  2. Add to config/config.exs:")
+    Mix.shell().info("")
+    Mix.shell().info("       config :ectomancer, :ws_server, #{module_name}")
+    Mix.shell().info("")
+    Mix.shell().info("  3. Already running Streamable HTTP or SSE supervisor is reused.")
+    Mix.shell().info("     No additional Anubis.Server.Supervisor needed.")
+    Mix.shell().info("")
+  end
+
+  defp print_manual_supervisor_instruction(module_name, transport) do
+    Mix.shell().info(
+      "   ⚠️  Could not add supervisor child (Igniter not available). Add it manually:"
+    )
+
+    transport_line =
+      "{Anubis.Server.Supervisor, {#{module_name}, transport: {#{inspect(transport)}, start: true}}}"
+
+    Mix.shell().info("      #{transport_line}")
+  end
+
+  defp prompt_for_transport do
+    if Mix.env() == :test do
+      :streamable_http
+    else
+      Mix.shell().info("? Transport type?")
+      Mix.shell().info("  1. Streamable HTTP (recommended)")
+      Mix.shell().info("  2. SSE (legacy, deprecated)")
+      Mix.shell().info("  3. WebSocket (requires manual endpoint config)")
+
+      case IO.gets("> ") |> String.trim() do
+        "2" -> :sse
+        "3" -> :websocket
+        _ -> :streamable_http
+      end
     end
   end
 
