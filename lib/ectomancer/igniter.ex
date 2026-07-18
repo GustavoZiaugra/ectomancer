@@ -203,21 +203,25 @@ defmodule Ectomancer.Igniter do
 
       igniter
     else
-      if Code.ensure_loaded?(app_mod) && function_exported?(app_mod, :add_new_child, 2) do
-        specs =
-          Ectomancer.child_spec(module_atom, transports: [transport])
-          |> Enum.map(fn {mod, args} -> {mod, args} end)
+      add_transport_supervisor(igniter, app_mod, module_atom, module_name, transport)
+    end
+  end
 
-        Enum.reduce(specs, igniter, fn spec, acc ->
-          app_mod.add_new_child(acc, spec)
-        end)
-      else
-        unless Mix.env() == :test do
-          print_manual_supervisor_instruction(module_name, transport)
-        end
+  defp add_transport_supervisor(igniter, app_mod, module_atom, module_name, transport) do
+    if Code.ensure_loaded?(app_mod) && function_exported?(app_mod, :add_new_child, 2) do
+      specs =
+        Ectomancer.child_spec(module_atom, transports: [transport])
+        |> Enum.map(fn {mod, args} -> {mod, args} end)
 
-        igniter
+      Enum.reduce(specs, igniter, fn spec, acc ->
+        app_mod.add_new_child(acc, spec)
+      end)
+    else
+      unless Mix.env() == :test do
+        print_manual_supervisor_instruction(module_name, transport)
       end
+
+      igniter
     end
   end
 

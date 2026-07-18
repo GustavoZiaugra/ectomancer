@@ -57,6 +57,10 @@ if Code.ensure_loaded?(Phoenix.Socket.Transport) do
 
     require Logger
 
+    alias Anubis.MCP.ID
+    alias Anubis.MCP.Message
+    alias Anubis.Server.Supervisor, as: ServerSupervisor
+
     @doc false
     @impl Phoenix.Socket.Transport
     def child_spec(_opts), do: :ignore
@@ -93,8 +97,8 @@ if Code.ensure_loaded?(Phoenix.Socket.Transport) do
 
     @impl Phoenix.Socket.Transport
     def init(state) do
-      session_id = Anubis.MCP.ID.generate_session_id()
-      session_config = Anubis.Server.Supervisor.get_session_config(state.server)
+      session_id = ID.generate_session_id()
+      session_config = ServerSupervisor.get_session_config(state.server)
 
       session_opts = [
         session_id: session_id,
@@ -124,7 +128,7 @@ if Code.ensure_loaded?(Phoenix.Socket.Transport) do
 
     @impl Phoenix.Socket.Transport
     def handle_in({message, opts}, state) when is_binary(message) and is_list(opts) do
-      case Anubis.MCP.Message.decode(message) do
+      case Message.decode(message) do
         {:ok, [decoded]} ->
           dispatch_to_session(decoded, state)
 

@@ -4,6 +4,7 @@ defmodule Ectomancer.PlugIntegrationTest do
   import Plug.Test
 
   alias Ectomancer.Plug, as: EctomancerPlug
+  alias Ectomancer.Plug.WebSocket, as: WSPlug
 
   defmodule TestAuth do
     def verify_token("valid-token"), do: {:ok, %{id: 1, email: "user@example.com"}}
@@ -277,20 +278,20 @@ defmodule Ectomancer.PlugIntegrationTest do
 
   describe "WebSocket module" do
     test "module is loaded when Phoenix is available" do
-      assert Code.ensure_loaded?(Ectomancer.Plug.WebSocket)
+      assert Code.ensure_loaded?(WSPlug)
     end
 
     test "child_spec returns :ignore" do
-      assert Ectomancer.Plug.WebSocket.child_spec([]) == :ignore
+      assert WSPlug.child_spec([]) == :ignore
     end
 
     test "drainer_spec returns :ignore" do
-      assert Ectomancer.Plug.WebSocket.drainer_spec([]) == :ignore
+      assert WSPlug.drainer_spec([]) == :ignore
     end
 
     test "connect with missing server option returns error" do
       result =
-        Ectomancer.Plug.WebSocket.connect(%{
+        WSPlug.connect(%{
           endpoint: nil,
           transport: :websocket,
           params: %{},
