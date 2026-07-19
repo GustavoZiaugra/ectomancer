@@ -44,9 +44,15 @@ if Code.ensure_loaded?(Oban) do
 
     ## Authorization
 
-    By default, Oban tools are public (no authorization). You can add
-    authorization by wrapping the macro call or by implementing custom
-    authorization at the MCP module level.
+    By default, Oban tools are public (no authorization). Add a global
+    policy with `authorize:`, or use action-specific rules:
+
+        expose_oban_jobs(authorize: fn actor, _ -> actor.role == :admin end)
+
+        expose_oban_jobs authorize: [
+          all: fn actor, _ -> actor.role == :admin end,
+          list_queues: :none
+        ]
     """
 
     alias Ectomancer.ObanBridge.Queries
@@ -57,6 +63,7 @@ if Code.ensure_loaded?(Oban) do
     ## Options
 
       * `:namespace` - Prefix tool names with namespace (e.g., `:background` → `background_list_oban_queues`)
+      * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
 
     ## Examples
 
@@ -65,6 +72,11 @@ if Code.ensure_loaded?(Oban) do
 
         expose_oban_jobs(namespace: :jobs)
         # Generates: jobs_list_oban_queues, jobs_get_queue_depth, etc.
+
+        expose_oban_jobs authorize: [
+          all: fn actor, _ -> actor.role == :admin end,
+          list_queues: :none
+        ]
     """
     defmacro expose_oban_jobs(opts \\ []) do
       if Code.ensure_loaded?(Oban) do
