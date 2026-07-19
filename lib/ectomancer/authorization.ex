@@ -244,7 +244,7 @@ defmodule Ectomancer.Authorization do
         list_queues: :public
       ]
   """
-  @spec parse_authorization_config(nil | :none | :public | atom() | function() | keyword()) ::
+  @spec parse_authorization_config(nil | :none | :public | function() | keyword()) ::
           nil | %{global: term(), actions: map()}
   def parse_authorization_config(nil), do: nil
   def parse_authorization_config(:none), do: nil
