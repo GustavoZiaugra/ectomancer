@@ -174,8 +174,6 @@ defmodule Ectomancer.Authorization do
 
   def parse_handler(with: module) when is_atom(module), do: module
 
-  def parse_handler(with: module) when is_atom(module), do: module
-
   def parse_handler(list) when is_list(list) do
     Keyword.get(list, :all) || Keyword.get(list, :global)
   end
@@ -237,7 +235,17 @@ defmodule Ectomancer.Authorization do
     * `nil`, `:none`, `:public` → `nil`
     * function or module → `%{global: handler, actions: %{}}`
     * keyword list with per-action rules → `%{global: handler, actions: %{action: handler}}`
+
+  ## Example
+
+      # Global admin-only auth, but list_queues is public:
+      expose_oban_jobs authorize: [
+        all: fn actor, _ -> actor.role == :admin end,
+        list_queues: :public
+      ]
   """
+  @spec parse_authorization_config(nil | :none | :public | atom() | function() | keyword()) ::
+          nil | %{global: term(), actions: map()}
   def parse_authorization_config(nil), do: nil
   def parse_authorization_config(:none), do: nil
   def parse_authorization_config(:public), do: nil

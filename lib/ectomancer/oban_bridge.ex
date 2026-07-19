@@ -105,6 +105,7 @@ if Code.ensure_loaded?(Oban) do
         end)
 
       %{
+        # Falls back to global auth (from use Ectomancer) if :all/:global not set in keyword list
         handler: config.global || Ectomancer.Authorization.parse_handler_for_global(global_raw),
         actions: actions
       }
