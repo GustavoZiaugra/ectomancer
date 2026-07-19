@@ -174,8 +174,6 @@ defmodule Ectomancer.Authorization do
 
   def parse_handler(with: module) when is_atom(module), do: module
 
-  def parse_handler(with: module) when is_atom(module), do: module
-
   def parse_handler(list) when is_list(list) do
     Keyword.get(list, :all) || Keyword.get(list, :global)
   end
@@ -225,5 +223,46 @@ defmodule Ectomancer.Authorization do
   def authorize_to_ast(invalid) do
     raise ArgumentError,
           "Invalid authorization handler AST: #{inspect(invalid)}"
+  end
+
+  @doc """
+  Parses authorization configuration into a standard format.
+
+  Returns `nil` for no authorization, or a map with `:global` handler
+  and `:actions` for per-action handlers.
+
+  ## Forms
+    * `nil`, `:none`, `:public` → `nil`
+    * function or module → `%{global: handler, actions: %{}}`
+    * keyword list with per-action rules → `%{global: handler, actions: %{action: handler}}`
+
+  ## Example
+
+      # Global admin-only auth, but list_queues is public:
+      expose_oban_jobs authorize: [
+        all: fn actor, _ -> actor.role == :admin end,
+        list_queues: :public
+      ]
+  """
+  @spec parse_authorization_config(nil | :none | :public | function() | keyword()) ::
+          nil | %{global: term(), actions: map()}
+  def parse_authorization_config(nil), do: nil
+  def parse_authorization_config(:none), do: nil
+  def parse_authorization_config(:public), do: nil
+
+  def parse_authorization_config(action_rules) when is_list(action_rules) do
+    global = Keyword.get(action_rules, :all) || Keyword.get(action_rules, :global)
+    global_handler = if global, do: parse_handler_for_global(global), else: nil
+
+    actions =
+      action_rules
+      |> Keyword.drop([:all, :global])
+      |> Map.new()
+
+    %{global: global_handler, actions: actions}
+  end
+
+  def parse_authorization_config(handler) do
+    %{global: parse_handler_for_global(handler), actions: %{}}
   end
 end

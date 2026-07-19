@@ -248,8 +248,8 @@ if Code.ensure_loaded?(Ecto) do
       introspection = SchemaIntrospection.analyze(schema)
 
       auth_explicitly_configured = Keyword.has_key?(opts, :authorize)
-      auth_config = parse_authorization_config(Keyword.get(opts, :authorize))
-      parent_authorization = parse_authorization_config(global_auth_raw)
+      auth_config = Authorization.parse_authorization_config(Keyword.get(opts, :authorize))
+      parent_authorization = Authorization.parse_authorization_config(global_auth_raw)
       readonly = Keyword.get(opts, :readonly, false)
 
       base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
@@ -317,26 +317,6 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp filter_actions_for_readonly(actions, _), do: actions
-
-    defp parse_authorization_config(nil), do: nil
-    defp parse_authorization_config(:none), do: nil
-    defp parse_authorization_config(:public), do: nil
-
-    defp parse_authorization_config(action_rules) when is_list(action_rules) do
-      global = Keyword.get(action_rules, :all) || Keyword.get(action_rules, :global)
-      global_handler = if global, do: Authorization.parse_handler_for_global(global), else: nil
-
-      actions =
-        action_rules
-        |> Keyword.drop([:all, :global])
-        |> Map.new()
-
-      %{global: global_handler, actions: actions}
-    end
-
-    defp parse_authorization_config(handler) do
-      %{global: Authorization.parse_handler_for_global(handler), actions: %{}}
-    end
 
     @doc false
     def parse_auth_config(nil), do: nil

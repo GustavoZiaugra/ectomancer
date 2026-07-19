@@ -44,9 +44,15 @@ if Code.ensure_loaded?(Oban) do
 
     ## Authorization
 
-    By default, Oban tools are public (no authorization). You can add
-    authorization by wrapping the macro call or by implementing custom
-    authorization at the MCP module level.
+    By default, Oban tools are public (no authorization). Add a global
+    policy with `authorize:`, or use action-specific rules:
+
+        expose_oban_jobs(authorize: fn actor, _ -> actor.role == :admin end)
+
+        expose_oban_jobs authorize: [
+          all: fn actor, _ -> actor.role == :admin end,
+          list_queues: :none
+        ]
     """
 
     alias Ectomancer.ObanBridge.Queries
@@ -57,6 +63,7 @@ if Code.ensure_loaded?(Oban) do
     ## Options
 
       * `:namespace` - Prefix tool names with namespace (e.g., `:background` → `background_list_oban_queues`)
+      * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
 
     ## Examples
 
@@ -65,21 +72,23 @@ if Code.ensure_loaded?(Oban) do
 
         expose_oban_jobs(namespace: :jobs)
         # Generates: jobs_list_oban_queues, jobs_get_queue_depth, etc.
+
+        expose_oban_jobs authorize: [
+          all: fn actor, _ -> actor.role == :admin end,
+          list_queues: :none
+        ]
     """
     defmacro expose_oban_jobs(opts \\ []) do
       if Code.ensure_loaded?(Oban) do
         namespace = Keyword.get(opts, :namespace)
 
-        global_auth_raw = Ectomancer.fetch_global_auth(__CALLER__.module)
+        auth_config =
+          build_oban_auth_config(
+            Keyword.get(opts, :authorize),
+            Ectomancer.fetch_global_auth(__CALLER__.module)
+          )
 
-        auth_handler =
-          if Keyword.has_key?(opts, :authorize) do
-            Ectomancer.Authorization.parse_handler_for_global(opts[:authorize])
-          else
-            Ectomancer.Authorization.parse_handler_for_global(global_auth_raw)
-          end
-
-        generate_oban_tools(namespace, auth_handler)
+        generate_oban_tools(namespace, auth_config)
       else
         # Oban not available, generate nothing
         quote do
@@ -88,14 +97,58 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
+    defp build_oban_auth_config(nil, global_raw) do
+      %{handler: Ectomancer.Authorization.parse_handler_for_global(global_raw), actions: %{}}
+    end
+
+    defp build_oban_auth_config(authorize, global_raw) when is_list(authorize) do
+      config = Ectomancer.Authorization.parse_authorization_config(authorize)
+
+      actions =
+        Map.new(config.actions, fn {action, handler} ->
+          resolved =
+            case handler do
+              :none -> nil
+              :public -> nil
+              other -> Ectomancer.Authorization.parse_handler_for_global(other)
+            end
+
+          {action, resolved}
+        end)
+
+      %{
+        # Falls back to global auth (from use Ectomancer) if :all/:global not set in keyword list
+        handler: config.global || Ectomancer.Authorization.parse_handler_for_global(global_raw),
+        actions: actions
+      }
+    end
+
+    defp build_oban_auth_config(authorize, _global_raw) do
+      %{handler: Ectomancer.Authorization.parse_handler_for_global(authorize), actions: %{}}
+    end
+
+    defp resolve_oban_handler(action, %{handler: global, actions: actions}) do
+      if Map.has_key?(actions, action) do
+        Map.get(actions, action)
+      else
+        global
+      end
+    end
+
     # Generate all Oban management tools
-    defp generate_oban_tools(namespace, auth_handler) do
+    defp generate_oban_tools(namespace, auth_config) do
       tools = [
-        generate_list_queues_tool(namespace, auth_handler),
-        generate_get_queue_depth_tool(namespace, auth_handler),
-        generate_list_stuck_jobs_tool(namespace, auth_handler),
-        generate_retry_job_tool(namespace, auth_handler),
-        generate_cancel_job_tool(namespace, auth_handler)
+        generate_list_queues_tool(namespace, resolve_oban_handler(:list_queues, auth_config)),
+        generate_get_queue_depth_tool(
+          namespace,
+          resolve_oban_handler(:get_queue_depth, auth_config)
+        ),
+        generate_list_stuck_jobs_tool(
+          namespace,
+          resolve_oban_handler(:list_stuck_jobs, auth_config)
+        ),
+        generate_retry_job_tool(namespace, resolve_oban_handler(:retry_job, auth_config)),
+        generate_cancel_job_tool(namespace, resolve_oban_handler(:cancel_job, auth_config))
       ]
 
       quote do

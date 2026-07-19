@@ -295,6 +295,15 @@ expose MyApp.Accounts.User,
   ]
 ```
 
+Oban tools support the same per-action patterns:
+
+```elixir
+expose_oban_jobs authorize: [
+  all: fn actor, _ -> actor.role == :admin end,
+  list_queues: :none
+]
+```
+
 ## Configuration
 
 ### Sources
