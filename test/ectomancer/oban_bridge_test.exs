@@ -545,5 +545,110 @@ defmodule Ectomancer.ObanBridgeTest do
       # Should not get auth error (per-call :none overrides global)
       refute match?({:error, %{code: -32_001}, _}, result)
     end
+
+    test "per-action keyword list applies different auth to different tools" do
+      defmodule PerActionObanMCP do
+        use Ectomancer,
+          name: "per-action-oban-mcp",
+          version: "1.0.0"
+
+        expose_oban_jobs(
+          authorize: [
+            list_queues: :public,
+            cancel_job: fn actor, _action -> actor.role == :admin end
+          ]
+        )
+      end
+
+      # list_queues should be public (no auth): a non-admin should pass
+      assert {:module, list_mod} = Code.ensure_loaded(PerActionObanMCP.Tool.ListObanQueues)
+
+      frame_admin = %{assigns: %{ectomancer_actor: %{role: :admin}}}
+      frame_user = %{assigns: %{ectomancer_actor: %{role: :user}}}
+
+      # credo:disable-for-next-line
+      result = apply(list_mod, :execute, [%{}, frame_user])
+      refute match?({:error, %{code: -32_001}, _}, result)
+
+      # cancel_job should be restricted to admin: a non-admin should be denied
+      assert {:module, cancel_mod} = Code.ensure_loaded(PerActionObanMCP.Tool.CancelJob)
+
+      # credo:disable-for-next-line
+      assert {:error, error, _} = apply(cancel_mod, :execute, [%{}, frame_user])
+      assert error.code == -32_001
+      assert error.message =~ "Unauthorized"
+
+      # Admin should be allowed for cancel_job
+      # credo:disable-for-next-line
+      result_admin = apply(cancel_mod, :execute, [%{}, frame_admin])
+      refute match?({:error, %{code: -32_001}, _}, result_admin)
+    end
+
+    test "per-action keyword list with :none for specific action" do
+      defmodule PerActionNoneObanMCP do
+        use Ectomancer,
+          name: "per-action-none-oban-mcp",
+          version: "1.0.0",
+          authorize: fn _actor, _action -> false end
+
+        expose_oban_jobs(
+          authorize: [
+            list_queues: :none
+          ]
+        )
+      end
+
+      # list_queues should have no auth (overriding global deny)
+      assert {:module, list_mod} = Code.ensure_loaded(PerActionNoneObanMCP.Tool.ListObanQueues)
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+
+      # credo:disable-for-next-line
+      result = apply(list_mod, :execute, [%{}, frame])
+      refute match?({:error, %{code: -32_001}, _}, result)
+
+      # cancel_job should still be denied by global auth
+      assert {:module, cancel_mod} = Code.ensure_loaded(PerActionNoneObanMCP.Tool.CancelJob)
+
+      # credo:disable-for-next-line
+      assert {:error, error, _} = apply(cancel_mod, :execute, [%{}, frame])
+      assert error.code == -32_001
+    end
+
+    test "per-action keyword list with :all global fallback" do
+      defmodule PerActionAllObanMCP do
+        use Ectomancer,
+          name: "per-action-all-oban-mcp",
+          version: "1.0.0"
+
+        expose_oban_jobs(
+          authorize: [
+            all: fn actor, _action -> actor.role == :admin end,
+            list_queues: :public
+          ]
+        )
+      end
+
+      assert {:module, list_mod} = Code.ensure_loaded(PerActionAllObanMCP.Tool.ListObanQueues)
+      assert {:module, cancel_mod} = Code.ensure_loaded(PerActionAllObanMCP.Tool.CancelJob)
+
+      frame_user = %{assigns: %{ectomancer_actor: %{role: :user}}}
+      frame_admin = %{assigns: %{ectomancer_actor: %{role: :admin}}}
+
+      # list_queues is public: non-admin should pass
+      # credo:disable-for-next-line
+      result = apply(list_mod, :execute, [%{}, frame_user])
+      refute match?({:error, %{code: -32_001}, _}, result)
+
+      # cancel_job falls back to :all (admin only): non-admin should be denied
+      # credo:disable-for-next-line
+      assert {:error, error, _} = apply(cancel_mod, :execute, [%{}, frame_user])
+      assert error.code == -32_001
+
+      # admin should pass for cancel_job
+      # credo:disable-for-next-line
+      result_admin = apply(cancel_mod, :execute, [%{}, frame_admin])
+      refute match?({:error, %{code: -32_001}, _}, result_admin)
+    end
   end
 end
