@@ -200,7 +200,7 @@ defmodule Ectomancer do
       use Anubis.Server,
         name: Keyword.get(unquote(opts), :name, "ectomancer-server"),
         version: Keyword.get(unquote(opts), :version, "0.1.0"),
-        capabilities: [:tools, :resources]
+        capabilities: [:tools, :resources, :prompts]
 
       Module.register_attribute(__MODULE__, :ectomancer_resources, accumulate: true)
 
@@ -209,6 +209,7 @@ defmodule Ectomancer do
 
       import Ectomancer.Tool, only: [tool: 2, authorize: 1]
       import Ectomancer.Resource, only: [resource: 2]
+      import Ectomancer.Prompt, only: [prompt: 2]
       import Ectomancer.Expose, only: [expose: 1, expose: 2]
       import Ectomancer.RouteIntrospection, only: [expose_routes: 1, expose_routes: 2]
       import Ectomancer.ObanBridge, only: [expose_oban_jobs: 0, expose_oban_jobs: 1]
