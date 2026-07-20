@@ -110,6 +110,7 @@ defmodule Ectomancer.PromptTest do
     def description, do: "A prompt that crashes"
     def __mcp_component_type__, do: :prompt
     def __scopes__, do: []
+    def __mcp_raw_schema__, do: %{}
 
     def arguments, do: []
 
@@ -359,6 +360,104 @@ defmodule Ectomancer.PromptTest do
       assert length(response.messages) == 2
       assert Enum.any?(response.messages, &(&1["role"] == "system"))
       assert Enum.any?(response.messages, &(&1["role"] == "user"))
+    end
+  end
+
+  describe "end-to-end: MCP protocol via handle_request/2" do
+    test "prompts/list returns registered prompts" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:reply, result, _frame} =
+        PromptMCP.handle_request(%{"method" => "prompts/list"}, frame)
+
+      prompt_names = result["prompts"] |> Enum.map(& &1.name)
+
+      assert "analyze_churn" in prompt_names
+      assert "summarize_reports" in prompt_names
+      assert "simple_prompt" in prompt_names
+      assert "prompt_with_actor" in prompt_names
+    end
+
+    test "prompts/get resolves and returns generated messages" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:reply, result, _frame} =
+        PromptMCP.handle_request(
+          %{
+            "method" => "prompts/get",
+            "params" => %{
+              "name" => "analyze_churn",
+              "arguments" => %{"days" => 30, "threshold" => 0.1}
+            }
+          },
+          frame
+        )
+
+      messages = result["messages"]
+      assert length(messages) == 1
+      assert hd(messages)["role"] == "user"
+      assert hd(messages)["content"]["text"] =~ "30"
+      assert hd(messages)["content"]["text"] =~ "0.1"
+    end
+
+    test "prompts/get applies default arguments through the protocol" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:reply, result, _frame} =
+        PromptMCP.handle_request(
+          %{
+            "method" => "prompts/get",
+            "params" => %{
+              "name" => "analyze_churn",
+              "arguments" => %{"days" => 7}
+            }
+          },
+          frame
+        )
+
+      messages = result["messages"]
+      assert hd(messages)["content"]["text"] =~ "7"
+      assert hd(messages)["content"]["text"] =~ "0.05"
+    end
+
+    test "prompts/get returns error for unknown prompt" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:error, error, _frame} =
+        PromptMCP.handle_request(
+          %{
+            "method" => "prompts/get",
+            "params" => %{
+              "name" => "nonexistent",
+              "arguments" => %{}
+            }
+          },
+          frame
+        )
+
+      assert error.code == -32_602
+    end
+
+    test "prompts/get returns multi-message prompts through the protocol" do
+      frame = %Anubis.Server.Frame{assigns: %{}}
+
+      {:reply, result, _frame} =
+        PromptMCP.handle_request(
+          %{
+            "method" => "prompts/get",
+            "params" => %{
+              "name" => "summarize_reports",
+              "arguments" => %{"report_type" => "sales"}
+            }
+          },
+          frame
+        )
+
+      messages = result["messages"]
+      assert length(messages) == 2
+      assert Enum.any?(messages, &(&1["role"] == "system"))
+      assert Enum.any?(messages, &(&1["role"] == "user"))
+      assert hd(Enum.filter(messages, &(&1["role"] == "system")))["content"]["text"] =~ "sales"
     end
   end
 end

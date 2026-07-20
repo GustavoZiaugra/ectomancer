@@ -145,12 +145,14 @@ defmodule Ectomancer.Prompt do
         @moduledoc unquote(description)
         @prompt_name unquote(prompt_name)
         @arguments unquote(arguments)
+        @raw_schema Ectomancer.Prompt.build_prompt_schema(unquote(arguments))
         @messages_fn unquote(messages_ast)
 
         def name, do: @prompt_name
         def description, do: @moduledoc
         def __mcp_component_type__, do: :prompt
         def __scopes__, do: []
+        def __mcp_raw_schema__, do: @raw_schema
 
         def arguments do
           @arguments
@@ -253,13 +255,15 @@ defmodule Ectomancer.Prompt do
   end
 
   # Build argument definition for MCP protocol
-  defp build_argument_def(name, _type, opts) do
+  defp build_argument_def(name, type, opts) do
     arg_name = to_string(name)
 
     arg = %{
       "name" => arg_name,
       "description" => opts[:description] || "",
-      "required" => opts[:required] || false
+      "required" => opts[:required] || false,
+      "_type" => type,
+      "_name" => name
     }
 
     arg =
@@ -278,6 +282,27 @@ defmodule Ectomancer.Prompt do
 
     arg
   end
+
+  @doc false
+  def build_prompt_schema(arguments) do
+    Enum.reduce(arguments, %{}, fn arg, acc ->
+      name = arg["name"]
+      type = arg["_type"]
+      required = arg["required"]
+
+      peri_type = prompt_type_to_peri(type)
+      field_type = if required, do: {:required, peri_type}, else: peri_type
+      Map.put(acc, name, field_type)
+    end)
+  end
+
+  defp prompt_type_to_peri(:string), do: :string
+  defp prompt_type_to_peri(:integer), do: :integer
+  defp prompt_type_to_peri(:float), do: :float
+  defp prompt_type_to_peri(:boolean), do: :boolean
+  defp prompt_type_to_peri(:list), do: {:list, :string}
+  defp prompt_type_to_peri(:map), do: :map
+  defp prompt_type_to_peri(_), do: :string
 
   @doc false
   def flatten_block_items(items) do
