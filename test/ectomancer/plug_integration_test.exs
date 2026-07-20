@@ -2,6 +2,7 @@ defmodule Ectomancer.PlugIntegrationTest do
   use ExUnit.Case
   import Plug.Conn
   import Plug.Test
+  import ExUnit.CaptureLog
 
   alias Ectomancer.Plug, as: EctomancerPlug
   alias Ectomancer.Plug.WebSocket, as: WSPlug
@@ -290,15 +291,21 @@ defmodule Ectomancer.PlugIntegrationTest do
     end
 
     test "connect with missing server option returns error" do
-      result =
-        WSPlug.connect(%{
-          endpoint: nil,
-          transport: :websocket,
-          params: %{},
-          options: []
-        })
+      ref = make_ref()
 
-      assert result == {:error, :missing_server_option}
+      capture_log(fn ->
+        result =
+          WSPlug.connect(%{
+            endpoint: nil,
+            transport: :websocket,
+            params: %{},
+            options: []
+          })
+
+        send(self(), {ref, result})
+      end)
+
+      assert_receive {^ref, {:error, :missing_server_option}}
     end
   end
 end
