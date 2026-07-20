@@ -802,10 +802,15 @@ if Code.ensure_loaded?(Ecto) do
       repo.update(changeset)
     end
 
+    @doc false
     defdelegate extract_meta_params(params), to: Filtering
+    @doc false
     defdelegate parse_filter_key(key), to: Filtering
+    @doc false
     defdelegate sanitize_like(value), to: Filtering
+    @doc false
     defdelegate parse_order_dir(dir), to: Filtering
+    @doc false
     defdelegate parse_int(val), to: Filtering
 
     defp normalize_params(params, schema_module) do
