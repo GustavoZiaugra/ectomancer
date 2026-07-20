@@ -26,28 +26,30 @@ defmodule Ectomancer.PromptTest do
       argument(:days, :integer, required: true, description: "Days to look back")
       argument(:threshold, :float, default: 0.05, description: "Churn threshold")
 
-      messages fn args ->
+      messages(fn args ->
         [
           %{
             role: :user,
             content: %{
               type: :text,
-              text: "Using the list_users and get_user tools, analyze churn over the last #{args["days"]} days with threshold #{args["threshold"]}."
+              text:
+                "Using the list_users and get_user tools, analyze churn over the last #{args["days"]} days with threshold #{args["threshold"]}."
             }
           }
         ]
-      end
+      end)
     end
 
     prompt :summarize_reports do
       description("Summarize recent reports")
+
       argument(:report_type, :string,
         required: true,
         description: "Type of report",
         enum: ["sales", "inventory", "employee"]
       )
 
-      messages fn args ->
+      messages(fn args ->
         report_type = Map.get(args, "report_type", "sales")
 
         [
@@ -66,13 +68,13 @@ defmodule Ectomancer.PromptTest do
             }
           }
         ]
-      end
+      end)
     end
 
     prompt :simple_prompt do
       description("A simple prompt without arguments")
 
-      messages fn _args ->
+      messages(fn _args ->
         [
           %{
             role: :user,
@@ -82,14 +84,14 @@ defmodule Ectomancer.PromptTest do
             }
           }
         ]
-      end
+      end)
     end
 
     prompt :prompt_with_actor do
       description("Prompt that uses the actor")
       argument(:topic, :string, required: true, description: "Topic to analyze")
 
-      messages fn args ->
+      messages(fn args ->
         [
           %{
             role: :assistant,
@@ -99,9 +101,8 @@ defmodule Ectomancer.PromptTest do
             }
           }
         ]
-      end
+      end)
     end
-
   end
 
   defmodule PromptMCP.Prompt.CrasherPrompt do
@@ -145,7 +146,8 @@ defmodule Ectomancer.PromptTest do
     end
 
     test "prompt module has description" do
-      assert PromptMCP.Prompt.AnalyzeChurn.description() == "Analyze user churn over a time period"
+      assert PromptMCP.Prompt.AnalyzeChurn.description() ==
+               "Analyze user churn over a time period"
     end
   end
 
@@ -203,6 +205,7 @@ defmodule Ectomancer.PromptTest do
         PromptMCP.Prompt.AnalyzeChurn.get_messages(%{"days" => "7"}, frame)
 
       assert response.type == :prompt
+
       assert [%{"role" => "user", "content" => %{"type" => "text", "text" => text}}] =
                response.messages
 
@@ -217,7 +220,13 @@ defmodule Ectomancer.PromptTest do
 
       assert response.type == :prompt
       assert length(response.messages) == 1
-      assert [%{"role" => "user", "content" => %{"type" => "text", "text" => "What is the weather today?"}}] =
+
+      assert [
+               %{
+                 "role" => "user",
+                 "content" => %{"type" => "text", "text" => "What is the weather today?"}
+               }
+             ] =
                response.messages
     end
 
@@ -230,8 +239,10 @@ defmodule Ectomancer.PromptTest do
       assert response.type == :prompt
       assert length(response.messages) == 2
 
-      assert [%{"role" => "system", "content" => %{"type" => "text", "text" => text1}},
-              %{"role" => "user", "content" => %{"type" => "text", "text" => text2}}] =
+      assert [
+               %{"role" => "system", "content" => %{"type" => "text", "text" => text1}},
+               %{"role" => "user", "content" => %{"type" => "text", "text" => text2}}
+             ] =
                response.messages
 
       assert text1 =~ "sales"
@@ -313,10 +324,12 @@ defmodule Ectomancer.PromptTest do
       assert threshold_arg["default"] == 0.05
 
       frame = %Anubis.Server.Frame{assigns: %{}}
-      {:reply, response, _frame} = churn.handler.get_messages(
-        %{"days" => "30", "threshold" => 0.1},
-        frame
-      )
+
+      {:reply, response, _frame} =
+        churn.handler.get_messages(
+          %{"days" => "30", "threshold" => 0.1},
+          frame
+        )
 
       assert response.type == :prompt
       assert [%{"role" => "user", "content" => %{"text" => text}}] = response.messages
@@ -334,10 +347,12 @@ defmodule Ectomancer.PromptTest do
       assert type_arg["enum"] == ["sales", "inventory", "employee"]
 
       frame = %Anubis.Server.Frame{assigns: %{}}
-      {:reply, response, _frame} = summary.handler.get_messages(
-        %{"report_type" => "inventory"},
-        frame
-      )
+
+      {:reply, response, _frame} =
+        summary.handler.get_messages(
+          %{"report_type" => "inventory"},
+          frame
+        )
 
       assert response.type == :prompt
       assert length(response.messages) == 2

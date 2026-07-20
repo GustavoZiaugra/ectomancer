@@ -133,12 +133,12 @@ defmodule Ectomancer.Prompt do
 
   @doc false
   defmacro define_prompt_module(
-               module_name,
-               prompt_name,
-               description,
-               arguments,
-               messages_ast
-             ) do
+             module_name,
+             prompt_name,
+             description,
+             arguments,
+             messages_ast
+           ) do
     quote do
       defmodule unquote(module_name) do
         @moduledoc unquote(description)

@@ -294,12 +294,13 @@ defmodule Ectomancer.PlugIntegrationTest do
       ref = make_ref()
 
       capture_log(fn ->
-        result = WSPlug.connect(%{
-          endpoint: nil,
-          transport: :websocket,
-          params: %{},
-          options: []
-        })
+        result =
+          WSPlug.connect(%{
+            endpoint: nil,
+            transport: :websocket,
+            params: %{},
+            options: []
+          })
 
         send(self(), {ref, result})
       end)
