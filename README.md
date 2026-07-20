@@ -60,7 +60,7 @@ Add `ectomancer` to your dependencies:
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 1.5"}
+    {:ectomancer, "~> 1.6"}
   ]
 end
 ```
@@ -517,7 +517,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **1.5.0**
+Current version: **1.6.0**
 
 ## License
 

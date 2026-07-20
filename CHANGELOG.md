@@ -7,14 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-20
+
 ### Added
-- Batch operations: `batch_create`, `batch_update`, `batch_destroy` actions (#109)
-  - `batch_create` — insert multiple records in a single transaction
-  - `batch_update` — update multiple records (by primary key) atomically
-  - `batch_destroy` — delete/soft-delete multiple records in one call
-  - Partial failure reporting: returns `%{succeeded: [...], failed: [...]}` per batch
-  - Configurable `:batch_size` option (default: 100) per exposed schema
-  - Full authorization, scope, and soft-delete support for all batch actions
+- **MCP Prompts** — `prompt/2` macro for structured, parameterized prompt templates with argument validation (#122)
+
+  Define prompts alongside your tools:
+  ```elixir
+  prompt :analyze_churn do
+    description "Analyze user churn risk"
+    argument :cohort, :string, required: true, description: "User cohort"
+    messages fn args ->
+      [%{role: :user, content: %{type: :text, text: "Analyze churn for #{args["cohort"]}"}}]
+    end
+  end
+  ```
+
+  Supports `:string`, `:integer`, `:float`, `:boolean`, `:list`, and `:map` argument types with `required`, `description`, `default`, and `enum` options. Arguments are validated by Anubis before the messages callback runs. Registered automatically as MCP prompts — visible via `prompts/list` and callable via `prompts/get`.
+
+- **Upsert operations** — `:upsert` action for insert-or-update workflows with configurable conflict target and `on_conflict` control (#117)
+
+  ```elixir
+  expose MyApp.Products.Product,
+    actions: [:upsert],
+    conflict_target: :sku,
+    on_conflict: :replace_all
+  ```
+
+  Returns `{:ok, {record, :inserted | :updated}}`. Supports composite conflict targets (`conflict_target: [:org_id, :sku]`) and selective `on_conflict: [set: [:name, :avatar_url]]`. Automatically restores soft-deleted records. `conflict_target` is required at compile time.
+
+- **Batch operations** — `batch_create`, `batch_update`, `batch_destroy` for transactional multi-record operations (#116)
+
+  ```elixir
+  expose MyApp.Accounts.User,
+    actions: [:batch_create, :batch_update, :batch_destroy],
+    batch_size: 200
+  ```
+
+  Each runs inside a single `repo.transaction` with individual try/rescue per item — invalid records are collected without aborting valid ones. Returns `%{succeeded: [...], failed: [...], total: N}`. Configurable `:batch_size` (default: `100`) enforced before any DB interaction. Full authorization, scope, and soft-delete support.
+
+- **SSE and WebSocket transport support** — three transport options for MCP protocol serving (#120)
+
+  | Transport | Status | Route |
+  |---|---|---|
+  | **Streamable HTTP** (MCP 2025-03-26) | **Default** | `forward "/", Ectomancer.Plug` |
+  | **SSE** (MCP 2024-11-05) | Deprecated | `get "/sse"` + `post "/sse"` |
+  | **WebSocket** | Available | `socket "/mcp/ws", Ectomancer.Plug.WebSocket` |
+
+  Streamable HTTP uses a single endpoint with session header (`mcp-session-id`) and streaming responses. WebSocket supports actor extraction via query params or `x_headers`. Use `Ectomancer.child_spec/2` for multi-transport supervision.
+
+- **Igniter installer** — `mix igniter.install ectomancer` for fully automated setup (#119)
+
+  Automatically: adds dependency, discovers schemas with interactive selection, generates `lib/my_app/mcp.ex`, patches `config/config.exs`, injects `forward` route into the router, adds `Anubis.Server.Supervisor` to the supervision tree via AST patching, and prompts for transport selection. Idempotent — safe to re-run.
+
+- **Per-action authorization for Oban bridge** — `expose_oban_jobs` now supports granular authorize rules per action (#121)
+
+  ```elixir
+  expose_oban_jobs authorize: [
+    all: fn actor, _action -> actor.role == :admin end,
+    list_queues: :public,
+    cancel_job: fn actor, _action -> actor.role == :admin end
+  ]
+  ```
+
+  Supports function, module, `:none`/`:public`, or keyword lists with `:all` fallback. Unlisted actions fall through to the global authorization from `use Ectomancer`.
+
+- **Custom MCP Resources** — `resource/2` macro for defining custom resources alongside auto-generated schema resources (v1.4.0 — listed here for discoverability)
+- **Rate limiting** — configurable token bucket per tool or globally (v1.4.0)
+
+### Changed
+- Internal codebase refactored into focused submodules with reduced duplication (#118) — no user-facing API changes
+
+### No breaking changes
 
 ## [1.5.0] - 2026-07-17
 
@@ -323,7 +387,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.0...v1.3.1
