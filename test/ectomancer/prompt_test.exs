@@ -297,4 +297,52 @@ defmodule Ectomancer.PromptTest do
       assert Map.has_key?(caps, "prompts")
     end
   end
+
+  describe "smoke test: prompts/get protocol path" do
+    test "resolves, validates, and executes a prompt through the component registry" do
+      prompts = PromptMCP.__components__(:prompt)
+
+      churn = Enum.find(prompts, &(&1.name == "analyze_churn"))
+      assert churn
+      assert churn.description == "Analyze user churn over a time period"
+
+      days_arg = Enum.find(churn.arguments, &(&1["name"] == "days"))
+      assert days_arg["required"] == true
+
+      threshold_arg = Enum.find(churn.arguments, &(&1["name"] == "threshold"))
+      assert threshold_arg["default"] == 0.05
+
+      frame = %Anubis.Server.Frame{assigns: %{}}
+      {:reply, response, _frame} = churn.handler.get_messages(
+        %{"days" => "30", "threshold" => 0.1},
+        frame
+      )
+
+      assert response.type == :prompt
+      assert [%{"role" => "user", "content" => %{"text" => text}}] = response.messages
+      assert text =~ "30"
+      assert text =~ "0.1"
+    end
+
+    test "prompt with enum argument validates through the registry" do
+      prompts = PromptMCP.__components__(:prompt)
+
+      summary = Enum.find(prompts, &(&1.name == "summarize_reports"))
+      assert summary
+
+      type_arg = Enum.find(summary.arguments, &(&1["name"] == "report_type"))
+      assert type_arg["enum"] == ["sales", "inventory", "employee"]
+
+      frame = %Anubis.Server.Frame{assigns: %{}}
+      {:reply, response, _frame} = summary.handler.get_messages(
+        %{"report_type" => "inventory"},
+        frame
+      )
+
+      assert response.type == :prompt
+      assert length(response.messages) == 2
+      assert Enum.any?(response.messages, &(&1["role"] == "system"))
+      assert Enum.any?(response.messages, &(&1["role"] == "user"))
+    end
+  end
 end
