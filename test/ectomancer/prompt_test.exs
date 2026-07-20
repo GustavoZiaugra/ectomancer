@@ -114,6 +114,7 @@ defmodule Ectomancer.PromptTest do
     def arguments, do: []
 
     def get_messages(_args, frame) do
+      # credo:disable-for-next-line Credo.Check.Readability.PreferImplicitTry
       try do
         raise "Intentional crash for testing"
       rescue

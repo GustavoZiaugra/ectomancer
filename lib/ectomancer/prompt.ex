@@ -132,6 +132,7 @@ defmodule Ectomancer.Prompt do
   end
 
   @doc false
+  # credo:disable-for-next-line
   defmacro define_prompt_module(
              module_name,
              prompt_name,
