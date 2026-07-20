@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Igniter installer** — `mix igniter.install ectomancer` for fully automated setup (#119)
 
-  Automatically: adds dependency, discovers schemas with interactive selection, generates `lib/my_app/mcp.ex`, patches `config/config.exs`, injects `forward` route into the router, adds `Anubis.Server.Supervisor` to the supervision tree via AST patching, and prompts for transport selection. Idempotent — safe to re-run.
+  Automatically: adds dependency, discovers schemas with interactive selection, generates `lib/my_app/mcp.ex`, patches `config/config.exs`, injects `forward` route into the router, adds a supervisor to the supervision tree via AST patching, and prompts for transport selection. Idempotent — safe to re-run.
 
 - **Per-action authorization for Oban bridge** — `expose_oban_jobs` now supports granular authorize rules per action (#121)
 
