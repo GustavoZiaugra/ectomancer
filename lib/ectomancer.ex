@@ -60,6 +60,8 @@ defmodule Ectomancer do
   - `expose/2` - Auto-generate CRUD tools from Ecto schemas
   - `expose_routes/1` - Auto-generate tools from Phoenix router routes
   - `expose_oban_jobs/0` - Auto-generate Oban job management tools (requires Oban)
+  - `resource/2` - Define custom MCP resources with URI templates, MIME types, and handlers
+  - `prompt/2` - Define MCP prompt templates with typed arguments and message callbacks
   - `authorize/1` - Add authorization to tools (use inside tool block)
 
   ## Authorization
