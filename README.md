@@ -20,6 +20,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
 - **Batch operations** — `batch_create`, `batch_update`, `batch_destroy` for transactional multi-record operations
 - **Custom resources** — `resource :system_status do ... end` with URI templates, MIME types, and authorization
+- **MCP Prompts** — `prompt :analyze_churn do ... end` for structured, parameterized prompt templates with argument validation
 - **Rate limiting** — configurable token bucket per tool or globally
 - **Multi-repo support** — expose schemas from different repos simultaneously
 - **MCP Resources** — schemas auto-register at `ectomancer://schemas/{name}`, plus custom resources with URI templates, MIME types, and read handlers
@@ -121,6 +122,24 @@ defmodule MyApp.MCP do
 
     read fn _params, _actor ->
       {:ok, Jason.encode!(%{status: "healthy", uptime: System.uptime()})}
+    end
+  end
+
+  prompt :analyze_churn do
+    description "Analyze user churn over a time period"
+    argument :days, :integer, required: true, description: "Days to look back"
+    argument :threshold, :float, default: 0.05, description: "Churn threshold"
+
+    messages fn args ->
+      [
+        %{
+          role: :user,
+          content: %{
+            type: :text,
+            text: "Using the list_users and get_user tools, analyze churn over the last #{args["days"]} days with threshold #{args["threshold"]}."
+          }
+        }
+      ]
     end
   end
 end
@@ -436,6 +455,43 @@ expose MyApp.Accounts.User,
 ```
 
 Upsert is **soft-delete aware** — upserting onto a soft-deleted record restores it (sets `deleted_at` to `nil`).
+
+## Prompts
+
+Define structured, parameterized prompt templates for LLM clients. Prompts are reusable blueprints that generate messages based on runtime arguments — the AI assistant can request them to kick off common workflows.
+
+```elixir
+prompt :summarize_reports do
+  description "Summarize recent reports by type"
+  argument :report_type, :string,
+    required: true,
+    description: "Type of report",
+    enum: ["sales", "inventory", "employee"]
+
+  messages fn args ->
+    report_type = Map.get(args, "report_type", "sales")
+
+    [
+      %{
+        role: :system,
+        content: %{
+          type: :text,
+          text: "You are a report analyst. Summarize the #{report_type} reports."
+        }
+      },
+      %{
+        role: :user,
+        content: %{
+          type: :text,
+          text: "Provide a concise summary of the latest #{report_type} reports."
+        }
+      }
+    ]
+  end
+end
+```
+
+Prompts integrate with the MCP `prompts/list` and `prompts/get` protocol methods via `Anubis.Server.component/2`. Arguments support `required`, `default`, `description`, and `enum` constraints.
 
 ## Pages
 
