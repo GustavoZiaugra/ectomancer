@@ -44,6 +44,10 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
+    defp apply_filter(query, field, :eq, nil) do
+      where(query, [r], is_nil(field(r, ^field)))
+    end
+
     defp apply_filter(query, field, :eq, value) do
       where(query, [r], field(r, ^field) == ^value)
     end

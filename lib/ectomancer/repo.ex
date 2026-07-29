@@ -61,7 +61,7 @@ if Code.ensure_loaded?(Ecto) do
 
         list(MyApp.Accounts.User, %{"email" => "test@example.com"}, limit: 10)
     """
-    @spec list(module(), map(), keyword()) :: {:ok, [struct()]} | {:error, any()}
+    @spec list(module(), map(), keyword()) :: {:ok, [struct()] | map()} | {:error, any()}
     def list(schema_module, params \\ %{}, opts \\ []) do
       Ectomancer.Telemetry.repo_span(:list, schema_module, fn ->
         try do
@@ -69,16 +69,46 @@ if Code.ensure_loaded?(Ecto) do
             introspection = SchemaIntrospection.analyze(schema_module)
             {meta_params, filter_params} = Filtering.extract_meta_params(params)
 
-            query =
+            base_query =
               schema_module
               |> Filtering.build_filter_query(filter_params, introspection.fields)
               |> Filtering.apply_scope(Keyword.get(opts, :scope))
               |> Filtering.apply_soft_delete_filter(schema_module, meta_params)
               |> Filtering.apply_ordering(meta_params, introspection.fields)
-              |> Filtering.apply_pagination(meta_params, opts)
 
-            results = repo.all(query)
-            {:ok, maybe_preload(repo, results, opts)}
+            has_explicit_limit =
+              Map.has_key?(meta_params, "limit") or Keyword.has_key?(opts, :limit)
+
+            if has_explicit_limit do
+              limit_val =
+                Filtering.parse_int(Map.get(meta_params, "limit")) ||
+                  Keyword.get(opts, :limit, 100)
+
+              offset_val =
+                Filtering.parse_int(Map.get(meta_params, "offset")) ||
+                  Keyword.get(opts, :offset, 0)
+
+              paginated_query = Filtering.apply_pagination(base_query, meta_params, opts)
+              results = repo.all(paginated_query)
+              results = maybe_preload(repo, results, opts)
+
+              total = repo.aggregate(base_query, :count)
+
+              {:ok,
+               %{
+                 data: results,
+                 pagination: %{
+                   total: total,
+                   limit: limit_val,
+                   offset: offset_val,
+                   has_more: offset_val + limit_val < total
+                 }
+               }}
+            else
+              query = Filtering.apply_pagination(base_query, meta_params, opts)
+              results = repo.all(query)
+              {:ok, maybe_preload(repo, results, opts)}
+            end
           end)
         rescue
           DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
@@ -152,15 +182,20 @@ if Code.ensure_loaded?(Ecto) do
       Ectomancer.Telemetry.repo_span(:create, schema_module, fn ->
         try do
           with_repo(opts, fn repo ->
+            associations = Keyword.get(opts, :associations, false)
             struct = struct(schema_module)
             attrs = normalize_params(params || %{}, schema_module)
 
-            changeset =
-              changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
+            if associations do
+              create_with_associations(repo, schema_module, struct, attrs, associations)
+            else
+              changeset =
+                changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
 
-            case repo.insert(changeset) do
-              {:ok, record} -> {:ok, record}
-              {:error, changeset} -> {:error, changeset}
+              case repo.insert(changeset) do
+                {:ok, record} -> {:ok, record}
+                {:error, changeset} -> {:error, changeset}
+              end
             end
           end)
         rescue
@@ -866,6 +901,71 @@ if Code.ensure_loaded?(Ecto) do
         schema_module.changeset(struct, attrs)
       else
         Ecto.Changeset.cast(struct, attrs, writable_fields)
+      end
+    end
+
+    defp create_with_associations(repo, schema_module, struct, attrs, associations) do
+      assoc_config_fields = Enum.map(associations, & &1.field)
+      {assoc_attrs, record_attrs} = Map.split(attrs, assoc_config_fields)
+
+      writable = writable_fields(schema_module)
+
+      result =
+        repo.transaction(fn ->
+          changeset = changeset_for(schema_module, struct, record_attrs, writable)
+
+          case repo.insert(changeset) do
+            {:ok, record} ->
+              create_nested_assocs(repo, record, assoc_attrs, associations)
+
+            {:error, changeset} ->
+              repo.rollback(changeset)
+          end
+        end)
+
+      case result do
+        {:ok, record} -> {:ok, record}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+
+    defp create_nested_assocs(_repo, record, _assoc_attrs, []), do: {:ok, record}
+
+    defp create_nested_assocs(repo, record, assoc_attrs, [assoc | rest]) do
+      field = assoc.field
+
+      case Map.get(assoc_attrs, field) do
+        nil ->
+          create_nested_assocs(repo, record, assoc_attrs, rest)
+
+        items when is_list(items) and assoc.cardinality == :many ->
+          results =
+            Enum.map(items, fn child_attrs ->
+              cast_child = normalize_params(child_attrs, assoc.related)
+              child = Ecto.build_assoc(record, field, cast_child)
+              child_writable = writable_fields(assoc.related)
+              child_changeset = changeset_for(assoc.related, child, cast_child, child_writable)
+
+              case repo.insert(child_changeset) do
+                {:ok, _child} -> :ok
+                {:error, child_cs} -> repo.rollback(child_cs)
+              end
+            end)
+
+          if Enum.all?(results, &(&1 == :ok)) do
+            create_nested_assocs(repo, record, assoc_attrs, rest)
+          end
+
+        single when assoc.cardinality == :one ->
+          cast_child = normalize_params(single, assoc.related)
+          child = Ecto.build_assoc(record, field, cast_child)
+          child_writable = writable_fields(assoc.related)
+          child_changeset = changeset_for(assoc.related, child, cast_child, child_writable)
+
+          case repo.insert(child_changeset) do
+            {:ok, _child} -> create_nested_assocs(repo, record, assoc_attrs, rest)
+            {:error, child_cs} -> repo.rollback(child_cs)
+          end
       end
     end
 

@@ -19,6 +19,9 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Custom tools** — `tool :search_users do ... end` with typed params
 - **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
 - **Batch operations** — `batch_create`, `batch_update`, `batch_destroy` for transactional multi-record operations
+- **Pagination metadata** — `:list` actions return total count, `has_more`, and offset info so LLMs can paginate intelligently
+- **Composite primary keys** — full support for composite-keyed schemas across all CRUD actions
+- **Nested association creation** — `associations: true` on `expose` enables creating parent+child records atomically in a single tool call
 - **Custom resources** — `resource :system_status do ... end` with URI templates, MIME types, and authorization
 - **MCP Prompts** — `prompt :analyze_churn do ... end` for structured, parameterized prompt templates with argument validation
 - **Rate limiting** — configurable token bucket per tool or globally
@@ -104,6 +107,10 @@ defmodule MyApp.MCP do
 
   expose MyApp.Blog.Post,
     actions: [:list, :get]
+
+  expose MyApp.Blog.Comment,
+    actions: [:create],
+    associations: true
 
   tool :search_users do
     description "Search users by email"
@@ -412,6 +419,64 @@ Partial failures are reported alongside successes — the AI assistant can retry
 
 Batch operations respect authorization, scope, soft-delete, and field auth just like single-record operations.
 
+## Pagination Metadata
+
+When an LLM calls `list_users(limit: 10)`, the response includes pagination metadata so the LLM knows if more records exist:
+
+```elixir
+# Response shape:
+%{
+  data: [%User{...}, %User{...}],
+  pagination: %{
+    total: 247,
+    limit: 10,
+    offset: 0,
+    has_more: true
+  }
+}
+```
+
+The `has_more` flag tells the LLM whether to paginate further. When `limit` is omitted, a flat list is returned for backward compatibility.
+
+## Composite Primary Keys
+
+Schemas with composite primary keys (e.g., `primary_key [:org_id, :user_id]`) are now fully supported. Each PK field generates a separate required parameter:
+
+```elixir
+expose MyApp.Inventory.Item,
+  actions: [:list, :get, :create, :update, :destroy]
+
+# Generated: get_inventory_item(org_id, user_id)
+#            update_inventory_item(org_id, user_id, ...)
+#            destroy_inventory_item(org_id, user_id)
+```
+
+Single PK schemas are unaffected — they continue to generate a single `:id` parameter.
+
+## Nested Association Creation
+
+Create records with nested associations atomically using the `associations` option:
+
+```elixir
+expose MyApp.Blog.Post,
+  actions: [:create],
+  associations: true  # or associations: [:comments] for specific ones
+```
+
+This generates a `create_post` tool that accepts nested params:
+
+```elixir
+# Single MCP tool call:
+create_post(
+  title: "Hello",
+  body: "World",
+  comments: [%{body: "First!"}, %{body: "Second!"}],
+  profile: %{bio: "Author bio"}
+)
+```
+
+The entire operation runs in a transaction — if the parent or any child fails to validate, all changes are rolled back. Supports both `has_many` (array of maps) and `has_one` (single map) associations. Opt-in only — schemas without `associations:` are completely unaffected.
+
 ## Upsert
 
 Insert a new record or update an existing one in a single call based on a conflict target:
@@ -517,7 +582,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **1.6.0**
+Current version: **1.6.0** (with pagination metadata, composite PK support, nested association creation, and improved pluralization)
 
 ## License
 

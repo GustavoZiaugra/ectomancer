@@ -159,7 +159,7 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
       insert!(Item, %{name: "B", price: 2.0, quantity: 2, active: true})
       insert!(Item, %{name: "C", price: 3.0, quantity: 3, active: true})
 
-      assert {:ok, results} = Repo.list(Item, %{"limit" => 2})
+      assert {:ok, %{data: results}} = Repo.list(Item, %{"limit" => 2})
       assert length(results) == 2
     end
 
@@ -168,7 +168,7 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
       insert!(Item, %{name: "B", price: 2.0, quantity: 2, active: true})
       insert!(Item, %{name: "C", price: 3.0, quantity: 3, active: true})
 
-      assert {:ok, [%{name: "C"}]} =
+      assert {:ok, %{data: [%{name: "C"}]}} =
                Repo.list(Item, %{
                  "order_by" => "name",
                  "limit" => 1,
@@ -186,7 +186,7 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
         })
       end
 
-      assert {:ok, results} = Repo.list(Item, %{"limit" => 200})
+      assert {:ok, %{data: results}} = Repo.list(Item, %{"limit" => 200})
       assert length(results) == 5
     end
   end
@@ -209,7 +209,7 @@ defmodule Ectomancer.QueryFilteringIntegrationTest do
       insert!(Item, %{name: "Apple", price: 5.0, quantity: 5, active: true})
       insert!(Item, %{name: "Banana", price: 3.0, quantity: 10, active: true})
 
-      assert {:ok, [%{name: "Apple"}]} =
+      assert {:ok, %{data: [%{name: "Apple"}]}} =
                Repo.list(Item, %{
                  "price_gt" => 3.0,
                  "order_by" => "name",

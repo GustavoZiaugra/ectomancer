@@ -31,6 +31,9 @@ if Code.ensure_loaded?(Ecto) do
       * `:readonly` - Enable read-only mode (disables `:create`, `:update`, `:destroy`)
       * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
       * `:preload` - Ecto associations to eager-load on `:list` and `:get` results
+      * `:associations` - Enable nested creation of associated records on `:create`.
+        `true` for all associations, or a list of specific association atoms.
+        Example: `associations: true` or `associations: [:comments]`
 
     ## Generated Tools
 
@@ -84,7 +87,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Action Details
 
-      * `:list` - Returns paginated list, supports filtering
+      * `:list` - Returns paginated list with pagination metadata (total, has_more), supports filtering
       * `:get` - Returns single record by primary key
       * `:create` - Creates new record with provided attributes
       * `:update` - Updates existing record by primary key
@@ -180,6 +183,8 @@ if Code.ensure_loaded?(Ecto) do
         * `:as` - Alternative resource name
         * `:soft_delete` - Enable soft-delete awareness (auto-detects `:deleted_at`/`:archived_at` fields)
         * `:field_authorize` - Dynamic field-level authorization callback `fn actor, field -> boolean :: boolean()`
+        * `:associations` - Enable nested creation of associated records on `:create`.
+          `true` for all associations, or a list of specific association atoms.
 
      ## Examples
 
@@ -268,6 +273,7 @@ if Code.ensure_loaded?(Ecto) do
 
       exposed_fields = filter_fields(introspection, opts)
       filterable_fields = filter_filterable_fields(exposed_fields, opts)
+      associations = resolve_associations(schema, opts)
 
       %{
         schema: schema,
@@ -290,7 +296,8 @@ if Code.ensure_loaded?(Ecto) do
         preloadable: resolve_preloadable(introspection, opts),
         batch_size: Keyword.get(opts, :batch_size, 100),
         conflict_target: opts[:conflict_target],
-        on_conflict: Keyword.get(opts, :on_conflict, :replace_all)
+        on_conflict: Keyword.get(opts, :on_conflict, :replace_all),
+        associations: associations
       }
     end
 
@@ -300,6 +307,23 @@ if Code.ensure_loaded?(Ecto) do
         false -> false
         true -> :all
         assocs when is_list(assocs) -> assocs
+      end
+    end
+
+    defp resolve_associations(schema, opts) do
+      case Keyword.get(opts, :associations) do
+        nil ->
+          false
+
+        false ->
+          false
+
+        true ->
+          SchemaIntrospection.associations_for_create(schema)
+
+        list when is_list(list) ->
+          SchemaIntrospection.associations_for_create(schema)
+          |> Enum.filter(fn assoc -> assoc.field in list end)
       end
     end
 
@@ -647,11 +671,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp singularize_resource(name) when is_binary(name) do
-      if String.ends_with?(name, "s") do
-        String.slice(name, 0..-2//1)
-      else
-        name
-      end
+      Plurality.singularize(name)
     end
   end
 else

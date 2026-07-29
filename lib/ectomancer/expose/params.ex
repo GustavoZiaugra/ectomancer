@@ -64,39 +64,44 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     def generate_params(:get, config) do
-      pk_field = hd(config.introspection.primary_key)
-
-      pk_type =
-        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+      pk_block = pk_params_block(config)
 
       if config.soft_delete do
         quote do
-          param(unquote(pk_field), unquote(pk_type), required: true)
+          unquote(pk_block)
           param(:include_deleted, :boolean)
           unquote(include_param(config.preloadable))
         end
       else
         quote do
-          param(unquote(pk_field), unquote(pk_type), required: true)
+          unquote(pk_block)
           unquote(include_param(config.preloadable))
         end
       end
     end
 
     def generate_params(:create, config) do
-      build_param_block(config.writable_fields, config.introspection.types)
+      writable_params = build_param_block(config.writable_fields, config.introspection.types)
+      assoc_params = build_assoc_params(config.associations)
+
+      case assoc_params do
+        nil ->
+          writable_params
+
+        _ ->
+          quote do
+            unquote(writable_params)
+            unquote(assoc_params)
+          end
+      end
     end
 
     def generate_params(:update, config) do
-      pk_field = hd(config.introspection.primary_key)
-
-      pk_type =
-        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
+      pk_block = pk_params_block(config)
       writable_params = build_param_block(config.writable_fields, config.introspection.types)
 
       quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
+        unquote(pk_block)
         unquote(writable_params)
       end
     end
@@ -106,25 +111,11 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     def generate_params(:destroy, config) do
-      pk_field = hd(config.introspection.primary_key)
-
-      pk_type =
-        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
-      end
+      pk_params_block(config)
     end
 
     def generate_params(:restore, config) do
-      pk_field = hd(config.introspection.primary_key)
-
-      pk_type =
-        Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
-
-      quote do
-        param(unquote(pk_field), unquote(pk_type), required: true)
-      end
+      pk_params_block(config)
     end
 
     def generate_params(:batch_create, _config) do
@@ -200,11 +191,50 @@ if Code.ensure_loaded?(Ecto) do
     defp suffix_param_type("in", _type), do: :list
     defp suffix_param_type(_suffix, type), do: Expose.get_ecto_type_for_param(type)
 
+    defp pk_params_block(config) do
+      pk_fields = config.introspection.primary_key
+
+      pk_param_asts =
+        Enum.map(pk_fields, fn pk_field ->
+          pk_type =
+            Expose.get_ecto_type_for_param(Map.get(config.introspection.types, pk_field))
+
+          quote do
+            param(unquote(pk_field), unquote(pk_type), required: true)
+          end
+        end)
+
+      case pk_param_asts do
+        [] -> quote(do: :ok)
+        [single] -> single
+        multiple -> {:__block__, [], multiple}
+      end
+    end
+
     defp include_param(false), do: nil
 
     defp include_param(_preloadable) do
       quote do
         param(:include, :list)
+      end
+    end
+
+    defp build_assoc_params(false), do: nil
+
+    defp build_assoc_params(associations) when is_list(associations) do
+      Enum.map(associations, fn assoc ->
+        assoc_type = if assoc.cardinality == :many, do: {:array, :map}, else: :map
+
+        quote do
+          param(unquote(assoc.field), unquote(assoc_type),
+            description: "Nested #{unquote(assoc.type)} #{unquote(assoc.field)}"
+          )
+        end
+      end)
+      |> case do
+        [] -> nil
+        [single] -> single
+        multiple -> {:__block__, [], multiple}
       end
     end
 

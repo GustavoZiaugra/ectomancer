@@ -167,8 +167,9 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "a@b.com"})
       Repo.create(TestUser, %{email: "b@c.com"})
 
-      {:ok, users} = Repo.list(TestUser, %{}, limit: 100)
+      {:ok, %{data: users, pagination: pagination}} = Repo.list(TestUser, %{}, limit: 100)
       assert length(users) >= 2
+      assert pagination.total >= 2
     end
 
     test "get returns a record by id" do
@@ -200,7 +201,7 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "z@b.com"})
       Repo.create(TestUser, %{email: "a@b.com"})
 
-      {:ok, users} =
+      {:ok, %{data: users}} =
         Repo.list(TestUser, %{"order_by" => "email", "order_dir" => "asc"}, limit: 100)
 
       assert hd(users).email == "a@b.com"
@@ -211,8 +212,12 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "second@a.com"})
       Repo.create(TestUser, %{email: "third@a.com"})
 
-      {:ok, users} = Repo.list(TestUser, %{"offset" => 1, "limit" => 2})
+      {:ok, %{data: users, pagination: pagination}} =
+        Repo.list(TestUser, %{"offset" => 1, "limit" => 2})
+
       assert length(users) == 2
+      assert pagination.limit == 2
+      assert pagination.offset == 1
     end
 
     test "list filters by gte operator" do
@@ -249,6 +254,61 @@ defmodule Ectomancer.RepoTest do
 
       {:ok, users} = Repo.list(TestUser, %{"name_not" => "Alice"})
       assert length(users) == 1
+    end
+
+    test "list with limit returns pagination metadata" do
+      Repo.create(TestUser, %{email: "p1@test.com"})
+      Repo.create(TestUser, %{email: "p2@test.com"})
+
+      {:ok, result} = Repo.list(TestUser, %{}, limit: 10)
+
+      assert Map.has_key?(result, :data)
+      assert Map.has_key?(result, :pagination)
+      assert result.pagination.limit == 10
+      assert result.pagination.offset == 0
+    end
+
+    test "list returns correct total count" do
+      Repo.create(TestUser, %{email: "t1@test.com"})
+      Repo.create(TestUser, %{email: "t2@test.com"})
+      Repo.create(TestUser, %{email: "t3@test.com"})
+
+      {:ok, %{data: users, pagination: pagination}} = Repo.list(TestUser, %{}, limit: 10)
+      assert length(users) == 3
+      assert pagination.total == 3
+    end
+
+    test "list has_more is true when there are more records" do
+      for i <- 1..5 do
+        Repo.create(TestUser, %{email: "more#{i}@test.com"})
+      end
+
+      {:ok, %{data: users, pagination: pagination}} =
+        Repo.list(TestUser, %{}, limit: 3)
+
+      assert length(users) == 3
+      assert pagination.has_more == true
+      assert pagination.total == 5
+    end
+
+    test "list has_more is false when all records are returned" do
+      Repo.create(TestUser, %{email: "all1@test.com"})
+      Repo.create(TestUser, %{email: "all2@test.com"})
+
+      {:ok, %{data: users, pagination: pagination}} =
+        Repo.list(TestUser, %{}, limit: 5)
+
+      assert length(users) == 2
+      assert pagination.has_more == false
+      assert pagination.total == 2
+    end
+
+    test "list without limit returns flat list for backward compat" do
+      Repo.create(TestUser, %{email: "bc1@test.com"})
+
+      {:ok, users} = Repo.list(TestUser)
+      assert is_list(users)
+      assert length(users) >= 1
     end
   end
 
@@ -802,8 +862,122 @@ defmodule Ectomancer.RepoTest do
       assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u1.id})
       assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u2.id})
 
-      {:ok, remaining} = Repo.list(TestUser, %{}, limit: 100)
+      {:ok, %{data: remaining}} = Repo.list(TestUser, %{}, limit: 100)
       assert length(remaining) == 1
+    end
+  end
+
+  describe "edge cases with repo" do
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(TestUser)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "list returns empty data when no records exist" do
+      assert {:ok, []} = Repo.list(TestUser, %{})
+    end
+
+    test "list returns empty data when filter matches nothing" do
+      Repo.create(TestUser, %{email: "a@b.com"})
+
+      assert {:ok, []} = Repo.list(TestUser, %{"email" => "nonexistent"})
+    end
+
+    test "list with empty params returns all records" do
+      Repo.create(TestUser, %{email: "a@b.com"})
+      Repo.create(TestUser, %{email: "b@c.com"})
+
+      assert {:ok, results} = Repo.list(TestUser, %{})
+      assert length(results) == 2
+    end
+
+    test "create with nil field value stores nil" do
+      assert {:ok, user} = Repo.create(TestUser, %{email: "nil@test.com", name: nil})
+      assert user.email == "nil@test.com"
+      assert user.name == nil
+    end
+
+    test "update setting a field to nil" do
+      {:ok, user} = Repo.create(TestUser, %{email: "a@b.com", name: "Has Name"})
+      assert user.name == "Has Name"
+
+      {:ok, updated} = Repo.update(TestUser, %{"id" => user.id, "name" => nil})
+      assert updated.name == nil
+    end
+
+    test "create with all nil optional fields" do
+      assert {:ok, user} =
+               Repo.create(TestUser, %{email: "minimal@test.com", name: nil, age: nil})
+
+      assert user.email == "minimal@test.com"
+    end
+
+    test "concurrent creates succeed" do
+      task1 =
+        Task.async(fn ->
+          Repo.create(TestUser, %{email: "concurrent1@test.com"})
+        end)
+
+      task2 =
+        Task.async(fn ->
+          Repo.create(TestUser, %{email: "concurrent2@test.com"})
+        end)
+
+      assert {:ok, _} = Task.await(task1)
+      assert {:ok, _} = Task.await(task2)
+
+      {:ok, %{data: results}} = Repo.list(TestUser, %{}, limit: 100)
+      assert length(results) == 2
+    end
+
+    test "concurrent reads during write" do
+      {:ok, user} = Repo.create(TestUser, %{email: "shared@test.com"})
+
+      task =
+        Task.async(fn ->
+          Repo.get(TestUser, %{"id" => user.id})
+        end)
+
+      Repo.create(TestUser, %{email: "other@test.com"})
+
+      assert {:ok, fetched} = Task.await(task)
+      assert fetched.email == "shared@test.com"
+    end
+
+    test "get with string params works the same as atom params" do
+      {:ok, user} = Repo.create(TestUser, %{email: "key-test@test.com"})
+
+      assert {:ok, _} = Repo.get(TestUser, %{"id" => user.id})
+      assert {:ok, _} = Repo.get(TestUser, %{id: user.id})
+    end
+
+    test "update with only pk and no changes returns ok" do
+      {:ok, user} = Repo.create(TestUser, %{email: "nochange@test.com"})
+
+      assert {:ok, same} = Repo.update(TestUser, %{"id" => user.id})
+      assert same.email == "nochange@test.com"
+    end
+
+    test "list limit defaults to 100" do
+      for i <- 1..150 do
+        Repo.create(TestUser, %{email: "many#{i}@test.com"})
+      end
+
+      {:ok, results} = Repo.list(TestUser, %{})
+      assert length(results) <= 100
+    end
+
+    test "list with offset past end returns empty list" do
+      Repo.create(TestUser, %{email: "lonely@test.com"})
+
+      {:ok, []} = Repo.list(TestUser, %{"offset" => 100})
     end
   end
 end

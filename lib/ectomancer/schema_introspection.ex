@@ -164,6 +164,36 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc """
+    Gets association info suitable for nested creation (has_many and has_one only).
+
+    Excludes belongs_to (handled via FK), many_to_many, and through associations.
+
+    ## Examples
+
+        iex> Ectomancer.SchemaIntrospection.associations_for_create(MyApp.Blog.Post)
+        [%{field: :comments, cardinality: :many, related: MyApp.Blog.Comment, type: :has_many}]
+    """
+    @spec associations_for_create(module()) :: [
+            %{field: atom(), cardinality: atom(), related: module(), type: atom()}
+          ]
+    def associations_for_create(schema_module) do
+      schema_module.__schema__(:associations)
+      |> Enum.map(fn assoc_field ->
+        assoc = schema_module.__schema__(:association, assoc_field)
+
+        if assoc.type in [:has_many, :has_one] do
+          %{
+            field: assoc_field,
+            cardinality: assoc.cardinality,
+            related: assoc.related,
+            type: assoc.type
+          }
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+    end
+
+    @doc """
     Returns the primary key field(s) for a schema.
 
     ## Examples
@@ -301,6 +331,7 @@ else
       do: %{fields: [], types: %{}, associations: [], primary_key: [], embedded: false}
 
     def get_associations(_schema_module), do: []
+    def associations_for_create(_schema_module), do: []
     def field_info(_schema_module, _field), do: %{type: nil, nullable: true}
     def primary_key(_schema_module), do: []
     def writable_fields(_schema_module), do: []
