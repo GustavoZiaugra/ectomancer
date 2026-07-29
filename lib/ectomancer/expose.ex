@@ -84,7 +84,7 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Action Details
 
-      * `:list` - Returns paginated list, supports filtering
+      * `:list` - Returns paginated list with pagination metadata (total, has_more), supports filtering
       * `:get` - Returns single record by primary key
       * `:create` - Creates new record with provided attributes
       * `:update` - Updates existing record by primary key

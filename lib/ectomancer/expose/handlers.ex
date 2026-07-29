@@ -74,7 +74,22 @@ if Code.ensure_loaded?(Ecto) do
           opts = [scope: scope]
           unquote(preload_expr)
           unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
+          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
+
+          case result do
+            {:ok, %{data: data, pagination: pagination}} ->
+              data_str = inspect(data)
+              total = pagination.total
+              limit = pagination.limit
+
+              pagination_str =
+                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
+
+              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
+
+            _ ->
+              result
+          end
         end
       end
     end
@@ -152,7 +167,22 @@ if Code.ensure_loaded?(Ecto) do
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(assoc_names), opts)
           unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
+          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
+
+          case result do
+            {:ok, %{data: data, pagination: pagination}} ->
+              data_str = inspect(data)
+              total = pagination.total
+              limit = pagination.limit
+
+              pagination_str =
+                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
+
+              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
+
+            _ ->
+              result
+          end
         end
       end
     end
@@ -186,7 +216,22 @@ if Code.ensure_loaded?(Ecto) do
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(allowed), opts)
           unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
+          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
+
+          case result do
+            {:ok, %{data: data, pagination: pagination}} ->
+              data_str = inspect(data)
+              total = pagination.total
+              limit = pagination.limit
+
+              pagination_str =
+                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
+
+              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
+
+            _ ->
+              result
+          end
         end
       end
     end

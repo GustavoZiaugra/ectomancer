@@ -53,7 +53,7 @@ defmodule Ectomancer.BatchOperationsTest do
       assert length(result.succeeded) == 3
       assert result.failed == []
 
-      {:ok, posts} = Repo.list(Post, %{}, limit: 100)
+      {:ok, %{data: posts}} = Repo.list(Post, %{}, limit: 100)
       assert length(posts) == 3
     end
 
@@ -205,7 +205,7 @@ defmodule Ectomancer.BatchOperationsTest do
       assert length(result.succeeded) == 2
       assert result.failed == []
 
-      {:ok, posts} = Repo.list(Post, %{}, limit: 100)
+      {:ok, %{data: posts}} = Repo.list(Post, %{}, limit: 100)
       assert length(posts) == 1
       assert hd(posts).id == keep.id
     end
