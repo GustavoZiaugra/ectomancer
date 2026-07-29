@@ -124,12 +124,21 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    def generate_params(:batch_destroy, _config) do
-      quote do
-        param(:ids, :list,
-          required: true,
-          description: "Array of record IDs to delete"
-        )
+    def generate_params(:batch_destroy, config) do
+      if length(config.introspection.primary_key) > 1 do
+        quote do
+          param(:records, {:array, :map},
+            required: true,
+            description: "Array of records with primary key fields to delete"
+          )
+        end
+      else
+        quote do
+          param(:ids, :list,
+            required: true,
+            description: "Array of record IDs to delete"
+          )
+        end
       end
     end
 
