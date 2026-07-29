@@ -3,7 +3,14 @@ defmodule Ectomancer.RouteIntrospectionTest do
   import Enum, only: [all?: 2]
   alias Ectomancer.RouteIntrospection
 
-  defmodule UserController, do: nil
+  defmodule UserController do
+    import Plug.Conn
+    def index(conn, _params), do: send_resp(conn, 200, "[]")
+    def show(conn, _params), do: send_resp(conn, 200, "{}")
+    def create(conn, _params), do: send_resp(conn, 201, "{}")
+    def update(conn, _params), do: send_resp(conn, 200, "{}")
+    def delete(conn, _params), do: send_resp(conn, 204, "")
+  end
 
   describe "parse_path_params/1" do
     test "parses simple path with param" do
@@ -584,9 +591,9 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, mod} = Code.ensure_loaded(OverrideRouteMCP.Tool.GetUsers)
 
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
-      # credo:disable-for-next-line
-      result = apply(mod, :execute, [%{}, frame])
-      assert match?({:ok, _}, result) or match?({:error, _, _}, result)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               apply(mod, :execute, [%{}, frame])
     end
 
     test "per-route :none overrides global auth" do
@@ -614,10 +621,9 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, mod} = Code.ensure_loaded(NoneRouteMCP.Tool.GetUsers)
 
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
-      # credo:disable-for-next-line
-      result = apply(mod, :execute, [%{}, frame])
-      # Should NOT get auth error (per-route :none overrides global)
-      refute match?({:error, %{code: -32_001}, _}, result)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               apply(mod, :execute, [%{}, frame])
     end
 
     test "per-route auth without global restricts access" do
