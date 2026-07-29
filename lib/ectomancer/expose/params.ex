@@ -81,7 +81,17 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     def generate_params(:create, config) do
-      build_param_block(config.writable_fields, config.introspection.types)
+      writable_params = build_param_block(config.writable_fields, config.introspection.types)
+      assoc_params = build_assoc_params(config.associations)
+
+      case assoc_params do
+        nil -> writable_params
+        _ ->
+          quote do
+            unquote(writable_params)
+            unquote(assoc_params)
+          end
+      end
     end
 
     def generate_params(:update, config) do
@@ -213,6 +223,25 @@ if Code.ensure_loaded?(Ecto) do
     defp include_param(_preloadable) do
       quote do
         param(:include, :list)
+      end
+    end
+
+    defp build_assoc_params(false), do: nil
+
+    defp build_assoc_params(associations) when is_list(associations) do
+      Enum.map(associations, fn assoc ->
+        assoc_type = if assoc.cardinality == :many, do: {:array, :map}, else: :map
+
+        quote do
+          param(unquote(assoc.field), unquote(assoc_type),
+            description: "Nested #{unquote(assoc.type)} #{unquote(assoc.field)}"
+          )
+        end
+      end)
+      |> case do
+        [] -> nil
+        [single] -> single
+        multiple -> {:__block__, [], multiple}
       end
     end
 
