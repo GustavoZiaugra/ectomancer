@@ -459,7 +459,7 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec format_error(any()) :: {integer(), String.t(), map()}
     def format_error(:missing_primary_key) do
-      {-32_602, "Invalid params: Missing required primary key", %{field: :id}}
+      {-32_602, "Invalid params: Missing one or more required primary key fields", %{}}
     end
 
     def format_error(:no_primary_key) do
@@ -685,7 +685,7 @@ else
     end
 
     def format_error(:missing_primary_key) do
-      {-32_602, "Invalid params: Missing required primary key", %{field: :id}}
+      {-32_602, "Invalid params: Missing one or more required primary key fields", %{}}
     end
 
     def format_error(:no_primary_key) do
