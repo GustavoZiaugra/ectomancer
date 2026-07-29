@@ -53,5 +53,9 @@ defmodule Ectomancer.FieldAuth do
     |> Map.new()
   end
 
+  def filter_fields(%{data: data, pagination: _} = paginated, actor, auth_fn) do
+    %{paginated | data: filter_fields(data, actor, auth_fn)}
+  end
+
   def filter_fields(data, _actor, _auth_fn), do: data
 end
