@@ -85,7 +85,9 @@ if Code.ensure_loaded?(Ecto) do
       assoc_params = build_assoc_params(config.associations)
 
       case assoc_params do
-        nil -> writable_params
+        nil ->
+          writable_params
+
         _ ->
           quote do
             unquote(writable_params)
@@ -228,13 +230,17 @@ if Code.ensure_loaded?(Ecto) do
 
     defp build_assoc_params(false), do: nil
 
+    defp assoc_label(:has_many), do: "has many"
+    defp assoc_label(:has_one), do: "has one"
+
     defp build_assoc_params(associations) when is_list(associations) do
       Enum.map(associations, fn assoc ->
         assoc_type = if assoc.cardinality == :many, do: {:array, :map}, else: :map
+        label = assoc_label(assoc.type)
 
         quote do
           param(unquote(assoc.field), unquote(assoc_type),
-            description: "Nested #{unquote(assoc.type)} #{unquote(assoc.field)}"
+            description: "Nested #{unquote(label)} #{unquote(assoc.field)}"
           )
         end
       end)

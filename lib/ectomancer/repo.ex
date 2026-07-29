@@ -927,7 +927,9 @@ if Code.ensure_loaded?(Ecto) do
 
           case repo.insert(changeset) do
             {:ok, record} ->
-              create_nested_assocs(repo, record, assoc_attrs, associations)
+              with {:ok, _} <- create_nested_assocs(repo, record, assoc_attrs, associations) do
+                record
+              end
 
             {:error, changeset} ->
               repo.rollback(changeset)
@@ -944,6 +946,16 @@ if Code.ensure_loaded?(Ecto) do
 
     defp create_nested_assocs(repo, record, assoc_attrs, [assoc | rest]) do
       field = assoc.field
+      schema_module = assoc.related
+
+      child_assoc =
+        schema_module.__schema__(:associations)
+        |> Enum.find_value(fn name ->
+          a = schema_module.__schema__(:association, name)
+          if a.related == record.__struct__, do: a
+        end)
+
+      fk = if child_assoc, do: child_assoc.related_key
 
       case Map.get(assoc_attrs, field) do
         nil ->
@@ -952,10 +964,16 @@ if Code.ensure_loaded?(Ecto) do
         items when is_list(items) and assoc.cardinality == :many ->
           results =
             Enum.map(items, fn child_attrs ->
-              cast_child = normalize_params(child_attrs, assoc.related)
-              child = Ecto.build_assoc(record, field, cast_child)
-              child_writable = writable_fields(assoc.related)
-              child_changeset = changeset_for(assoc.related, child, cast_child, child_writable)
+              cast_child = normalize_params(child_attrs, schema_module)
+              child = struct(schema_module, cast_child)
+              child = if fk && record.id, do: Map.put(child, fk, record.id), else: child
+
+              child_writable =
+                (writable_fields(schema_module) ++ [fk])
+                |> Enum.uniq()
+                |> Enum.reject(&is_nil/1)
+
+              child_changeset = changeset_for(schema_module, child, cast_child, child_writable)
 
               case repo.insert(child_changeset) do
                 {:ok, _child} -> :ok
@@ -968,10 +986,16 @@ if Code.ensure_loaded?(Ecto) do
           end
 
         single when assoc.cardinality == :one ->
-          cast_child = normalize_params(single, assoc.related)
-          child = Ecto.build_assoc(record, field, cast_child)
-          child_writable = writable_fields(assoc.related)
-          child_changeset = changeset_for(assoc.related, child, cast_child, child_writable)
+          cast_child = normalize_params(single, schema_module)
+          child = struct(schema_module, cast_child)
+          child = if fk && record.id, do: Map.put(child, fk, record.id), else: child
+
+          child_writable =
+            (writable_fields(schema_module) ++ [fk])
+            |> Enum.uniq()
+            |> Enum.reject(&is_nil/1)
+
+          child_changeset = changeset_for(schema_module, child, cast_child, child_writable)
 
           case repo.insert(child_changeset) do
             {:ok, _child} -> create_nested_assocs(repo, record, assoc_attrs, rest)

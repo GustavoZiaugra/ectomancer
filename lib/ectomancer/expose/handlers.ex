@@ -55,7 +55,14 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp generate_simple_handler(repo_module, preload, has_preload, schema, action, extra_opts \\ []) do
+    defp generate_simple_handler(
+           repo_module,
+           preload,
+           has_preload,
+           schema,
+           action,
+           extra_opts \\ []
+         ) do
       preload_expr =
         if has_preload do
           quote do: opts = Keyword.put(opts, :preload, unquote(preload))

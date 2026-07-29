@@ -312,12 +312,21 @@ if Code.ensure_loaded?(Ecto) do
 
     defp resolve_associations(schema, opts) do
       case Keyword.get(opts, :associations) do
-        nil -> false
-        false -> false
-        true -> SchemaIntrospection.associations_for_create(schema)
-        list when is_list(list) ->
+        nil ->
+          false
+
+        false ->
+          false
+
+        true ->
+          SchemaIntrospection.associations_for_create(schema)
+
+        list when is_list(list) and list != [] ->
           SchemaIntrospection.associations_for_create(schema)
           |> Enum.filter(fn assoc -> assoc.field in list end)
+
+        [] ->
+          false
       end
     end
 
