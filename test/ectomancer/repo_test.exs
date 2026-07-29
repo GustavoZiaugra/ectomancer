@@ -810,6 +810,7 @@ defmodule Ectomancer.RepoTest do
   describe "edge cases with repo" do
     setup do
       Sandbox.checkout(Ectomancer.TestRepo)
+      Sandbox.mode(Ectomancer.TestRepo, {:shared, self()})
       Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
       Ectomancer.DataCase.create_table_for_schema!(TestUser)
 

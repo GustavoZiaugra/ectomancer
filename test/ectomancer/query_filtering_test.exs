@@ -686,12 +686,12 @@ defmodule Ectomancer.QueryFilteringTest do
       assert length(results) == 2
     end
 
-    @tag :skip
-    test "filtering where value is nil returns no results for eq" do
+    test "filtering where value is nil finds null records" do
       Ectomancer.DataCase.insert!(EdgeItem, %{label: "Present", notes: "Value"})
       Ectomancer.DataCase.insert!(EdgeItem, %{label: "Missing"})
 
-      assert {:ok, []} = Repo.list(EdgeItem, %{"notes" => nil})
+      assert {:ok, [result]} = Repo.list(EdgeItem, %{"notes" => nil})
+      assert result.label == "Missing"
     end
 
     @tag :skip

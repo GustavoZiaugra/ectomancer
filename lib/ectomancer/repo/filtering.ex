@@ -68,6 +68,10 @@ if Code.ensure_loaded?(Ecto) do
       where(query, [r], field(r, ^field) <= ^value)
     end
 
+    defp apply_filter(query, field, :not, nil) do
+      where(query, [r], not is_nil(field(r, ^field)))
+    end
+
     defp apply_filter(query, field, :not, value) do
       where(query, [r], field(r, ^field) != ^value)
     end
