@@ -806,4 +806,118 @@ defmodule Ectomancer.RepoTest do
       assert length(remaining) == 1
     end
   end
+
+  describe "edge cases with repo" do
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(TestUser)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "list returns empty data when no records exist" do
+      assert {:ok, []} = Repo.list(TestUser, %{})
+    end
+
+    test "list returns empty data when filter matches nothing" do
+      Repo.create(TestUser, %{email: "a@b.com"})
+
+      assert {:ok, []} = Repo.list(TestUser, %{"email" => "nonexistent"})
+    end
+
+    test "list with empty params returns all records" do
+      Repo.create(TestUser, %{email: "a@b.com"})
+      Repo.create(TestUser, %{email: "b@c.com"})
+
+      assert {:ok, results} = Repo.list(TestUser, %{})
+      assert length(results) == 2
+    end
+
+    test "create with nil field value stores nil" do
+      assert {:ok, user} = Repo.create(TestUser, %{email: "nil@test.com", name: nil})
+      assert user.email == "nil@test.com"
+      assert user.name == nil
+    end
+
+    test "update setting a field to nil" do
+      {:ok, user} = Repo.create(TestUser, %{email: "a@b.com", name: "Has Name"})
+      assert user.name == "Has Name"
+
+      {:ok, updated} = Repo.update(TestUser, %{"id" => user.id, "name" => nil})
+      assert updated.name == nil
+    end
+
+    test "create with all nil optional fields" do
+      assert {:ok, user} =
+               Repo.create(TestUser, %{email: "minimal@test.com", name: nil, age: nil})
+
+      assert user.email == "minimal@test.com"
+    end
+
+    test "concurrent creates succeed" do
+      task1 =
+        Task.async(fn ->
+          Repo.create(TestUser, %{email: "concurrent1@test.com"})
+        end)
+
+      task2 =
+        Task.async(fn ->
+          Repo.create(TestUser, %{email: "concurrent2@test.com"})
+        end)
+
+      assert {:ok, _} = Task.await(task1)
+      assert {:ok, _} = Task.await(task2)
+
+      {:ok, results} = Repo.list(TestUser, %{})
+      assert length(results) == 2
+    end
+
+    test "concurrent reads during write" do
+      {:ok, user} = Repo.create(TestUser, %{email: "shared@test.com"})
+
+      task =
+        Task.async(fn ->
+          Repo.get(TestUser, %{"id" => user.id})
+        end)
+
+      Repo.create(TestUser, %{email: "other@test.com"})
+
+      assert {:ok, fetched} = Task.await(task)
+      assert fetched.email == "shared@test.com"
+    end
+
+    test "get with string params works the same as atom params" do
+      {:ok, user} = Repo.create(TestUser, %{email: "key-test@test.com"})
+
+      assert {:ok, _} = Repo.get(TestUser, %{"id" => user.id})
+      assert {:ok, _} = Repo.get(TestUser, %{id: user.id})
+    end
+
+    test "update with only pk and no changes returns ok" do
+      {:ok, user} = Repo.create(TestUser, %{email: "nochange@test.com"})
+
+      assert {:ok, same} = Repo.update(TestUser, %{"id" => user.id})
+      assert same.email == "nochange@test.com"
+    end
+
+    test "list limit defaults to 100" do
+      for i <- 1..150 do
+        Repo.create(TestUser, %{email: "many#{i}@test.com"})
+      end
+
+      {:ok, results} = Repo.list(TestUser, %{})
+      assert length(results) <= 100
+    end
+
+    test "list with offset past end returns empty list" do
+      Repo.create(TestUser, %{email: "lonely@test.com"})
+
+      {:ok, []} = Repo.list(TestUser, %{"offset" => 100})
+    end
+  end
 end

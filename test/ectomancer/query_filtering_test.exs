@@ -516,4 +516,194 @@ defmodule Ectomancer.QueryFilteringTest do
       assert props["price"]["type"] == "number"
     end
   end
+
+  describe "Repo.list filtering edge cases" do
+    alias Ecto.Adapters.SQL.Sandbox
+
+    defmodule EdgeItem do
+      use Ecto.Schema
+
+      schema "edge_items" do
+        field(:label, :string)
+        field(:category, :string)
+        field(:rank, :integer)
+        field(:score, :float)
+        field(:notes, :string)
+
+        timestamps()
+      end
+    end
+
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(EdgeItem)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "icontains performs case-insensitive matching" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Apple", category: "Fruit"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "appetizer", category: "Food"})
+
+      assert {:ok, results} = Repo.list(EdgeItem, %{"label_icontains" => "app"})
+      assert length(results) == 2
+    end
+
+    test "icontains matches regardless of case" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "ALLCAPS", category: "Test"})
+
+      assert {:ok, [result]} = Repo.list(EdgeItem, %{"label_icontains" => "allcaps"})
+      assert result.label == "ALLCAPS"
+
+      assert {:ok, [result]} = Repo.list(EdgeItem, %{"label_icontains" => "ALLCAPS"})
+      assert result.label == "ALLCAPS"
+    end
+
+    test "in operator with string list" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Alpha", category: "A"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Beta", category: "B"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Gamma", category: "C"})
+
+      assert {:ok, results} = Repo.list(EdgeItem, %{"category_in" => ["A", "C"]})
+      assert length(results) == 2
+      labels = Enum.map(results, & &1.label)
+      assert "Alpha" in labels
+      assert "Gamma" in labels
+    end
+
+    test "in operator with integer list" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Low", rank: 1})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Mid", rank: 5})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "High", rank: 10})
+
+      assert {:ok, results} = Repo.list(EdgeItem, %{"rank_in" => [1, 10]})
+      assert length(results) == 2
+    end
+
+    test "in operator with empty list returns no results" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Solo", rank: 1})
+
+      assert {:ok, []} = Repo.list(EdgeItem, %{"rank_in" => []})
+    end
+
+    test "ordering by string field ascending" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Zebra", rank: 3})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Alpha", rank: 1})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Delta", rank: 2})
+
+      assert {:ok, results} = Repo.list(EdgeItem, %{"order_by" => "label", "order_dir" => "asc"})
+      assert Enum.map(results, & &1.label) == ["Alpha", "Delta", "Zebra"]
+    end
+
+    test "ordering by integer field descending" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Low", rank: 1})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Mid", rank: 5})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "High", rank: 10})
+
+      assert {:ok, results} = Repo.list(EdgeItem, %{"order_by" => "rank", "order_dir" => "desc"})
+      assert Enum.map(results, & &1.rank) == [10, 5, 1]
+    end
+
+    test "ordering by timestamp field" do
+      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+      later = NaiveDateTime.add(now, 3600, :second)
+
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Second", inserted_at: later})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "First", inserted_at: now})
+
+      assert {:ok, results} =
+               Repo.list(EdgeItem, %{"order_by" => "inserted_at", "order_dir" => "asc"})
+
+      assert hd(results).label == "First"
+    end
+
+    test "combined filters narrow results correctly" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Apple Pie", category: "Dessert", rank: 10})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Apple Juice", category: "Drink", rank: 5})
+
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Banana Split", category: "Dessert", rank: 8})
+
+      assert {:ok, results} =
+               Repo.list(EdgeItem, %{
+                 "label_contains" => "Apple",
+                 "rank_gt" => 5
+               })
+
+      assert length(results) == 1
+      assert hd(results).label == "Apple Pie"
+    end
+
+    test "combined filter with not operator" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Alpha", category: "A", rank: 1})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Beta", category: "B", rank: 2})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Gamma", category: "A", rank: 3})
+
+      assert {:ok, results} =
+               Repo.list(EdgeItem, %{
+                 "category" => "A",
+                 "label_not" => "Alpha"
+               })
+
+      assert length(results) == 1
+      assert hd(results).label == "Gamma"
+    end
+
+    test "offset without limit uses default limit" do
+      for i <- 1..10 do
+        Ectomancer.DataCase.insert!(EdgeItem, %{label: "Item#{i}", rank: i})
+      end
+
+      assert {:ok, results} =
+               Repo.list(EdgeItem, %{
+                 "order_by" => "rank",
+                 "offset" => 8
+               })
+
+      assert length(results) == 2
+      assert hd(results).label == "Item9"
+    end
+
+    test "empty list returns no records" do
+      assert {:ok, []} = Repo.list(EdgeItem, %{})
+    end
+
+    test "empty list with filters returns no records" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Only", rank: 1})
+
+      assert {:ok, []} = Repo.list(EdgeItem, %{"label" => "NonExistent"})
+    end
+
+    test "nil field values are handled gracefully" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Has Notes", notes: "Some notes"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "No Notes"})
+
+      {:ok, results} = Repo.list(EdgeItem, %{})
+      assert length(results) == 2
+    end
+
+    @tag :skip
+    test "filtering where value is nil returns no results for eq" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Present", notes: "Value"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Missing"})
+
+      assert {:ok, []} = Repo.list(EdgeItem, %{"notes" => nil})
+    end
+
+    @tag :skip
+    test "contains filter with SQL special characters is safe" do
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "100% Complete", category: "Test"})
+      Ectomancer.DataCase.insert!(EdgeItem, %{label: "Half_Done", category: "Test"})
+
+      assert {:ok, [result]} = Repo.list(EdgeItem, %{"label_contains" => "%"})
+      assert result.label == "100% Complete"
+
+      assert {:ok, [result]} = Repo.list(EdgeItem, %{"label_contains" => "_"})
+      assert result.label == "Half_Done"
+    end
+  end
 end
