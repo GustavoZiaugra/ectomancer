@@ -82,6 +82,9 @@ defmodule Ectomancer.MixProject do
       # JSON handling
       {:jason, "~> 1.4"},
 
+      # Noun inflection (pluralize/singularize) for tool name generation
+      {:plurality, "~> 0.3"},
+
       # Optional dependencies (only loaded if parent app uses them)
       {:phoenix, ">= 1.7.0", optional: true},
       {:ecto, "~> 3.12", optional: true},
@@ -92,7 +95,6 @@ defmodule Ectomancer.MixProject do
       # Development and testing
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:plurality, "~> 0.2"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
       # Database testing

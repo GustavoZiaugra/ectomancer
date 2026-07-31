@@ -647,10 +647,10 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp singularize_resource(name) when is_binary(name) do
-      if String.ends_with?(name, "s") do
-        String.slice(name, 0..-2//1)
-      else
+      if Plurality.singular?(name) do
         name
+      else
+        Plurality.singularize(name)
       end
     end
   end
