@@ -464,7 +464,7 @@ if Code.ensure_loaded?(Ecto) do
     def batch_create(schema_module, params, opts \\ []) do
       Ectomancer.Telemetry.repo_span(:batch_create, schema_module, fn ->
         try do
-          records = Map.get(params || %{}, "records", [])
+          records = batch_entries(params, :records)
           batch_size = Keyword.get(opts, :batch_size, 100)
 
           if length(records) > batch_size do
@@ -507,7 +507,7 @@ if Code.ensure_loaded?(Ecto) do
     def batch_update(schema_module, params, opts \\ []) do
       Ectomancer.Telemetry.repo_span(:batch_update, schema_module, fn ->
         try do
-          records = Map.get(params || %{}, "records", [])
+          records = batch_entries(params, :records)
           batch_size = Keyword.get(opts, :batch_size, 100)
 
           if length(records) > batch_size do
@@ -547,8 +547,8 @@ if Code.ensure_loaded?(Ecto) do
     def batch_destroy(schema_module, params, opts \\ []) do
       Ectomancer.Telemetry.repo_span(:batch_destroy, schema_module, fn ->
         try do
-          ids = Map.get(params || %{}, "ids", [])
-          records = Map.get(params || %{}, "records", [])
+          ids = batch_entries(params, :ids)
+          records = batch_entries(params, :records)
           items = if records != [], do: records, else: ids
           batch_size = Keyword.get(opts, :batch_size, 100)
 
@@ -568,12 +568,18 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
+    defp batch_entries(nil, _key), do: []
+
+    defp batch_entries(params, key) when is_map(params) do
+      Map.get(params, to_string(key), Map.get(params, key, []))
+    end
+
     defp perform_batch_create(repo, schema_module, attrs) do
       struct = struct(schema_module)
       attrs = normalize_params(attrs, schema_module)
       changeset = build_create_changeset(schema_module, struct, attrs)
 
-      case repo.insert(changeset) do
+      case repo.insert(changeset, mode: :savepoint) do
         {:ok, record} -> {:ok, record}
         {:error, changeset} -> {:error, attrs, changeset}
       end
@@ -616,9 +622,9 @@ if Code.ensure_loaded?(Ecto) do
             if sd_field do
               now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
               changeset = Ecto.Changeset.change(record, %{sd_field => now})
-              repo.update(changeset)
+              repo.update(changeset, mode: :savepoint)
             else
-              repo.delete(record)
+              repo.delete(record, mode: :savepoint)
             end
 
           case result do
@@ -662,7 +668,7 @@ if Code.ensure_loaded?(Ecto) do
 
           changeset = build_changeset(schema_module, record, update_attrs, pk_fields)
 
-          case repo.update(changeset) do
+          case repo.update(changeset, mode: :savepoint) do
             {:ok, record} -> {:ok, record}
             {:error, changeset} -> {:error, record_attrs, changeset}
           end
@@ -1045,27 +1051,20 @@ if Code.ensure_loaded?(Ecto) do
     @doc """
     Validates dynamic include requests against allowed preloadable associations.
 
-    Returns the opts keyword list with merged preloads.
+    Returns the opts keyword list with merged preloads. `allowed` may be a list
+    of association atoms or strings; `include` entries not in the allowlist are
+    dropped.
     """
-    @spec validate_includes(list() | nil, :all | list(atom()), keyword()) :: keyword()
+    @spec validate_includes(list() | nil, list(atom() | String.t()), keyword()) :: keyword()
     def validate_includes(nil, _allowed, opts), do: opts
     def validate_includes([], _allowed, opts), do: opts
 
-    def validate_includes(include, :all, opts) when is_list(include) do
-      validated =
-        include
-        |> Enum.map(&String.to_atom/1)
-        |> Enum.reject(&is_nil(&1))
-
-      existing = Keyword.get(opts, :preload, [])
-      Keyword.put(opts, :preload, existing ++ validated)
-    end
-
     def validate_includes(include, allowed, opts) when is_list(include) and is_list(allowed) do
-      allowed_strs = Enum.map(allowed, &Atom.to_string/1)
+      allowed_strs = Enum.map(allowed, &to_string/1)
 
       validated =
         include
+        |> Enum.map(&to_string/1)
         |> Enum.filter(&(&1 in allowed_strs))
         |> Enum.map(&String.to_atom/1)
 

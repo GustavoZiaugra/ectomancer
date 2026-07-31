@@ -56,7 +56,7 @@ defmodule Ectomancer.ToolAuthorizationTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :admin}}}
 
       assert {:reply, response, _} = AdminOnly.execute(%{}, frame)
-      assert response.content == [%{"type" => "text", "text" => ~s("Secret data")}]
+      assert response.content == [%{"type" => "text", "text" => "Secret data"}]
     end
 
     test "denies access for non-admin" do
@@ -73,14 +73,14 @@ defmodule Ectomancer.ToolAuthorizationTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :anonymous}}}
 
       assert {:reply, response, _} = PublicAction.execute(%{}, frame)
-      assert response.content == [%{"type" => "text", "text" => ~s("Public data")}]
+      assert response.content == [%{"type" => "text", "text" => "Public data"}]
     end
 
     test "allows access with nil actor" do
       frame = %{assigns: %{}}
 
       assert {:reply, response, _} = PublicAction.execute(%{}, frame)
-      assert response.content == [%{"type" => "text", "text" => ~s("Public data")}]
+      assert response.content == [%{"type" => "text", "text" => "Public data"}]
     end
   end
 
@@ -89,7 +89,7 @@ defmodule Ectomancer.ToolAuthorizationTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :admin}}}
 
       assert {:reply, response, _} = WithPolicy.execute(%{}, frame)
-      assert response.content == [%{"type" => "text", "text" => ~s("Protected data")}]
+      assert response.content == [%{"type" => "text", "text" => "Protected data"}]
     end
 
     test "denies access when policy returns error" do
@@ -106,7 +106,7 @@ defmodule Ectomancer.ToolAuthorizationTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
 
       assert {:reply, response, _} = DefaultAuth.execute(%{}, frame)
-      assert response.content == [%{"type" => "text", "text" => ~s("Default data")}]
+      assert response.content == [%{"type" => "text", "text" => "Default data"}]
     end
   end
 end

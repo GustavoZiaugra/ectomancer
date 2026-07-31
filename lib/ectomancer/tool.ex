@@ -171,6 +171,8 @@ if Code.ensure_loaded?(Ecto) do
           # only return {:ok, _} - the compiler can't track types through this function
           @dialyzer {:nowarn_function, do_execute: 5}
           defp do_execute(handler, params, scope, actor, frame) do
+            params = Ectomancer.Tool.normalize_param_keys(params)
+
             Ectomancer.Telemetry.tool_span(@tool_name, fn ->
               result =
                 cond do
@@ -189,7 +191,7 @@ if Code.ensure_loaded?(Ecto) do
                 {:ok, data} ->
                   response = %Anubis.Server.Response{
                     type: :tool,
-                    content: [%{"type" => "text", "text" => inspect(data)}]
+                    content: [%{"type" => "text", "text" => Ectomancer.Output.encode!(data)}]
                   }
 
                   {:reply, response, frame}
@@ -205,10 +207,7 @@ if Code.ensure_loaded?(Ecto) do
               error = %Anubis.MCP.Error{
                 code: -32_603,
                 message: "Tool execution error: #{Exception.message(e)}",
-                data: %{
-                  error: inspect(e),
-                  stacktrace: Exception.format_stacktrace(__STACKTRACE__)
-                }
+                data: %{error: inspect(e)}
               }
 
               {:error, error, frame}
@@ -452,6 +451,24 @@ if Code.ensure_loaded?(Ecto) do
         true -> :execute
       end
     end
+
+    @doc """
+    Normalizes tool-call parameter keys to strings.
+
+    Anubis validates against its Peri schema and delivers params with atom keys,
+    but handlers (batch `records`/`ids`, dynamic `include`) read string keys.
+    Normalizing once at the execution funnel makes every generated tool behave
+    identically regardless of whether the client sent atom or string keys.
+    """
+    @spec normalize_param_keys(map() | nil) :: map()
+    def normalize_param_keys(params) when is_map(params) do
+      Map.new(params, fn
+        {key, value} when is_atom(key) -> {Atom.to_string(key), value}
+        {key, value} -> {key, value}
+      end)
+    end
+
+    def normalize_param_keys(params), do: params
 
     @doc """
     Formats error reasons into proper MCP error format with descriptive messages.
