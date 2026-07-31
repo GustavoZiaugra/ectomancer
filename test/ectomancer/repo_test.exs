@@ -167,7 +167,7 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "a@b.com"})
       Repo.create(TestUser, %{email: "b@c.com"})
 
-      {:ok, users} = Repo.list(TestUser, %{}, limit: 100)
+      {:ok, %{data: users}} = Repo.list(TestUser, %{}, limit: 100)
       assert length(users) >= 2
     end
 
@@ -200,7 +200,7 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "z@b.com"})
       Repo.create(TestUser, %{email: "a@b.com"})
 
-      {:ok, users} =
+      {:ok, %{data: users}} =
         Repo.list(TestUser, %{"order_by" => "email", "order_dir" => "asc"}, limit: 100)
 
       assert hd(users).email == "a@b.com"
@@ -211,7 +211,7 @@ defmodule Ectomancer.RepoTest do
       Repo.create(TestUser, %{email: "second@a.com"})
       Repo.create(TestUser, %{email: "third@a.com"})
 
-      {:ok, users} = Repo.list(TestUser, %{"offset" => 1, "limit" => 2})
+      {:ok, %{data: users}} = Repo.list(TestUser, %{"offset" => 1, "limit" => 2})
       assert length(users) == 2
     end
 
@@ -802,7 +802,7 @@ defmodule Ectomancer.RepoTest do
       assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u1.id})
       assert {:error, :not_found} = Repo.get(TestUser, %{"id" => u2.id})
 
-      {:ok, remaining} = Repo.list(TestUser, %{}, limit: 100)
+      {:ok, %{data: remaining}} = Repo.list(TestUser, %{}, limit: 100)
       assert length(remaining) == 1
     end
   end
