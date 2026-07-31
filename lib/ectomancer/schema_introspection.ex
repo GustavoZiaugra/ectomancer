@@ -135,7 +135,9 @@ if Code.ensure_loaded?(Ecto) do
         %{
           field: assoc_field,
           cardinality: assoc.cardinality,
-          related: assoc.related
+          # `has_through` associations carry no `:related` key — fall back to
+          # the owning schema (see #144).
+          related: Map.get(assoc, :related, assoc.owner)
         }
       end)
     end
