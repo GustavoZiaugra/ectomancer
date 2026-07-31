@@ -188,7 +188,7 @@ defmodule Ectomancer do
   the same server collides. Use a dedicated server module per transport when
   you need to serve multiple transports.
   """
-  @spec child_spec(module(), keyword()) :: Supervisor.child_spec()
+  @spec child_spec(module(), keyword()) :: {module(), keyword()}
   def child_spec(server, opts) do
     case Keyword.get(opts, :transports) do
       nil ->
