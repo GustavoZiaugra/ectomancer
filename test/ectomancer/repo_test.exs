@@ -998,6 +998,5 @@ defmodule Ectomancer.RepoTest do
 
       assert parent.name == "Parent"
     end
-    end
   end
 end

@@ -918,29 +918,47 @@ if Code.ensure_loaded?(Ecto) do
     defp create_with_associations(repo, schema_module, struct, attrs, associations) do
       assoc_config_fields = Enum.map(associations, & &1.field)
       {assoc_attrs, record_attrs} = Map.split(attrs, assoc_config_fields)
-
       writable = writable_fields(schema_module)
 
-      result =
-        repo.transaction(fn ->
-          changeset = changeset_for(schema_module, struct, record_attrs, writable)
+      repo.transaction(fn ->
+        run_create_with_associations(
+          repo,
+          schema_module,
+          struct,
+          record_attrs,
+          writable,
+          assoc_attrs,
+          associations
+        )
+      end)
+      |> normalize_transaction_result()
+    end
 
-          case repo.insert(changeset) do
-            {:ok, record} ->
-              with {:ok, _} <- create_nested_assocs(repo, record, assoc_attrs, associations) do
-                record
-              end
+    defp run_create_with_associations(
+           repo,
+           schema_module,
+           struct,
+           record_attrs,
+           writable,
+           assoc_attrs,
+           associations
+         ) do
+      changeset = changeset_for(schema_module, struct, record_attrs, writable)
 
-            {:error, changeset} ->
-              repo.rollback(changeset)
-          end
-        end)
-
-      case result do
-        {:ok, record} -> {:ok, record}
-        {:error, changeset} -> {:error, changeset}
+      case repo.insert(changeset) do
+        {:ok, record} -> insert_associations(repo, record, assoc_attrs, associations)
+        {:error, changeset} -> repo.rollback(changeset)
       end
     end
+
+    defp insert_associations(repo, record, assoc_attrs, associations) do
+      with {:ok, _} <- create_nested_assocs(repo, record, assoc_attrs, associations) do
+        record
+      end
+    end
+
+    defp normalize_transaction_result({:ok, record}), do: {:ok, record}
+    defp normalize_transaction_result({:error, changeset}), do: {:error, changeset}
 
     defp create_nested_assocs(_repo, record, _assoc_attrs, []), do: {:ok, record}
 
@@ -948,60 +966,69 @@ if Code.ensure_loaded?(Ecto) do
       field = assoc.field
       schema_module = assoc.related
 
-      child_assoc =
-        schema_module.__schema__(:associations)
-        |> Enum.find_value(fn name ->
-          a = schema_module.__schema__(:association, name)
-          if a.related == record.__struct__, do: a
-        end)
-
-      fk = if child_assoc, do: child_assoc.related_key
-
       case Map.get(assoc_attrs, field) do
         nil ->
           create_nested_assocs(repo, record, assoc_attrs, rest)
 
         items when is_list(items) and assoc.cardinality == :many ->
-          results =
-            Enum.map(items, fn child_attrs ->
-              cast_child = normalize_params(child_attrs, schema_module)
-              child = struct(schema_module, cast_child)
-              child = if fk && record.id, do: Map.put(child, fk, record.id), else: child
-
-              child_writable =
-                (writable_fields(schema_module) ++ [fk])
-                |> Enum.uniq()
-                |> Enum.reject(&is_nil/1)
-
-              child_changeset = changeset_for(schema_module, child, cast_child, child_writable)
-
-              case repo.insert(child_changeset) do
-                {:ok, _child} -> :ok
-                {:error, child_cs} -> repo.rollback(child_cs)
-              end
-            end)
-
-          if Enum.all?(results, &(&1 == :ok)) do
-            create_nested_assocs(repo, record, assoc_attrs, rest)
-          end
+          insert_many_children(repo, schema_module, record, items, assoc)
+          create_nested_assocs(repo, record, assoc_attrs, rest)
 
         single when assoc.cardinality == :one ->
-          cast_child = normalize_params(single, schema_module)
-          child = struct(schema_module, cast_child)
-          child = if fk && record.id, do: Map.put(child, fk, record.id), else: child
-
-          child_writable =
-            (writable_fields(schema_module) ++ [fk])
-            |> Enum.uniq()
-            |> Enum.reject(&is_nil/1)
-
-          child_changeset = changeset_for(schema_module, child, cast_child, child_writable)
-
-          case repo.insert(child_changeset) do
-            {:ok, _child} -> create_nested_assocs(repo, record, assoc_attrs, rest)
-            {:error, child_cs} -> repo.rollback(child_cs)
-          end
+          insert_one_child(repo, schema_module, record, single, assoc)
+          create_nested_assocs(repo, record, assoc_attrs, rest)
       end
+    end
+
+    defp insert_many_children(repo, schema_module, record, items, assoc) do
+      fk = child_fk(schema_module, record, assoc)
+      writable = child_writable_fields(schema_module, fk)
+
+      Enum.each(items, fn child_attrs ->
+        cast_child = normalize_params(child_attrs, schema_module)
+        child = build_child(struct(schema_module, cast_child), record, fk)
+        child_changeset = changeset_for(schema_module, child, cast_child, writable)
+
+        case repo.insert(child_changeset) do
+          {:ok, _child} -> :ok
+          {:error, child_cs} -> repo.rollback(child_cs)
+        end
+      end)
+    end
+
+    defp insert_one_child(repo, schema_module, record, single, assoc) do
+      fk = child_fk(schema_module, record, assoc)
+      writable = child_writable_fields(schema_module, fk)
+      cast_child = normalize_params(single, schema_module)
+      child = build_child(struct(schema_module, cast_child), record, fk)
+      child_changeset = changeset_for(schema_module, child, cast_child, writable)
+
+      case repo.insert(child_changeset) do
+        {:ok, _child} -> :ok
+        {:error, child_cs} -> repo.rollback(child_cs)
+      end
+    end
+
+    defp child_fk(schema_module, record, assoc) do
+      schema_module.__schema__(:associations)
+      |> Enum.find_value(fn name ->
+        a = schema_module.__schema__(:association, name)
+        if a.related == record.__struct__, do: a
+      end)
+      |> case do
+        nil -> nil
+        child_assoc -> child_assoc.related_key
+      end
+    end
+
+    defp child_writable_fields(schema_module, fk) do
+      (writable_fields(schema_module) ++ [fk])
+      |> Enum.uniq()
+      |> Enum.reject(&is_nil/1)
+    end
+
+    defp build_child(child, record, fk) do
+      if fk && record.id, do: Map.put(child, fk, record.id), else: child
     end
 
     @doc """
