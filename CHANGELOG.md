@@ -22,12 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > - **`only:`/`except:` redact read results.** Excluded fields no longer leak in
 >   `list`/`get`/batch output.
 > - **New `scope:` option** for multi-tenant row-level scoping.
+> - **`Repo.list/3` returns pagination metadata** (`total`, `limit`, `offset`,
+>   `has_more`) when a `limit` is given; the `associations:` option creates
+>   parent+child records atomically.
 >
 > No breaking changes in this release.
 
 ### Added
 - **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes (#140).
 - **Configurable query limit ceiling** — `config :ectomancer, max_limit: N` (default `100`). The effective `limit` is reported in pagination metadata so clamping is visible (#150).
+- **Nested association creation** — `expose ..., associations: true` (or a list of association atoms) lets `:create` build parent + child records (`has_many` array of maps, `has_one` single map) atomically inside a transaction (#129).
+- **Pagination metadata on `:list`** — `Repo.list/3` returns `{:ok, %{data: [...], pagination: %{total:, limit:, offset:, has_more:}}}` when a `limit` is specified (calls without `limit` still return a flat list) (#126).
 
 ### Changed
 - **anubis_mcp requirement tightened to `~> 1.14`** (was `~> 1.5`). The old range resolved the current release anyway; the constraint now reflects what is actually tested.
@@ -36,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README + `Ectomancer.Plug` docs updated to the working supervision form.
 
 ### Fixed
+- **Composite primary key support** — `get`, `update`, `destroy`, `restore`, and `batch_destroy` generate parameters for **all** PK fields of composite-keyed schemas instead of only the first; single-key schemas are unchanged (#127).
+- **Nested association FK linking** — child records created via the `associations:` option are linked to the parent's correct primary key, including composite-keyed parents (#138).
 - **Tool results are now JSON, not `inspect/1` output** (#147). Responses are serialized through a sanitizer that converts Ecto structs to plain maps, drops `__meta__`, replaces `NotLoaded` with `null`, and renders datetimes as ISO-8601. `inspect/1`'s silent 50-row truncation is gone, and error responses no longer echo full stacktraces.
 - **Batch operations no longer silently no-op** (#145). Anubis delivers params with atom keys; the batch handlers read string keys, so `batch_create` reported `total: 0`. Param keys are now normalized once at the tool-execution funnel, and `Repo.batch_*` read both key shapes.
 - **`include`/`preloadable` actually preloads** (#146). The `include` param is honored after the key-normalization fix, and `validate_includes/3` no longer crashes on string allowlists (removed the dead `:all` clause that also did unbounded `String.to_atom`).
@@ -46,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **README/docs `authorize: with:` syntax errors fixed** (#151). `use Ectomancer, authorize: with: Module` and `expose ..., authorize: with: Module` are invalid Elixir; the docs now show `authorize: Module`.
 - **Playground + demo assets ship in the hex package** (#152). `priv/` (playground HTML, demo GIF, demo cast) was missing from `mix.exs` `files:`, so README references were broken for hex installs.
 - **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata) (#141).
+- **`_not` filter with a nil value** no longer produces an invalid query (uses `is_nil` semantics) (#125).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
 - **Compile warnings** — grouped `build_assoc_params/1` clauses and silenced the unused `assoc` parameter in `child_fk/3` so the lint CI job (`--warnings-as-errors`) passes.
 
@@ -55,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix: Elixir 1.18.4–1.20.0 / OTP 26–29, with format, Credo, and Dialyzer on the lint job.
 
 ### Issues Closed
+- #125 — Database integration test coverage for CRUD (incl. `_not` nil-filter fix)
+- #126 — Pagination metadata on `:list` responses
+- #127 — Composite primary key support across CRUD actions
+- #129 — Nested association creation on `:create`
+- #138 — Nested association FK linking
 - #140 — No tenant scoping by default (fixed via `scope:` option)
 - #141 — `except:` does not redact read results
 - #142 — Remote unbounded atom creation via `order_by`
