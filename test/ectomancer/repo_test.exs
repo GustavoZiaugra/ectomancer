@@ -957,12 +957,45 @@ defmodule Ectomancer.RepoTest do
       end
     end
 
+    defmodule CustomKeyParent do
+      use Ecto.Schema
+
+      @primary_key {:code, :binary_id, autogenerate: true}
+      schema "custom_key_parents" do
+        field(:name, :string)
+        has_many(:children, Ectomancer.RepoTest.CustomKeyChild,
+          foreign_key: :parent_code,
+          references: :code
+        )
+
+        timestamps()
+      end
+    end
+
+    defmodule CustomKeyChild do
+      use Ecto.Schema
+
+      schema "custom_key_children" do
+        field(:name, :string)
+
+        belongs_to(:parent, Ectomancer.RepoTest.CustomKeyParent,
+          foreign_key: :parent_code,
+          references: :code,
+          type: :binary_id
+        )
+
+        timestamps()
+      end
+    end
+
     setup do
       Sandbox.checkout(Ectomancer.TestRepo)
       Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
       Ectomancer.DataCase.create_table_for_schema!(AssocParent)
       Ectomancer.DataCase.create_table_for_schema!(AssocChild)
       Ectomancer.DataCase.create_table_for_schema!(AssocProfile)
+      Ectomancer.DataCase.create_table_for_schema!(CustomKeyParent)
+      Ectomancer.DataCase.create_table_for_schema!(CustomKeyChild)
 
       on_exit(fn ->
         Application.delete_env(:ectomancer, :repo)
@@ -976,7 +1009,7 @@ defmodule Ectomancer.RepoTest do
       assert parent.name == "Solo"
     end
 
-    test "create with has_many children succeeds" do
+    test "create with has_many children succeeds and links children to parent" do
       {:ok, parent} =
         Repo.create(AssocParent, %{name: "Parent", children: [%{name: "Child1"}]},
           associations: [
@@ -986,9 +1019,14 @@ defmodule Ectomancer.RepoTest do
 
       assert parent.name == "Parent"
       assert parent.id
+
+      {:ok, children} = Repo.list(AssocChild, %{})
+      assert [child] = children
+      assert child.name == "Child1"
+      assert child.parent_id == parent.id
     end
 
-    test "create with has_one profile succeeds" do
+    test "create with has_one profile succeeds and links profile to parent" do
       {:ok, parent} =
         Repo.create(AssocParent, %{name: "Parent", profile: %{bio: "Bio"}},
           associations: [
@@ -997,6 +1035,29 @@ defmodule Ectomancer.RepoTest do
         )
 
       assert parent.name == "Parent"
+
+      {:ok, profiles} = Repo.list(AssocProfile, %{})
+      assert [profile] = profiles
+      assert profile.bio == "Bio"
+      assert profile.parent_id == parent.id
+    end
+
+    test "create with has_many children works with custom primary key" do
+      {:ok, parent} =
+        Repo.create(
+          CustomKeyParent,
+          %{name: "Parent", children: [%{name: "Kid"}]},
+          associations: [
+            %{field: :children, cardinality: :many, related: CustomKeyChild, type: :has_many}
+          ]
+        )
+
+      assert parent.code
+
+      {:ok, children} = Repo.list(CustomKeyChild, %{})
+      assert [child] = children
+      assert child.name == "Kid"
+      assert child.parent_code == parent.code
     end
   end
 end

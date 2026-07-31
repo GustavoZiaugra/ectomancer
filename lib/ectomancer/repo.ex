@@ -981,12 +981,14 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp insert_many_children(repo, schema_module, record, items, assoc) do
-      fk = child_fk(schema_module, record, assoc)
-      writable = child_writable_fields(schema_module, fk)
+      child_fk = child_fk(schema_module, record, assoc)
+      fk_field = if child_fk, do: elem(child_fk, 0)
+      writable = child_writable_fields(schema_module, fk_field)
 
       Enum.each(items, fn child_attrs ->
         cast_child = normalize_params(child_attrs, schema_module)
-        child = build_child(struct(schema_module, cast_child), record, fk)
+        cast_child = link_child(cast_child, record, child_fk)
+        child = struct(schema_module, cast_child)
         child_changeset = changeset_for(schema_module, child, cast_child, writable)
 
         case repo.insert(child_changeset) do
@@ -997,10 +999,12 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp insert_one_child(repo, schema_module, record, single, assoc) do
-      fk = child_fk(schema_module, record, assoc)
-      writable = child_writable_fields(schema_module, fk)
+      child_fk = child_fk(schema_module, record, assoc)
+      fk_field = if child_fk, do: elem(child_fk, 0)
+      writable = child_writable_fields(schema_module, fk_field)
       cast_child = normalize_params(single, schema_module)
-      child = build_child(struct(schema_module, cast_child), record, fk)
+      cast_child = link_child(cast_child, record, child_fk)
+      child = struct(schema_module, cast_child)
       child_changeset = changeset_for(schema_module, child, cast_child, writable)
 
       case repo.insert(child_changeset) do
@@ -1009,7 +1013,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp child_fk(schema_module, record, assoc) do
+    defp child_fk(schema_module, record, _assoc) do
       schema_module.__schema__(:associations)
       |> Enum.find_value(fn name ->
         a = schema_module.__schema__(:association, name)
@@ -1017,7 +1021,8 @@ if Code.ensure_loaded?(Ecto) do
       end)
       |> case do
         nil -> nil
-        child_assoc -> child_assoc.related_key
+        # {child FK field, parent referenced PK field}
+        child_assoc -> {child_assoc.owner_key, child_assoc.related_key}
       end
     end
 
@@ -1027,9 +1032,15 @@ if Code.ensure_loaded?(Ecto) do
       |> Enum.reject(&is_nil/1)
     end
 
-    defp build_child(child, record, fk) do
-      if fk && record.id, do: Map.put(child, fk, record.id), else: child
+    defp link_child(attrs, record, {fk, pk}) do
+      if value = Map.get(record, pk) do
+        Map.put(attrs, fk, value)
+      else
+        attrs
+      end
     end
+
+    defp link_child(attrs, _record, nil), do: attrs
 
     @doc """
     Validates dynamic include requests against allowed preloadable associations.
