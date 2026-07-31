@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes.
 
+### Changed
+- **anubis_mcp requirement tightened to `~> 1.14`** (was `~> 1.5`). The old range resolved the current release anyway; the constraint now reflects what is actually tested.
+- **`Ectomancer.child_spec/2` produces a working supervision entry.** The old output `{Anubis.Server.Supervisor, {server, transport: ...}}` called the non-existent `start_link/1` and failed at boot (#143, #148). It now returns `{server, transport: {transport, start: true}}`, resolved through the server module's own `child_spec/1`. One transport per server module is supported (anubis registers process names per server); requesting two raises a clear error.
+- **Router mounting works on anubis 1.14.** `Ectomancer.Plug.init/1` now passes an escapable `subscriber_metadata` remote capture so `forward "/mcp", Ectomancer.Plug, ...` compiles in Phoenix/Plug routers instead of failing with "cannot inject attribute @plug_forward_opts" (#143).
+- README + `Ectomancer.Plug` docs updated to the working supervision form.
+
 ### Fixed
 - **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)

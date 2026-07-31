@@ -167,29 +167,60 @@ defmodule Ectomancer do
   end
 
   @doc """
-  Generates child specifications for one or more Anubis transport supervisors.
+  Generates child specifications for the Anubis transport supervisors.
 
-  Use in your application's supervision tree to start the transport backends
+  Use in your application's supervision tree to start the transport backend
   required by the Ectomancer plug:
 
       # In your application.ex
       children = [
-        Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :sse]),
+        Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]),
         MyAppWeb.Endpoint
       ]
 
   ## Options
 
-    * `:transports` — a list of transport atoms to start (required).
+    * `:transports` — a list with a single transport atom (required).
       Supported values: `:streamable_http`, `:sse`.
-  """
-  @spec child_spec(module(), keyword()) :: list(Supervisor.child_spec())
-  def child_spec(server, opts) do
-    transports = Keyword.fetch!(opts, :transports)
 
-    Enum.map(transports, fn transport when transport in [:streamable_http, :sse] ->
-      {Anubis.Server.Supervisor, {server, transport: {transport, start: true}}}
-    end)
+  One transport is supported per server module. `anubis_mcp` registers
+  process names derived from the server module, so starting two transports for
+  the same server collides. Use a dedicated server module per transport when
+  you need to serve multiple transports.
+  """
+  @spec child_spec(module(), keyword()) :: [Supervisor.child_spec()]
+  def child_spec(server, opts) do
+    case Keyword.get(opts, :transports) do
+      nil ->
+        raise ArgumentError,
+              "Ectomancer.child_spec/2 requires the :transports option, " <>
+                "e.g. `Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])`"
+
+      transports when is_list(transports) and length(transports) > 1 ->
+        raise ArgumentError,
+              "Ectomancer.child_spec/2 supports a single transport per server module. " <>
+                "anubis_mcp 1.14+ starts one transport supervisor per server and registers " <>
+                "process names derived from the server module, so two transports for the " <>
+                "same server collide. Use a dedicated server module per transport, e.g. " <>
+                "`Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])`."
+
+      transports when is_list(transports) ->
+        Enum.map(transports, &child_spec_for_transport(server, &1))
+
+      transport ->
+        [child_spec_for_transport(server, transport)]
+    end
+  end
+
+  defp child_spec_for_transport(server, transport)
+       when transport in [:streamable_http, :sse] do
+    {server, transport: {transport, start: true}}
+  end
+
+  defp child_spec_for_transport(_server, transport) do
+    raise ArgumentError,
+          "Unsupported transport #{inspect(transport)} in Ectomancer.child_spec/2. " <>
+            "Supported transports: :streamable_http, :sse."
   end
 
   @doc false

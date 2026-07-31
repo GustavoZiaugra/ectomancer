@@ -18,27 +18,30 @@ if Code.ensure_loaded?(Plug) do
 
         # In your application.ex
         children = [
-          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+          {MyApp.MCP, transport: {:streamable_http, start: true}},
           MyAppWeb.Endpoint
         ]
 
     ### SSE (legacy)
 
         children = [
-          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}},
+          {MyApp.MCP, transport: {:sse, start: true}},
           MyAppWeb.Endpoint
         ]
 
     ### Multiple transports
 
+    One transport is supported per server module — `anubis_mcp` registers
+    process names derived from the server module, so starting two transports
+    for the same server collides. Use a dedicated server module per transport:
+
         children = [
-          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
-          {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}},
+          {MyApp.MCP, transport: {:streamable_http, start: true}},
           MyAppWeb.Endpoint
         ]
 
-    See `Ectomancer.child_spec/2` for a helper that generates supervision entries
-    for multiple transports.
+    See `Ectomancer.child_spec/2` for a helper that generates the supervision
+    entry for a single transport.
 
     ## Router Integration
 
@@ -136,6 +139,7 @@ if Code.ensure_loaded?(Plug) do
             opts
             |> Keyword.put_new(:session_header, "mcp-session-id")
             |> Keyword.put_new(:request_timeout, 30_000)
+            |> Keyword.put_new(:subscriber_metadata, &__MODULE__.default_subscriber_metadata/1)
 
           anubis_state = AnubisPlug.init(anubis_opts)
 
@@ -158,6 +162,9 @@ if Code.ensure_loaded?(Plug) do
                   "See Ectomancer.Plug docs for details."
       end
     end
+
+    @doc false
+    def default_subscriber_metadata(_conn), do: %{}
 
     @doc """
     Handles the MCP request by extracting the actor from the connection and
