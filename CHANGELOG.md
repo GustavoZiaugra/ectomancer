@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
+
 ## [1.6.0] - 2026-07-20
 
 ### Added
