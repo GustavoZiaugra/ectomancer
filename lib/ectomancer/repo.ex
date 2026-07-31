@@ -513,14 +513,16 @@ if Code.ensure_loaded?(Ecto) do
       Ectomancer.Telemetry.repo_span(:batch_destroy, schema_module, fn ->
         try do
           ids = Map.get(params || %{}, "ids", [])
+          records = Map.get(params || %{}, "records", [])
+          items = if records != [], do: records, else: ids
           batch_size = Keyword.get(opts, :batch_size, 100)
 
-          if length(ids) > batch_size do
+          if length(items) > batch_size do
             {:error, {:batch_size_exceeded, batch_size}}
           else
             with_repo(opts, fn repo ->
-              run_batch(repo, schema_module, ids, opts, fn raw_id ->
-                perform_batch_destroy(repo, schema_module, raw_id, opts)
+              run_batch(repo, schema_module, items, opts, fn raw_item ->
+                perform_batch_destroy(repo, schema_module, raw_item, opts)
               end)
             end)
           end
@@ -546,12 +548,21 @@ if Code.ensure_loaded?(Ecto) do
       changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
     end
 
-    defp perform_batch_destroy(repo, schema_module, raw_id, opts) do
+    defp perform_batch_destroy(repo, schema_module, raw_item, opts) do
       introspection = SchemaIntrospection.analyze(schema_module)
-      pk_field = hd(introspection.primary_key)
-      field_type = Map.get(introspection.types, pk_field)
-      cast_id = cast_primary_key_value(raw_id, field_type)
-      pk_values = [{pk_field, cast_id}]
+      pk_fields = introspection.primary_key
+
+      pk_values =
+        if is_map(raw_item) do
+          attrs = normalize_params(raw_item, schema_module)
+          Enum.map(pk_fields, fn f -> {f, Map.get(attrs, f)} end)
+        else
+          pk_field = hd(pk_fields)
+          field_type = Map.get(introspection.types, pk_field)
+          cast_id = cast_primary_key_value(raw_item, field_type)
+          [{pk_field, cast_id}]
+        end
+
       scope = Keyword.get(opts, :scope)
 
       query =
@@ -561,7 +572,7 @@ if Code.ensure_loaded?(Ecto) do
 
       case repo.one(query) do
         nil ->
-          {:error, raw_id, :not_found}
+          {:error, raw_item, :not_found}
 
         record ->
           sd_field = SchemaIntrospection.soft_delete_field(schema_module)
@@ -577,7 +588,7 @@ if Code.ensure_loaded?(Ecto) do
 
           case result do
             {:ok, record} -> {:ok, record}
-            {:error, changeset} -> {:error, raw_id, changeset}
+            {:error, changeset} -> {:error, raw_item, changeset}
           end
       end
     end

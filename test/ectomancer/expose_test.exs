@@ -370,4 +370,80 @@ defmodule Ectomancer.ExposeTest do
       assert function_exported?(BatchDestroyTestUserSchemas, :execute, 2)
     end
   end
+
+  describe "composite primary key support" do
+    defmodule CompositeKeyUser do
+      use Ecto.Schema
+
+      @primary_key false
+      schema "composite_users" do
+        field(:tenant_id, :integer, primary_key: true)
+        field(:local_id, :integer, primary_key: true)
+        field(:name, :string)
+      end
+    end
+
+    defmodule CompositeKeyMCP do
+      use Ectomancer, name: "composite-key-mcp", version: "1.0.0"
+
+      expose(CompositeKeyUser,
+        actions: [:get, :update, :destroy, :list, :restore]
+      )
+    end
+
+    alias CompositeKeyMCP.Tool.DestroyCompositeKeyUser
+    alias CompositeKeyMCP.Tool.GetCompositeKeyUser
+    alias CompositeKeyMCP.Tool.ListCompositeKeyUsers
+    alias CompositeKeyMCP.Tool.RestoreCompositeKeyUser
+    alias CompositeKeyMCP.Tool.UpdateCompositeKeyUser
+
+    test "get tool has params for all PK fields" do
+      schema = GetCompositeKeyUser.input_schema()
+      assert schema["properties"]["tenant_id"]["type"] == "integer"
+      assert schema["properties"]["local_id"]["type"] == "integer"
+      assert "tenant_id" in schema["required"]
+      assert "local_id" in schema["required"]
+    end
+
+    test "update tool has params for all PK fields" do
+      schema = UpdateCompositeKeyUser.input_schema()
+      assert schema["properties"]["tenant_id"]["type"] == "integer"
+      assert schema["properties"]["local_id"]["type"] == "integer"
+      assert "tenant_id" in schema["required"]
+      assert "local_id" in schema["required"]
+    end
+
+    test "destroy tool has params for all PK fields" do
+      schema = DestroyCompositeKeyUser.input_schema()
+      assert schema["properties"]["tenant_id"]["type"] == "integer"
+      assert schema["properties"]["local_id"]["type"] == "integer"
+      assert "tenant_id" in schema["required"]
+      assert "local_id" in schema["required"]
+    end
+
+    test "restore tool has params for all PK fields" do
+      schema = RestoreCompositeKeyUser.input_schema()
+      assert schema["properties"]["tenant_id"]["type"] == "integer"
+      assert schema["properties"]["local_id"]["type"] == "integer"
+      assert "tenant_id" in schema["required"]
+      assert "local_id" in schema["required"]
+    end
+
+    test "list tool works with composite PK" do
+      assert Code.ensure_loaded?(ListCompositeKeyUsers)
+      assert function_exported?(ListCompositeKeyUsers, :execute, 2)
+    end
+
+    test "get tool is loaded" do
+      assert Code.ensure_loaded?(GetCompositeKeyUser)
+      assert function_exported?(GetCompositeKeyUser, :execute, 2)
+    end
+
+    test "single PK schemas still work identically" do
+      schema = GetTestUserSchema.input_schema()
+      assert schema["properties"]["id"]["type"] == "integer"
+      assert "id" in schema["required"]
+      assert schema["required"] == ["id"]
+    end
+  end
 end
