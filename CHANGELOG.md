@@ -5,17 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-07-31
+
+> **Read this if you're upgrading.** This release fixes the defects found in a
+> real-world integration shakedown of 1.6.0. The headline changes:
+>
+> - **Tool responses are now JSON** instead of `inspect/1` output (no more Elixir
+>   struct syntax, no more silently truncated lists).
+> - **Batch operations actually work** over MCP (previously they silently reported
+>   `total: 0`), and `include`/`preloadable` actually preloads.
+> - **Remote callers can no longer exhaust the BEAM atom table** via `order_by`
+>   or filter parameters.
+> - **The documented supervision snippet boots.** `anubis_mcp` is now pinned to
+>   `~> 1.14`, `Ectomancer.child_spec/2` produces a working entry, and
+>   `forward "/mcp", Ectomancer.Plug, ...` compiles in routers.
+> - **`only:`/`except:` redact read results.** Excluded fields no longer leak in
+>   `list`/`get`/batch output.
+> - **New `scope:` option** for multi-tenant row-level scoping.
+>
+> No breaking changes in this release.
 
 ### Added
-- **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes.
+- **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes (#140).
 - **Configurable query limit ceiling** — `config :ectomancer, max_limit: N` (default `100`). The effective `limit` is reported in pagination metadata so clamping is visible (#150).
 
 ### Changed
 - **anubis_mcp requirement tightened to `~> 1.14`** (was `~> 1.5`). The old range resolved the current release anyway; the constraint now reflects what is actually tested.
-- **`Ectomancer.child_spec/2` produces a working supervision entry.** The old output `{Anubis.Server.Supervisor, {server, transport: ...}}` called the non-existent `start_link/1` and failed at boot (#143, #148). It now returns `{server, transport: {transport, start: true}}`, resolved through the server module's own `child_spec/1`. One transport per server module is supported (anubis registers process names per server); requesting two raises a clear error.
-- **`Ectomancer.child_spec/2` returns a single child spec** (not a one-element list), so `children = [Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]), MyAppWeb.Endpoint]` actually boots instead of nesting a list in the supervision tree.
-- **Router mounting works on anubis 1.14.** `Ectomancer.Plug.init/1` now passes an escapable `subscriber_metadata` remote capture so `forward "/mcp", Ectomancer.Plug, ...` compiles in Phoenix/Plug routers instead of failing with "cannot inject attribute @plug_forward_opts" (#143).
+- **`Ectomancer.child_spec/2` produces a working supervision entry.** The old output `{Anubis.Server.Supervisor, {server, transport: ...}}` called the non-existent `start_link/1` and failed at boot (#143, #148). It now returns a single `{server, transport: {transport, start: true}}` entry — resolved through the server module's own `child_spec/1` — so `children = [Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]), MyAppWeb.Endpoint]` boots as documented. One transport per server module is supported; requesting two raises a clear error.
+- **Router mounting works on anubis 1.14.** `Ectomancer.Plug.init/1` passes an escapable `subscriber_metadata` remote capture so `forward "/mcp", Ectomancer.Plug, ...` compiles in Phoenix/Plug routers instead of failing with "cannot inject attribute @plug_forward_opts" (#143).
 - README + `Ectomancer.Plug` docs updated to the working supervision form.
 
 ### Fixed
@@ -28,9 +45,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Correct plural tool names** (#149). `list`/batch tool names appended a literal `"s"`, producing `list_studys`, `list_statuss`. They now use `Plurality.pluralize/1` (`list_studies`, `list_statuses`, `list_news`).
 - **README/docs `authorize: with:` syntax errors fixed** (#151). `use Ectomancer, authorize: with: Module` and `expose ..., authorize: with: Module` are invalid Elixir; the docs now show `authorize: Module`.
 - **Playground + demo assets ship in the hex package** (#152). `priv/` (playground HTML, demo GIF, demo cast) was missing from `mix.exs` `files:`, so README references were broken for hex installs.
-- **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata).
+- **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata) (#141).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
 - **Compile warnings** — grouped `build_assoc_params/1` clauses and silenced the unused `assoc` parameter in `child_fk/3` so the lint CI job (`--warnings-as-errors`) passes.
+
+### Testing
+- 874 tests across CRUD, filtering, batch, preload, scope, redaction, auth, supervision, and atom-safety suites.
+- Verified end-to-end: fresh Phoenix 1.8.9 app (SQLite, Elixir 1.20/OTP 29) installing from git, mounted at `/mcp`, driven over MCP Streamable HTTP — scope isolation, `except:` redaction, JSON output, batch/include, plural tool names, and boot with the documented supervision pattern all confirmed.
+- CI matrix: Elixir 1.18.4–1.20.0 / OTP 26–29, with format, Credo, and Dialyzer on the lint job.
+
+### Issues Closed
+- #140 — No tenant scoping by default (fixed via `scope:` option)
+- #141 — `except:` does not redact read results
+- #142 — Remote unbounded atom creation via `order_by`
+- #143 — Documented supervision child spec cannot boot
+- #144 — `expose` won't compile on schemas with `has_through`
+- #145 — Batch operations silently no-op
+- #146 — `include`/`preloadable` silently ignored
+- #147 — Tool results are `inspect/1` output, not JSON
+- #148 — `Ectomancer.child_spec/2` returns a bare list
+- #149 — Broken pluralization in tool names
+- #150 — `limit` silently hard-capped at 100
+- #151 — README `authorize: with:` syntax errors
+- #152 — Playground + demo assets not shipped in the hex package
+- #153 — Batch operations not atomic despite "transactional"/"atomically" claims
 
 ## [1.6.0] - 2026-07-20
 
@@ -412,7 +450,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.3.1...v1.4.0
