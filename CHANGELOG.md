@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes.
+
 ### Fixed
+- **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
+- **Compile warnings** — grouped `build_assoc_params/1` clauses and silenced the unused `assoc` parameter in `child_fk/3` so the lint CI job (`--warnings-as-errors`) passes.
 
 ## [1.6.0] - 2026-07-20
 

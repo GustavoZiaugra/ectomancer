@@ -230,9 +230,6 @@ if Code.ensure_loaded?(Ecto) do
 
     defp build_assoc_params(false), do: nil
 
-    defp assoc_label(:has_many), do: "has many"
-    defp assoc_label(:has_one), do: "has one"
-
     defp build_assoc_params(associations) when is_list(associations) do
       Enum.map(associations, fn assoc ->
         assoc_type = if assoc.cardinality == :many, do: {:array, :map}, else: :map
@@ -250,6 +247,9 @@ if Code.ensure_loaded?(Ecto) do
         multiple -> {:__block__, [], multiple}
       end
     end
+
+    defp assoc_label(:has_many), do: "has many"
+    defp assoc_label(:has_one), do: "has one"
 
     def build_param_block(fields, types) do
       fields
