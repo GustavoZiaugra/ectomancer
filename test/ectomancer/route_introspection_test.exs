@@ -16,6 +16,15 @@ defmodule Ectomancer.RouteIntrospectionTest do
     def delete(conn, _params), do: send_resp(conn, 204, "")
   end
 
+  defmodule CrudController do
+    import Plug.Conn
+    def index(conn, _opts), do: send_resp(conn, 200, "index")
+    def show(conn, _opts), do: send_resp(conn, 200, "show")
+    def create(conn, _opts), do: send_resp(conn, 201, "created")
+    def update(conn, _opts), do: send_resp(conn, 200, "updated")
+    def destroy(conn, _opts), do: send_resp(conn, 204, "")
+  end
+
   describe "parse_path_params/1" do
     test "parses simple path with param" do
       assert {"/users/", [{:id, :param}]} = RouteIntrospection.parse_path_params("/users/:id")
@@ -378,7 +387,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
   end
 
   describe "expose_routes controller execution" do
-    test "generated CRUD tools have correct metadata" do
+    test "generated CRUD tools have correct metadata and execute controllers" do
       defmodule CrudRouter do
         def __routes__ do
           [
@@ -393,14 +402,6 @@ defmodule Ectomancer.RouteIntrospectionTest do
 
       defmodule CrudMCP do
         use Ectomancer
-
-        defmodule CrudController do
-          def index(conn, _opts), do: Plug.Conn.send_resp(conn, 200, "index")
-          def show(conn, _opts), do: Plug.Conn.send_resp(conn, 200, "show")
-          def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "created")
-          def update(conn, _opts), do: Plug.Conn.send_resp(conn, 200, "updated")
-          def destroy(conn, _opts), do: Plug.Conn.send_resp(conn, 204, "")
-        end
 
         expose_routes(CrudRouter)
       end
@@ -422,6 +423,14 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert get_user.description() =~ "GET /users/:id"
       assert put_user.description() =~ "PUT /users/:id"
       assert delete_user.description() =~ "DELETE /users/:id"
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(get_users, %{}, frame)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(post_users, %{}, frame)
     end
   end
 
@@ -501,7 +510,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
     test "formats error tuples" do
       {:ok, msg} = RouteIntrospection.format_controller_result({:error, "oops"})
 
-      assert msg =~ "200"
+      assert msg =~ "500"
       assert msg =~ "oops"
     end
   end
@@ -559,7 +568,6 @@ defmodule Ectomancer.RouteIntrospectionTest do
 
       # Non-admin should be denied by global auth
       frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
-      # credo:disable-for-next-line
       assert {:error, error, _} = call_execute(mod, %{}, frame)
       assert error.code == -32_001
       assert error.message =~ "Unauthorized"

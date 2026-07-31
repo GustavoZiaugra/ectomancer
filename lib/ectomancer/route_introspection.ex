@@ -394,6 +394,11 @@ defmodule Ectomancer.RouteIntrospection do
   end
 
   @doc false
+  def format_controller_result({:error, reason}) do
+    {:ok, "Status: 500 - Request failed: #{inspect(reason)}"}
+  end
+
+  @doc false
   def format_controller_result(result) do
     {:ok, "Status: 200 - Request processed: #{inspect(result)}"}
   end
