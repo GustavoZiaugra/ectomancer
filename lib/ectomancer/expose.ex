@@ -106,7 +106,7 @@ if Code.ensure_loaded?(Ecto) do
 
         # Policy module
         expose MyApp.Accounts.User,
-          authorize: with: MyApp.Policies.UserPolicy
+          authorize: [with: MyApp.Policies.UserPolicy]
 
         # Action-specific authorization
         expose MyApp.Accounts.User,

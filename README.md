@@ -97,7 +97,7 @@ defmodule MyApp.MCP do
   use Ectomancer,
     name: "myapp-mcp",
     version: "0.1.0",
-    authorize: with: MyApp.Policies.GlobalPolicy
+    authorize: [with: MyApp.Policies.GlobalPolicy]
 
   expose MyApp.Accounts.User,
     actions: [:list, :get, :create, :update]
@@ -294,7 +294,7 @@ You can also use a policy module:
 ```elixir
 use Ectomancer,
   name: "myapp-mcp",
-  authorize: with: MyApp.Policies.GlobalPolicy
+  authorize: [with: MyApp.Policies.GlobalPolicy]
 ```
 
 Per-schema `authorize` overrides the global policy for that schema. Action-specific rules override further. Both must pass when both are set (cascading).
