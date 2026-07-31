@@ -12,14 +12,14 @@ if Code.ensure_loaded?(Ecto) do
           generate_upsert_handler(repo_module, config)
 
         action in [:batch_create, :batch_update, :batch_destroy] ->
-          generate_batch_handler(repo_module, config.schema, action, config.batch_size)
+          generate_batch_handler(repo_module, config, action)
 
         list_action?(action) ->
           select_preload_handler(repo_module, preload, config, action)
 
         true ->
           extra = if config.associations, do: [associations: config.associations], else: []
-          generate_simple_handler(repo_module, preload, false, config.schema, action, extra)
+          generate_simple_handler(repo_module, preload, false, config, action, extra)
       end
     end
 
@@ -31,27 +31,19 @@ if Code.ensure_loaded?(Ecto) do
 
       cond do
         has_preloadable and config.preloadable == :all ->
-          generate_handler_with_all_preloadable(
-            repo_module,
-            preload,
-            has_preload,
-            config.introspection,
-            config.schema,
-            action
-          )
+          generate_handler_with_all_preloadable(repo_module, preload, has_preload, config, action)
 
         has_preloadable and is_list(config.preloadable) ->
           generate_handler_with_specific_preloadable(
             repo_module,
             preload,
             has_preload,
-            config.preloadable,
-            config.schema,
+            config,
             action
           )
 
         true ->
-          generate_simple_handler(repo_module, preload, has_preload, config.schema, action)
+          generate_simple_handler(repo_module, preload, has_preload, config, action)
       end
     end
 
@@ -59,7 +51,7 @@ if Code.ensure_loaded?(Ecto) do
            repo_module,
            preload,
            has_preload,
-           schema,
+           config,
            action,
            extra_opts \\ []
          ) do
@@ -94,27 +86,12 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
+        fn params, actor, scope ->
+          opts = unquote(scope_expr(config.scope))
           unquote(preload_expr)
           unquote(extra_expr)
           unquote(repo_expr)
-          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
-
-          case result do
-            {:ok, %{data: data, pagination: pagination}} ->
-              data_str = inspect(data)
-              total = pagination.total
-              limit = pagination.limit
-
-              pagination_str =
-                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
-
-              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
-
-            _ ->
-              result
-          end
+          apply(Ectomancer.Repo, unquote(action), [unquote(config.schema), params, opts])
         end
       end
     end
@@ -131,12 +108,15 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       quote do
-        fn params, _actor, scope ->
-          opts = [
-            scope: scope,
-            conflict_target: unquote(conflict_target),
-            on_conflict: unquote(on_conflict)
-          ]
+        fn params, actor, scope ->
+          opts = unquote(scope_expr(config.scope))
+
+          opts =
+            opts ++
+              [
+                conflict_target: unquote(conflict_target),
+                on_conflict: unquote(on_conflict)
+              ]
 
           unquote(repo_expr)
           Ectomancer.Repo.upsert(unquote(config.schema), params, opts)
@@ -144,7 +124,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp generate_batch_handler(repo_module, schema, action, batch_size) do
+    defp generate_batch_handler(repo_module, config, action) do
       repo_expr =
         if repo_module do
           quote do: opts = Keyword.put(opts, :repo, unquote(repo_module))
@@ -153,10 +133,11 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope, batch_size: unquote(batch_size)]
+        fn params, actor, scope ->
+          opts = unquote(scope_expr(config.scope))
+          opts = Keyword.put(opts, :batch_size, unquote(config.batch_size))
           unquote(repo_expr)
-          apply(Ectomancer.Repo, unquote(action), [unquote(schema), params, opts])
+          apply(Ectomancer.Repo, unquote(action), [unquote(config.schema), params, opts])
         end
       end
     end
@@ -165,11 +146,10 @@ if Code.ensure_loaded?(Ecto) do
            repo_module,
            preload,
            has_preload,
-           introspection,
-           schema,
+           config,
            action
          ) do
-      assoc_names = Enum.map(introspection.associations, &Atom.to_string(&1.field))
+      assoc_names = Enum.map(config.introspection.associations, &Atom.to_string(&1.field))
 
       preload_expr =
         if has_preload do
@@ -186,28 +166,13 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
+        fn params, actor, scope ->
+          opts = unquote(scope_expr(config.scope))
           unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(assoc_names), opts)
           unquote(repo_expr)
-          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
-
-          case result do
-            {:ok, %{data: data, pagination: pagination}} ->
-              data_str = inspect(data)
-              total = pagination.total
-              limit = pagination.limit
-
-              pagination_str =
-                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
-
-              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
-
-            _ ->
-              result
-          end
+          apply(Ectomancer.Repo, unquote(action), [unquote(config.schema), clean_params, opts])
         end
       end
     end
@@ -216,10 +181,11 @@ if Code.ensure_loaded?(Ecto) do
            repo_module,
            preload,
            has_preload,
-           allowed,
-           schema,
+           config,
            action
          ) do
+      allowed = Enum.map(config.preloadable, &to_string/1)
+
       preload_expr =
         if has_preload do
           quote do: opts = Keyword.put(opts, :preload, unquote(preload))
@@ -235,37 +201,42 @@ if Code.ensure_loaded?(Ecto) do
         end
 
       quote do
-        fn params, _actor, scope ->
-          opts = [scope: scope]
+        fn params, actor, scope ->
+          opts = unquote(scope_expr(config.scope))
           unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(allowed), opts)
           unquote(repo_expr)
-          result = apply(Ectomancer.Repo, unquote(action), [unquote(schema), clean_params, opts])
-
-          case result do
-            {:ok, %{data: data, pagination: pagination}} ->
-              data_str = inspect(data)
-              total = pagination.total
-              limit = pagination.limit
-
-              pagination_str =
-                "Pagination: total=#{total}, limit=#{limit}, offset=#{pagination.offset}, has_more=#{pagination.has_more}"
-
-              {:ok, "Records (#{length(data)} shown):\n#{data_str}\n\n#{pagination_str}"}
-
-            _ ->
-              result
-          end
+          apply(Ectomancer.Repo, unquote(action), [unquote(config.schema), clean_params, opts])
         end
       end
     end
 
+    defp scope_expr(nil) do
+      quote(do: [scope: scope])
+    end
+
+    defp scope_expr(config_scope) do
+      quote(do: [scope: Ectomancer.Scope.compose(scope, actor, unquote(config_scope))])
+    end
+
+    @doc false
     def wrap_with_field_auth(base_handler, field_auth_fn) do
       quote do
         fn params, actor, scope ->
           with {:ok, data} <- unquote(base_handler).(params, actor, scope) do
             {:ok, Ectomancer.FieldAuth.filter_fields(data, actor, unquote(field_auth_fn))}
+          end
+        end
+      end
+    end
+
+    @doc false
+    def wrap_with_field_filter(base_handler, allowed_fields) do
+      quote do
+        fn params, actor, scope ->
+          with {:ok, data} <- unquote(base_handler).(params, actor, scope) do
+            {:ok, Ectomancer.Output.filter_fields(data, unquote(allowed_fields))}
           end
         end
       end

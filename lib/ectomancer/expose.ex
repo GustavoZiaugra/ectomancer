@@ -31,6 +31,9 @@ if Code.ensure_loaded?(Ecto) do
       * `:readonly` - Enable read-only mode (disables `:create`, `:update`, `:destroy`)
       * `:authorize` - Authorization configuration (function, policy module, or action-specific rules)
       * `:preload` - Ecto associations to eager-load on `:list` and `:get` results
+      * `:scope` - Function `fn query, actor -> query end` applied to every generated
+        CRUD query for row-level scoping (e.g. multi-tenant isolation). The actor is
+        the authenticated caller from `actor_from`.
       * `:associations` - Enable nested creation of associated records on `:create`.
         `true` for all associations, or a list of specific association atoms.
         Example: `associations: true` or `associations: [:comments]`
@@ -174,7 +177,8 @@ if Code.ensure_loaded?(Ecto) do
 
       * `schema_module` - The Ecto schema module to expose
       * `opts` - Options for tool generation
-        * `:actions` - List of actions (default: `[:list, :get, :create, :update, :destroy]`)
+        * `:actions` - List of actions (default: `[:list, :get]`. Mutating actions
+          require an explicit `:authorize` option — see "Authorization")
         * `:only` - Whitelist fields
         * `:except` - Blacklist fields
         * `:filterable` - Fields that allow advanced filter operators (default: all exposed fields)
@@ -279,6 +283,7 @@ if Code.ensure_loaded?(Ecto) do
         schema: schema,
         actions: actions,
         exposed_fields: exposed_fields,
+        result_fields: resolve_result_fields(introspection, opts),
         filterable_fields: filterable_fields,
         writable_fields: filter_writable_fields(introspection, opts),
         resource_name: determine_resource_name(schema, opts[:as]),
@@ -291,6 +296,7 @@ if Code.ensure_loaded?(Ecto) do
         preload: Keyword.get(opts, :preload, []),
         soft_delete: soft_delete,
         field_authorize: Keyword.get(opts, :field_authorize),
+        scope: Keyword.get(opts, :scope),
         repo: Keyword.get(opts, :repo),
         resource: Keyword.get(opts, :resource, true),
         preloadable: resolve_preloadable(introspection, opts),
@@ -377,6 +383,21 @@ if Code.ensure_loaded?(Ecto) do
         fields when is_list(fields) -> Enum.filter(fields, fn f -> f in exposed_fields end)
       end
     end
+
+    # Fields kept in read results. Unlike `exposed_fields` (which drives params and
+    # drops timestamps), this preserves timestamps unless explicitly excluded.
+    defp resolve_result_fields(introspection, opts) do
+      only = Keyword.get(opts, :only)
+      except = Keyword.get(opts, :except, [])
+
+      case only do
+        nil -> result_fields_from_except(introspection.fields, except)
+        whitelist -> Enum.filter(whitelist, fn f -> f in introspection.fields end)
+      end
+    end
+
+    defp result_fields_from_except(_fields, []), do: nil
+    defp result_fields_from_except(fields, except), do: Enum.reject(fields, &(&1 in except))
 
     defp determine_resource_name(schema, as_name) do
       base_name =
@@ -519,11 +540,18 @@ if Code.ensure_loaded?(Ecto) do
       base_handler = Handlers.select(action, config)
 
       handler =
-        if config.field_authorize do
-          Handlers.wrap_with_field_auth(base_handler, config.field_authorize)
-        else
-          base_handler
-        end
+        base_handler
+        |> then(fn h ->
+          if config.field_authorize,
+            do: Handlers.wrap_with_field_auth(h, config.field_authorize),
+            else: h
+        end)
+        |> then(fn h ->
+          case config.result_fields do
+            nil -> h
+            fields -> Handlers.wrap_with_field_filter(h, fields)
+          end
+        end)
 
       quote do
         tool unquote(tool_name) do

@@ -388,6 +388,36 @@ end, nil)
 expose MyApp.OtherSchema, repo: MyApp.ReplicaRepo
 ```
 
+### Row-level scoping (multi-tenant)
+
+Use the `scope:` option to restrict every generated query to the calling actor's
+tenant. The function receives the Ecto query and the authenticated actor and
+returns a scoped query:
+
+```elixir
+expose MyApp.Accounts.Workspace,
+  actions: [:list, :get, :create, :update, :destroy],
+  scope: fn query, actor ->
+    import Ecto.Query
+    from(w in query, where: w.distribution_id == ^actor.distribution_id)
+  end
+```
+
+The scope is applied to `list`, `get`, `update`, `destroy`, and batch operations.
+It composes with authorization-policy scopes (`{:ok, :scoped, fn query -> ... end}`)
+when both are configured.
+
+### Field filtering on results
+
+`only:` and `except:` control which fields are exposed. In addition to shaping
+input params, they now also **redact read results** — excluded fields are stripped
+from every row returned by `list`, `get`, and batch tools:
+
+```elixir
+# password_hash will never appear in tool output, only in params it is omitted
+expose MyApp.Accounts.User, except: [:password_hash, :secret_token]
+```
+
 ## Batch operations
 
 Perform multi-record mutations in a single transactional call:
