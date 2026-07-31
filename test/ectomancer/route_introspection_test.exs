@@ -3,6 +3,10 @@ defmodule Ectomancer.RouteIntrospectionTest do
   import Enum, only: [all?: 2]
   alias Ectomancer.RouteIntrospection
 
+  # Dynamic module invocation in route introspection tests - module is loaded at runtime
+  # credo:disable-for-next-line
+  def call_execute(mod, params, frame), do: apply(mod, :execute, [params, frame])
+
   defmodule UserController do
     import Plug.Conn
     def index(conn, _params), do: send_resp(conn, 200, "[]")
@@ -407,22 +411,17 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, put_user} = Code.ensure_loaded(CrudMCP.Tool.PutUser)
       assert {:module, delete_user} = Code.ensure_loaded(CrudMCP.Tool.DeleteUser)
 
-      assert apply(get_users, :name, []) == "get_users"
-      assert apply(post_users, :name, []) == "post_users"
-      assert apply(get_user, :name, []) == "get_user"
-      assert apply(put_user, :name, []) == "put_user"
-      assert apply(delete_user, :name, []) == "delete_user"
+      assert get_users.name() == "get_users"
+      assert post_users.name() == "post_users"
+      assert get_user.name() == "get_user"
+      assert put_user.name() == "put_user"
+      assert delete_user.name() == "delete_user"
 
-      desc = apply(get_users, :description, [])
-      assert desc =~ "GET /users"
-      desc = apply(post_users, :description, [])
-      assert desc =~ "POST /users"
-      desc = apply(get_user, :description, [])
-      assert desc =~ "GET /users/:id"
-      desc = apply(put_user, :description, [])
-      assert desc =~ "PUT /users/:id"
-      desc = apply(delete_user, :description, [])
-      assert desc =~ "DELETE /users/:id"
+      assert get_users.description() =~ "GET /users"
+      assert post_users.description() =~ "POST /users"
+      assert get_user.description() =~ "GET /users/:id"
+      assert put_user.description() =~ "PUT /users/:id"
+      assert delete_user.description() =~ "DELETE /users/:id"
     end
   end
 
@@ -561,7 +560,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
       # Non-admin should be denied by global auth
       frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
       # credo:disable-for-next-line
-      assert {:error, error, _} = apply(mod, :execute, [%{}, frame])
+      assert {:error, error, _} = call_execute(mod, %{}, frame)
       assert error.code == -32_001
       assert error.message =~ "Unauthorized"
     end
@@ -593,7 +592,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
 
       assert {:reply, %Anubis.Server.Response{isError: false}, _} =
-               apply(mod, :execute, [%{}, frame])
+               call_execute(mod, %{}, frame)
     end
 
     test "per-route :none overrides global auth" do
@@ -623,7 +622,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
 
       assert {:reply, %Anubis.Server.Response{isError: false}, _} =
-               apply(mod, :execute, [%{}, frame])
+               call_execute(mod, %{}, frame)
     end
 
     test "per-route auth without global restricts access" do
@@ -650,13 +649,13 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, mod} = Code.ensure_loaded(PerRouteMCP.Tool.GetUsers)
 
       non_admin = %{assigns: %{ectomancer_actor: %{role: :user}}}
-      assert {:error, error, _} = apply(mod, :execute, [%{}, non_admin])
+      assert {:error, error, _} = call_execute(mod, %{}, non_admin)
       assert error.code == -32_001
 
       admin = %{assigns: %{ectomancer_actor: %{role: :admin}}}
 
       assert {:reply, %Anubis.Server.Response{isError: false}, _} =
-               apply(mod, :execute, [%{}, admin])
+               call_execute(mod, %{}, admin)
     end
   end
 
