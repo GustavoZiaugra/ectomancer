@@ -391,11 +391,11 @@ defmodule Ectomancer.ExposeTest do
       )
     end
 
-    alias CompositeKeyMCP.Tool.GetCompositeKeyUser
-    alias CompositeKeyMCP.Tool.UpdateCompositeKeyUser
     alias CompositeKeyMCP.Tool.DestroyCompositeKeyUser
-    alias CompositeKeyMCP.Tool.RestoreCompositeKeyUser
+    alias CompositeKeyMCP.Tool.GetCompositeKeyUser
     alias CompositeKeyMCP.Tool.ListCompositeKeyUsers
+    alias CompositeKeyMCP.Tool.RestoreCompositeKeyUser
+    alias CompositeKeyMCP.Tool.UpdateCompositeKeyUser
 
     test "get tool has params for all PK fields" do
       schema = GetCompositeKeyUser.input_schema()
