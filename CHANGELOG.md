@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **anubis_mcp requirement tightened to `~> 1.14`** (was `~> 1.5`). The old range resolved the current release anyway; the constraint now reflects what is actually tested.
 - **`Ectomancer.child_spec/2` produces a working supervision entry.** The old output `{Anubis.Server.Supervisor, {server, transport: ...}}` called the non-existent `start_link/1` and failed at boot (#143, #148). It now returns `{server, transport: {transport, start: true}}`, resolved through the server module's own `child_spec/1`. One transport per server module is supported (anubis registers process names per server); requesting two raises a clear error.
+- **`Ectomancer.child_spec/2` returns a single child spec** (not a one-element list), so `children = [Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]), MyAppWeb.Endpoint]` actually boots instead of nesting a list in the supervision tree.
 - **Router mounting works on anubis 1.14.** `Ectomancer.Plug.init/1` now passes an escapable `subscriber_metadata` remote capture so `forward "/mcp", Ectomancer.Plug, ...` compiles in Phoenix/Plug routers instead of failing with "cannot inject attribute @plug_forward_opts" (#143).
 - README + `Ectomancer.Plug` docs updated to the working supervision form.
 

@@ -7,7 +7,7 @@ defmodule Ectomancer.ChildSpecTest do
 
   describe "Ectomancer.child_spec/2" do
     test "returns a valid single child spec through the server module" do
-      assert [{TestMCP, transport: {:streamable_http, start: true}}] =
+      assert {TestMCP, transport: {:streamable_http, start: true}} =
                Ectomancer.child_spec(TestMCP, transports: [:streamable_http])
 
       # The server module's child_spec/1 (from `use Anubis.Server`) produces the
@@ -20,7 +20,7 @@ defmodule Ectomancer.ChildSpecTest do
     end
 
     test "accepts a bare transport atom" do
-      assert [{TestMCP, transport: {:sse, start: true}}] =
+      assert {TestMCP, transport: {:sse, start: true}} =
                Ectomancer.child_spec(TestMCP, transports: :sse)
     end
 
@@ -48,11 +48,6 @@ defmodule Ectomancer.ChildSpecTest do
       assert_raise ArgumentError, ~r/:transports option/, fn ->
         Ectomancer.child_spec(TestMCP, [])
       end
-    end
-
-    test "the broken tuple form no longer appears in generated specs" do
-      [{spec, _opts}] = Ectomancer.child_spec(TestMCP, transports: [:streamable_http])
-      assert spec == TestMCP
     end
   end
 end

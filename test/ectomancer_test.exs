@@ -14,10 +14,9 @@ defmodule EctomancerTest do
     end
 
     test "generates spec for a single transport" do
-      specs = Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])
-      assert length(specs) == 1
+      spec = Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])
 
-      {mod, args} = hd(specs)
+      {mod, args} = spec
       assert mod == MyApp.MCP
       assert Keyword.get(args, :transport) == {:streamable_http, start: true}
     end

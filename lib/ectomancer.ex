@@ -167,7 +167,7 @@ defmodule Ectomancer do
   end
 
   @doc """
-  Generates child specifications for the Anubis transport supervisors.
+  Generates the child specification for the Anubis transport supervisor.
 
   Use in your application's supervision tree to start the transport backend
   required by the Ectomancer plug:
@@ -180,7 +180,7 @@ defmodule Ectomancer do
 
   ## Options
 
-    * `:transports` — a list with a single transport atom (required).
+    * `:transports` — a single transport atom or a one-element list (required).
       Supported values: `:streamable_http`, `:sse`.
 
   One transport is supported per server module. `anubis_mcp` registers
@@ -188,7 +188,7 @@ defmodule Ectomancer do
   the same server collides. Use a dedicated server module per transport when
   you need to serve multiple transports.
   """
-  @spec child_spec(module(), keyword()) :: [Supervisor.child_spec()]
+  @spec child_spec(module(), keyword()) :: Supervisor.child_spec()
   def child_spec(server, opts) do
     case Keyword.get(opts, :transports) do
       nil ->
@@ -205,10 +205,13 @@ defmodule Ectomancer do
                 "`Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])`."
 
       transports when is_list(transports) ->
-        Enum.map(transports, &child_spec_for_transport(server, &1))
+        case transports do
+          [transport] -> child_spec_for_transport(server, transport)
+          [] -> raise ArgumentError, "Ectomancer.child_spec/2 :transports must not be empty."
+        end
 
       transport ->
-        [child_spec_for_transport(server, transport)]
+        child_spec_for_transport(server, transport)
     end
   end
 
