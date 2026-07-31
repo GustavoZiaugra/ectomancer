@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README + `Ectomancer.Plug` docs updated to the working supervision form.
 
 ### Fixed
+- **Tool results are now JSON, not `inspect/1` output** (#147). Responses are serialized through a sanitizer that converts Ecto structs to plain maps, drops `__meta__`, replaces `NotLoaded` with `null`, and renders datetimes as ISO-8601. `inspect/1`'s silent 50-row truncation is gone, and error responses no longer echo full stacktraces.
+- **Batch operations no longer silently no-op** (#145). Anubis delivers params with atom keys; the batch handlers read string keys, so `batch_create` reported `total: 0`. Param keys are now normalized once at the tool-execution funnel, and `Repo.batch_*` read both key shapes.
+- **`include`/`preloadable` actually preloads** (#146). The `include` param is honored after the key-normalization fix, and `validate_includes/3` no longer crashes on string allowlists (removed the dead `:all` clause that also did unbounded `String.to_atom`).
+- **Batch operations isolate per-record failures** (#153). Each per-item write runs in a savepoint so a database-level constraint violation cannot poison the surrounding transaction; the documented partial-failure semantics are kept and the README no longer claims batches are atomic.
 - **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
 - **Compile warnings** — grouped `build_assoc_params/1` clauses and silenced the unused `assoc` parameter in `child_fk/3` so the lint CI job (`--warnings-as-errors`) passes.

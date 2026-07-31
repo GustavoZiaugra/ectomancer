@@ -60,26 +60,26 @@ defmodule Ectomancer.RepoTest do
   describe "validate_includes/3" do
     test "passes through nil include" do
       opts = [scope: nil]
-      assert Ectomancer.Repo.validate_includes(nil, :all, opts) == opts
+      assert Ectomancer.Repo.validate_includes(nil, [:posts], opts) == opts
     end
 
     test "passes through empty include" do
       opts = [scope: nil]
-      assert Ectomancer.Repo.validate_includes([], :all, opts) == opts
+      assert Ectomancer.Repo.validate_includes([], [:posts], opts) == opts
     end
 
-    test "allows all includes when allowed is :all" do
-      result = Ectomancer.Repo.validate_includes(["posts", "comments"], :all, [])
+    test "allows includes present in the allowed list" do
+      result = Ectomancer.Repo.validate_includes(["posts", "comments"], ["posts", "comments"], [])
       assert result[:preload] == [:posts, :comments]
     end
 
     test "filters includes by allowed list" do
-      result = Ectomancer.Repo.validate_includes(["secret", "public"], [:public], [])
+      result = Ectomancer.Repo.validate_includes(["secret", "public"], ["public"], [])
       assert result[:preload] == [:public]
     end
 
     test "merges with existing preloads" do
-      result = Ectomancer.Repo.validate_includes(["posts"], :all, preload: [:comments])
+      result = Ectomancer.Repo.validate_includes(["posts"], ["posts"], preload: [:comments])
       assert result[:preload] == [:comments, :posts]
     end
   end

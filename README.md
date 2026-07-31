@@ -434,15 +434,21 @@ expose MyApp.Accounts.User,
 
 | Action | Tool Name | Input | Behavior |
 |--------|-----------|-------|----------|
-| `batch_create` | `batch_create_users` | `records: [%{...}]` | Validates all, inserts in transaction |
-| `batch_update` | `batch_update_users` | `records: [%{id, ...}]` | Fetches each, updates in transaction |
-| `batch_destroy` | `batch_destroy_users` | `ids: [...]` | Fetches each, soft/hard-deletes atomically |
+| `batch_create` | `batch_create_users` | `records: [%{...}]` | Validates and inserts each record in a single transaction |
+| `batch_update` | `batch_update_users` | `records: [%{id, ...}]` | Fetches and updates each record in a single transaction |
+| `batch_destroy` | `batch_destroy_users` | `ids: [...]` | Fetches and deletes each record in a single transaction |
 
-Partial failures are reported alongside successes — the AI assistant can retry or report the failed records:
+Each record is processed inside the shared transaction, and a database-level
+failure on one record is contained by a savepoint so it cannot abort the rest of
+the batch. **The batch is best-effort, not atomic** — records that succeed are
+committed even when others fail:
 
 ```elixir
 # Result shape: %{succeeded: [%{status: :ok, record: ...}], failed: [...], total: 3}
 ```
+
+Partial failures are reported alongside successes so the AI assistant can retry
+or report the failed records.
 
 Batch operations respect authorization, scope, soft-delete, and field auth just like single-record operations.
 
