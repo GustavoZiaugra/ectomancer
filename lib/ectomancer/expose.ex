@@ -109,7 +109,7 @@ if Code.ensure_loaded?(Ecto) do
 
         # Policy module
         expose MyApp.Accounts.User,
-          authorize: with: MyApp.Policies.UserPolicy
+          authorize: MyApp.Policies.UserPolicy
 
         # Action-specific authorization
         expose MyApp.Accounts.User,
@@ -134,40 +134,16 @@ if Code.ensure_loaded?(Ecto) do
 
     # Action configurations for data-driven generation
     @action_configs %{
-      list: %{prefix: "list", suffix: "s", description_template: "List all %{resource}s"},
-      get: %{prefix: "get", suffix: "", description_template: "Get a %{resource} by ID"},
-      create: %{prefix: "create", suffix: "", description_template: "Create a new %{resource}"},
-      update: %{
-        prefix: "update",
-        suffix: "",
-        description_template: "Update an existing %{resource}"
-      },
-      destroy: %{prefix: "destroy", suffix: "", description_template: "Delete a %{resource}"},
-      restore: %{
-        prefix: "restore",
-        suffix: "",
-        description_template: "Restore a soft-deleted %{resource}"
-      },
-      batch_create: %{
-        prefix: "batch_create",
-        suffix: "s",
-        description_template: "Batch create %{resource}s"
-      },
-      batch_update: %{
-        prefix: "batch_update",
-        suffix: "s",
-        description_template: "Batch update %{resource}s"
-      },
-      batch_destroy: %{
-        prefix: "batch_destroy",
-        suffix: "s",
-        description_template: "Batch delete %{resource}s"
-      },
-      upsert: %{
-        prefix: "upsert",
-        suffix: "",
-        description_template: "Create or update a %{resource} (upsert)"
-      }
+      list: %{prefix: "list", description_template: "List all %{resource}s"},
+      get: %{prefix: "get", description_template: "Get a %{resource} by ID"},
+      create: %{prefix: "create", description_template: "Create a new %{resource}"},
+      update: %{prefix: "update", description_template: "Update an existing %{resource}"},
+      destroy: %{prefix: "destroy", description_template: "Delete a %{resource}"},
+      restore: %{prefix: "restore", description_template: "Restore a soft-deleted %{resource}"},
+      batch_create: %{prefix: "batch_create", description_template: "Batch create %{resource}s"},
+      batch_update: %{prefix: "batch_update", description_template: "Batch update %{resource}s"},
+      batch_destroy: %{prefix: "batch_destroy", description_template: "Batch delete %{resource}s"},
+      upsert: %{prefix: "upsert", description_template: "Create or update a %{resource} (upsert)"}
     }
 
     @doc """
@@ -683,12 +659,22 @@ if Code.ensure_loaded?(Ecto) do
 
     defp build_tool_name(action, resource_name, namespace) do
       config = @action_configs[action]
-      singular = singularize_resource(resource_name)
-      base = "#{config.prefix}_#{singular}#{config.suffix}"
+      base = "#{config.prefix}_#{resource_base_for(action, resource_name)}"
 
       full_name = if namespace, do: "#{namespace}_#{base}", else: base
       String.to_atom(full_name)
     end
+
+    # Plural actions (list/batch) use the proper plural form of the resource
+    # name rather than appending a literal "s" (e.g. study -> studies).
+    defp resource_base_for(action, resource_name)
+         when action in [:list, :batch_create, :batch_update, :batch_destroy] do
+      resource_name
+      |> singularize_resource()
+      |> Plurality.pluralize()
+    end
+
+    defp resource_base_for(_action, resource_name), do: singularize_resource(resource_name)
 
     defp build_description(action, resource_name, namespace) do
       config = @action_configs[action]

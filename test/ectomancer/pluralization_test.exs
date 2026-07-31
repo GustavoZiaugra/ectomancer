@@ -13,6 +13,15 @@ defmodule Ectomancer.PluralizationTest do
     LegacyGetStatus
   }
 
+  alias Ectomancer.PluralizationTest.ListPluralMCP.Tool.{
+    BatchCreateStudies,
+    GetStudy,
+    ListNews,
+    ListStatuses,
+    ListStudies,
+    ListUsers
+  }
+
   defmodule Status do
     use Ecto.Schema
 
@@ -77,6 +86,14 @@ defmodule Ectomancer.PluralizationTest do
     end
   end
 
+  defmodule Study do
+    use Ecto.Schema
+
+    schema "studies" do
+      field(:name, :string)
+    end
+  end
+
   defmodule TestMCP do
     use Ectomancer, name: "pluralization-test-mcp", version: "1.0.0"
 
@@ -89,6 +106,15 @@ defmodule Ectomancer.PluralizationTest do
     expose(News, actions: [:get])
     expose(Users, actions: [:get])
     expose(Status, as: :statuses, namespace: :legacy, actions: [:get])
+  end
+
+  defmodule ListPluralMCP do
+    use Ectomancer, name: "list-plural-mcp", version: "1.0.0"
+
+    expose(Status, actions: [:list])
+    expose(Study, actions: [:list, :get, :batch_create])
+    expose(News, actions: [:list])
+    expose(Users, actions: [:list])
   end
 
   describe "tool name singularization" do
@@ -108,6 +134,23 @@ defmodule Ectomancer.PluralizationTest do
 
     test "singularizes plural resource names from the :as option" do
       assert LegacyGetStatus.name() == "legacy_get_status"
+    end
+  end
+
+  describe "tool name pluralization for list/batch actions" do
+    test "uses the proper plural form for list tools" do
+      assert ListStatuses.name() == "list_statuses"
+      assert ListStudies.name() == "list_studies"
+      assert ListNews.name() == "list_news"
+      assert ListUsers.name() == "list_users"
+    end
+
+    test "singular actions keep the singular form" do
+      assert GetStudy.name() == "get_study"
+    end
+
+    test "batch tools pluralize correctly" do
+      assert BatchCreateStudies.name() == "batch_create_studies"
     end
   end
 end

@@ -22,7 +22,7 @@ defmodule Ectomancer.Authorization.Policy do
   ## Usage
 
       expose MyApp.Accounts.User,
-        authorize: with: MyApp.Policies.UserPolicy
+        authorize: MyApp.Policies.UserPolicy
   """
 
   @doc """
