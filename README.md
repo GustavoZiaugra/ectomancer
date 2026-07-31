@@ -335,6 +335,18 @@ expose_oban_jobs authorize: [
 config :ectomancer, repo: MyApp.Repo
 ```
 
+### Query limits
+
+`list` results are capped to `100` rows per call by default. Raise (or lower)
+the ceiling globally:
+
+```elixir
+config :ectomancer, max_limit: 500
+```
+
+The effective limit is always reported in the `pagination` metadata of a
+paginated `list` response, so clients can see when a request was clamped.
+
 ### Actor extraction
 
 ```elixir

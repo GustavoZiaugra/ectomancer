@@ -84,6 +84,8 @@ if Code.ensure_loaded?(Ecto) do
                 Filtering.parse_int(Map.get(meta_params, "limit")) ||
                   Keyword.get(opts, :limit, 100)
 
+              effective_limit = min(limit_val, Filtering.max_limit())
+
               offset_val =
                 Filtering.parse_int(Map.get(meta_params, "offset")) ||
                   Keyword.get(opts, :offset, 0)
@@ -99,9 +101,9 @@ if Code.ensure_loaded?(Ecto) do
                  data: results,
                  pagination: %{
                    total: total,
-                   limit: limit_val,
+                   limit: effective_limit,
                    offset: offset_val,
-                   has_more: offset_val + limit_val < total
+                   has_more: offset_val + effective_limit < total
                  }
                }}
             else
@@ -866,22 +868,22 @@ if Code.ensure_loaded?(Ecto) do
     defdelegate parse_int(val), to: Filtering
 
     defp normalize_params(params, schema_module) do
-      introspection = SchemaIntrospection.analyze(schema_module)
-      types = introspection.types
+      types = SchemaIntrospection.analyze(schema_module).types
 
       params
       |> Enum.map(fn
         {k, v} when is_atom(k) ->
-          type = Map.get(types, k)
-          value = cast_param_value(v, type)
-          {k, value}
+          {k, cast_param_value(v, Map.get(types, k))}
 
         {k, v} when is_binary(k) ->
-          field = String.to_atom(k)
-          type = Map.get(types, field)
-          value = cast_param_value(v, type)
-          {field, value}
+          case Enum.find(Map.keys(types), &(Atom.to_string(&1) == k)) do
+            # Unknown string keys are dropped — never atomized from caller input
+            # (see #142) and rejected by changeset casting anyway.
+            nil -> nil
+            field -> {field, cast_param_value(v, Map.get(types, field))}
+          end
       end)
+      |> Enum.reject(&is_nil/1)
       |> Enum.into(%{})
     end
 
