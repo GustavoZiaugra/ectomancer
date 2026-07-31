@@ -176,4 +176,54 @@ defmodule Ectomancer.ScopeAndRedactionTest do
       refute text =~ "tenant_id"
     end
   end
+
+  describe "Ectomancer.Output.filter_fields/2" do
+    test "preserves non-Ecto struct values (datetimes, decimals) when filtering fields" do
+      inserted_at = ~N[2026-07-31 10:00:00]
+      record = %TenantItem{name: "X", tenant_id: 1, secret: "s", inserted_at: inserted_at}
+
+      filtered = Ectomancer.Output.filter_fields(record, [:name, :inserted_at, :updated_at])
+
+      assert filtered.name == "X"
+      assert filtered.inserted_at == inserted_at
+      assert Map.has_key?(filtered, :updated_at)
+      refute Map.has_key?(filtered, :secret)
+      refute Map.has_key?(filtered, :tenant_id)
+    end
+
+    test "replaces NotLoaded associations with nil" do
+      assert Ectomancer.Output.filter_fields(%Ecto.Association.NotLoaded{}, [:name]) == nil
+    end
+
+    test "filters nested records inside maps and lists" do
+      record = %TenantItem{name: "X", tenant_id: 1, secret: "s"}
+
+      assert [%{name: "X"}] =
+               Ectomancer.Output.filter_fields([record], [:name])
+
+      assert %{items: [%{name: "X"}]} =
+               Ectomancer.Output.filter_fields(%{items: [record]}, [:name])
+    end
+  end
+
+  describe "Ectomancer.Scope.compose/3" do
+    test "applies both policy scope and expose scope in order" do
+      policy = fn query -> query ++ [:policy] end
+      expose = fn query, actor -> query ++ [actor] end
+
+      composed = Ectomancer.Scope.compose(policy, :actor, expose)
+      assert composed.([]) == [:policy, :actor]
+    end
+
+    test "applies only the expose scope when no policy scope" do
+      expose = fn query, actor -> query ++ [actor] end
+      composed = Ectomancer.Scope.compose(nil, :actor, expose)
+      assert composed.([]) == [:actor]
+    end
+
+    test "returns the policy scope when no expose scope" do
+      policy = fn query -> query ++ [:policy] end
+      assert Ectomancer.Scope.compose(policy, :actor, nil).([]) == [:policy]
+    end
+  end
 end

@@ -963,6 +963,7 @@ defmodule Ectomancer.RepoTest do
       @primary_key {:code, :binary_id, autogenerate: true}
       schema "custom_key_parents" do
         field(:name, :string)
+
         has_many(:children, Ectomancer.RepoTest.CustomKeyChild,
           foreign_key: :parent_code,
           references: :code

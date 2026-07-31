@@ -43,11 +43,11 @@ defmodule Ectomancer.Output do
   defp do_filter_fields(%Ecto.Association.NotLoaded{}, _allowed), do: nil
 
   defp do_filter_fields(%{__struct__: module} = struct, allowed) when is_atom(module) do
-    struct
-    |> Map.from_struct()
-    |> Map.drop([:__meta__])
-    |> Enum.filter(fn {field, _value} -> field in allowed end)
-    |> Map.new(fn {field, value} -> {field, do_filter_fields(value, allowed)} end)
+    if function_exported?(module, :__schema__, 1) do
+      filter_ecto_struct(struct, allowed)
+    else
+      struct
+    end
   end
 
   defp do_filter_fields(value, allowed) when is_list(value) do
@@ -61,6 +61,14 @@ defmodule Ectomancer.Output do
   end
 
   defp do_filter_fields(value, _allowed), do: value
+
+  defp filter_ecto_struct(struct, allowed) do
+    struct
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> Enum.filter(fn {field, _value} -> field in allowed end)
+    |> Map.new(fn {field, value} -> {field, do_filter_fields(value, allowed)} end)
+  end
 
   defp to_json_value(%Ecto.Association.NotLoaded{}), do: nil
   defp to_json_value(%Ecto.Schema.Metadata{}), do: nil
