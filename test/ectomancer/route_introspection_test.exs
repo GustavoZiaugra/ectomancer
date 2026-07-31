@@ -3,7 +3,27 @@ defmodule Ectomancer.RouteIntrospectionTest do
   import Enum, only: [all?: 2]
   alias Ectomancer.RouteIntrospection
 
-  defmodule UserController, do: nil
+  # Dynamic module invocation in route introspection tests - module is loaded at runtime
+  # credo:disable-for-next-line
+  def call_execute(mod, params, frame), do: apply(mod, :execute, [params, frame])
+
+  defmodule UserController do
+    import Plug.Conn
+    def index(conn, _params), do: send_resp(conn, 200, "[]")
+    def show(conn, _params), do: send_resp(conn, 200, "{}")
+    def create(conn, _params), do: send_resp(conn, 201, "{}")
+    def update(conn, _params), do: send_resp(conn, 200, "{}")
+    def delete(conn, _params), do: send_resp(conn, 204, "")
+  end
+
+  defmodule CrudController do
+    import Plug.Conn
+    def index(conn, _opts), do: send_resp(conn, 200, "index")
+    def show(conn, _opts), do: send_resp(conn, 200, "show")
+    def create(conn, _opts), do: send_resp(conn, 201, "created")
+    def update(conn, _opts), do: send_resp(conn, 200, "updated")
+    def destroy(conn, _opts), do: send_resp(conn, 204, "")
+  end
 
   describe "parse_path_params/1" do
     test "parses simple path with param" do
@@ -366,6 +386,54 @@ defmodule Ectomancer.RouteIntrospectionTest do
     end
   end
 
+  describe "expose_routes controller execution" do
+    test "generated CRUD tools have correct metadata and execute controllers" do
+      defmodule CrudRouter do
+        def __routes__ do
+          [
+            {"/users", {"GET", CrudController, :index, []}},
+            {"/users", {"POST", CrudController, :create, []}},
+            {"/users/:id", {"GET", CrudController, :show, []}},
+            {"/users/:id", {"PUT", CrudController, :update, []}},
+            {"/users/:id", {"DELETE", CrudController, :destroy, []}}
+          ]
+        end
+      end
+
+      defmodule CrudMCP do
+        use Ectomancer
+
+        expose_routes(CrudRouter)
+      end
+
+      assert {:module, get_users} = Code.ensure_loaded(CrudMCP.Tool.GetUsers)
+      assert {:module, post_users} = Code.ensure_loaded(CrudMCP.Tool.PostUsers)
+      assert {:module, get_user} = Code.ensure_loaded(CrudMCP.Tool.GetUser)
+      assert {:module, put_user} = Code.ensure_loaded(CrudMCP.Tool.PutUser)
+      assert {:module, delete_user} = Code.ensure_loaded(CrudMCP.Tool.DeleteUser)
+
+      assert get_users.name() == "get_users"
+      assert post_users.name() == "post_users"
+      assert get_user.name() == "get_user"
+      assert put_user.name() == "put_user"
+      assert delete_user.name() == "delete_user"
+
+      assert get_users.description() =~ "GET /users"
+      assert post_users.description() =~ "POST /users"
+      assert get_user.description() =~ "GET /users/:id"
+      assert put_user.description() =~ "PUT /users/:id"
+      assert delete_user.description() =~ "DELETE /users/:id"
+
+      frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(get_users, %{}, frame)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(post_users, %{}, frame)
+    end
+  end
+
   describe "normalize_http_method/1" do
     test "converts wildcard to GET" do
       assert RouteIntrospection.normalize_http_method("*") == "GET"
@@ -417,6 +485,33 @@ defmodule Ectomancer.RouteIntrospectionTest do
       {:ok, msg} = RouteIntrospection.format_controller_result("custom result")
 
       assert msg =~ "custom result"
+    end
+
+    test "formats map responses" do
+      {:ok, msg} = RouteIntrospection.format_controller_result(%{key: "value"})
+
+      assert msg =~ "200"
+      assert msg =~ "key"
+    end
+
+    test "formats list responses" do
+      {:ok, msg} = RouteIntrospection.format_controller_result([1, 2, 3])
+
+      assert msg =~ "200"
+    end
+
+    test "formats nil responses" do
+      {:ok, msg} = RouteIntrospection.format_controller_result(nil)
+
+      assert msg =~ "200"
+      assert msg =~ "nil"
+    end
+
+    test "formats error tuples" do
+      {:ok, msg} = RouteIntrospection.format_controller_result({:error, "oops"})
+
+      assert msg =~ "500"
+      assert msg =~ "oops"
     end
   end
 
@@ -473,8 +568,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
 
       # Non-admin should be denied by global auth
       frame = %{assigns: %{ectomancer_actor: %{role: :user}}}
-      # credo:disable-for-next-line
-      assert {:error, error, _} = apply(mod, :execute, [%{}, frame])
+      assert {:error, error, _} = call_execute(mod, %{}, frame)
       assert error.code == -32_001
       assert error.message =~ "Unauthorized"
     end
@@ -504,9 +598,9 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, mod} = Code.ensure_loaded(OverrideRouteMCP.Tool.GetUsers)
 
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
-      # credo:disable-for-next-line
-      result = apply(mod, :execute, [%{}, frame])
-      assert match?({:ok, _}, result) or match?({:error, _, _}, result)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(mod, %{}, frame)
     end
 
     test "per-route :none overrides global auth" do
@@ -534,10 +628,42 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert {:module, mod} = Code.ensure_loaded(NoneRouteMCP.Tool.GetUsers)
 
       frame = %{assigns: %{ectomancer_actor: %{role: :any}}}
-      # credo:disable-for-next-line
-      result = apply(mod, :execute, [%{}, frame])
-      # Should NOT get auth error (per-route :none overrides global)
-      refute match?({:error, %{code: -32_001}, _}, result)
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(mod, %{}, frame)
+    end
+
+    test "per-route auth without global restricts access" do
+      defmodule PerRouteController do
+        def index(conn, _opts) do
+          Plug.Conn.send_resp(conn, 200, "ok")
+        end
+      end
+
+      defmodule PerRouteRouter do
+        def __routes__ do
+          [{"/users", {"GET", PerRouteController, :index, []}}]
+        end
+      end
+
+      defmodule PerRouteMCP do
+        use Ectomancer, name: "per-route-mcp", version: "1.0.0"
+
+        expose_routes(PerRouteRouter,
+          authorize: fn actor, _action -> actor.role == :admin end
+        )
+      end
+
+      assert {:module, mod} = Code.ensure_loaded(PerRouteMCP.Tool.GetUsers)
+
+      non_admin = %{assigns: %{ectomancer_actor: %{role: :user}}}
+      assert {:error, error, _} = call_execute(mod, %{}, non_admin)
+      assert error.code == -32_001
+
+      admin = %{assigns: %{ectomancer_actor: %{role: :admin}}}
+
+      assert {:reply, %Anubis.Server.Response{isError: false}, _} =
+               call_execute(mod, %{}, admin)
     end
   end
 
