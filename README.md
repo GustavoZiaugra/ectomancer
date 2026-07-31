@@ -150,7 +150,7 @@ Then start the MCP server by adding to your Application supervisor:
 ```elixir
 children = [
   # ... other children ...
-  {Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}},
+  {MyApp.MCP, transport: {:streamable_http, start: true}},
   MyAppWeb.Endpoint
 ]
 ```
@@ -195,7 +195,7 @@ Ectomancer supports three transport options. Streamable HTTP is the default and 
 
 ```elixir
 # Supervision
-{Anubis.Server.Supervisor, {MyApp.MCP, transport: {:streamable_http, start: true}}}
+{MyApp.MCP, transport: {:streamable_http, start: true}}
 
 # Router
 forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
@@ -207,7 +207,7 @@ For clients that only support the MCP 2024-11-05 HTTP+SSE protocol:
 
 ```elixir
 # Supervision
-{Anubis.Server.Supervisor, {MyApp.MCP, transport: {:sse, start: true}}}
+{MyApp.MCP, transport: {:sse, start: true}}
 
 # Router
 get  "/mcp/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
@@ -258,16 +258,20 @@ config :ectomancer,
 
 ### Multiple Transports
 
-Start multiple transport backends to serve different clients:
+One transport is supported per server module. `anubis_mcp` registers process
+names derived from the server module, so starting two transports for the same
+server collides. Use `Ectomancer.child_spec/2` (or a bare `{MyApp.MCP,
+transport: {:streamable_http, start: true}}` entry) for a single transport:
 
 ```elixir
 children = [
-  Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :sse]),
+  Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]),
   MyAppWeb.Endpoint
 ]
 ```
 
-Then mount each transport in your router as shown above.
+To serve multiple transports, define a dedicated server module per transport
+and mount each in the router as shown above.
 
 ## Authorization
 
