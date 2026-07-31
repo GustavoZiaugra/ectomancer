@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`scope:` option for `expose`** — row-level scoping for multi-tenant apps. The function receives the query and the authenticated actor (`fn query, actor -> query end`) and is applied to every generated CRUD query. Composes with authorization-policy scopes.
+- **Configurable query limit ceiling** — `config :ectomancer, max_limit: N` (default `100`). The effective `limit` is reported in pagination metadata so clamping is visible (#150).
 
 ### Changed
 - **anubis_mcp requirement tightened to `~> 1.14`** (was `~> 1.5`). The old range resolved the current release anyway; the constraint now reflects what is actually tested.
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Batch operations no longer silently no-op** (#145). Anubis delivers params with atom keys; the batch handlers read string keys, so `batch_create` reported `total: 0`. Param keys are now normalized once at the tool-execution funnel, and `Repo.batch_*` read both key shapes.
 - **`include`/`preloadable` actually preloads** (#146). The `include` param is honored after the key-normalization fix, and `validate_includes/3` no longer crashes on string allowlists (removed the dead `:all` clause that also did unbounded `String.to_atom`).
 - **Batch operations isolate per-record failures** (#153). Each per-item write runs in a savepoint so a database-level constraint violation cannot poison the surrounding transaction; the documented partial-failure semantics are kept and the README no longer claims batches are atomic.
+- **No unbounded atom creation from remote input** (#142). `order_by`, filter keys, and param names were `String.to_atom`'d from caller-influenced strings before the allowlist check, letting an unauthenticated client exhaust the BEAM atom table. Filtering now resolves against the schema's field allowlist by string comparison and only ever references existing atoms.
 - **`only:`/`except:` now redact read results** — excluded fields are stripped from every row returned by `list`, `get`, and batch tools (previously they only affected input params and resource metadata).
 - **Tool name pluralization** — `singularize_resource/1` now uses `Plurality` for noun inflection and keeps already-singular words ending in "s" intact. Tool names for `status`, `analysis`, `business`, `series`, `class`, `address`, and `news` are no longer truncated (`get_status` instead of `get_statu`, etc.) (#128)
 - **Compile warnings** — grouped `build_assoc_params/1` clauses and silenced the unused `assoc` parameter in `child_fk/3` so the lint CI job (`--warnings-as-errors`) passes.

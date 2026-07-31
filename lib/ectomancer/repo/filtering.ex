@@ -8,6 +8,19 @@ if Code.ensure_loaded?(Ecto) do
 
     @meta_keys ~w(order_by order_dir limit offset include_deleted)
 
+    # Suffix -> operator. Ordered longest-first so compound suffixes match
+    # before their prefixes would be misread (e.g. `_gte` before `_gt`).
+    @filter_ops [
+      {"_gte", :gte},
+      {"_lte", :lte},
+      {"_contains", :contains},
+      {"_icontains", :icontains},
+      {"_gt", :gt},
+      {"_lt", :lt},
+      {"_in", :in},
+      {"_not", :not}
+    ]
+
     @doc false
     def extract_meta_params(params) do
       {meta, filters} =
@@ -21,27 +34,27 @@ if Code.ensure_loaded?(Ecto) do
       base_query = from(r in schema_module)
 
       Enum.reduce(params, base_query, fn {field_str, value}, query ->
-        {field, operator} = parse_filter_key(to_string(field_str))
+        {field_name, operator} = parse_filter_key(to_string(field_str))
 
-        if field in fields do
-          apply_filter(query, field, operator, value)
-        else
-          query
+        case find_field(fields, field_name) do
+          nil -> query
+          field -> apply_filter(query, field, operator, value)
         end
       end)
     end
 
     @doc false
     def parse_filter_key(key) do
-      suffixes = ~w(_gte _gt _lte _lt _contains _icontains _in _not)
+      case Enum.find(@filter_ops, fn {suffix, _op} -> String.ends_with?(key, suffix) end) do
+        nil -> {key, :eq}
+        {suffix, op} -> {String.replace_trailing(key, suffix, ""), op}
+      end
+    end
 
-      Enum.find_value(suffixes, {String.to_atom(key), :eq}, fn suffix ->
-        if String.ends_with?(key, suffix) do
-          base = String.replace_trailing(key, suffix, "")
-          op = suffix |> String.trim_leading("_") |> String.to_atom()
-          {String.to_atom(base), op}
-        end
-      end)
+    # Resolves a caller-supplied field name against the schema's fields without
+    # minting new atoms (see #142 — remote atom-table exhaustion).
+    defp find_field(fields, name) do
+      Enum.find(fields, &(Atom.to_string(&1) == name))
     end
 
     defp apply_filter(query, field, :eq, nil) do
@@ -105,13 +118,13 @@ if Code.ensure_loaded?(Ecto) do
     def apply_ordering(query, meta, fields) do
       case meta do
         %{"order_by" => order_field} ->
-          field = String.to_atom(to_string(order_field))
-          dir = parse_order_dir(Map.get(meta, "order_dir", "asc"))
+          case find_field(fields, to_string(order_field)) do
+            nil ->
+              query
 
-          if field in fields do
-            order_by(query, [r], [{^dir, field(r, ^field)}])
-          else
-            query
+            field ->
+              dir = parse_order_dir(Map.get(meta, "order_dir", "asc"))
+              order_by(query, [r], [{^dir, field(r, ^field)}])
           end
 
         _ ->
@@ -135,11 +148,16 @@ if Code.ensure_loaded?(Ecto) do
       limit_val = parse_int(Map.get(meta, "limit")) || Keyword.get(opts, :limit, 100)
       offset_val = parse_int(Map.get(meta, "offset")) || Keyword.get(opts, :offset, 0)
 
-      limit_val = min(limit_val, 100)
+      limit_val = min(limit_val, max_limit())
 
       query
       |> limit(^limit_val)
       |> offset(^offset_val)
+    end
+
+    @doc false
+    def max_limit do
+      Application.get_env(:ectomancer, :max_limit, 100)
     end
 
     @doc false

@@ -549,27 +549,27 @@ defmodule Ectomancer.RepoTest do
 
   describe "parse_filter_key/1" do
     test "returns :eq for plain field name" do
-      assert Repo.parse_filter_key("email") == {:email, :eq}
+      assert Repo.parse_filter_key("email") == {"email", :eq}
     end
 
     test "detects comparison suffixes" do
-      assert Repo.parse_filter_key("age_gte") == {:age, :gte}
-      assert Repo.parse_filter_key("age_gt") == {:age, :gt}
-      assert Repo.parse_filter_key("age_lte") == {:age, :lte}
-      assert Repo.parse_filter_key("age_lt") == {:age, :lt}
+      assert Repo.parse_filter_key("age_gte") == {"age", :gte}
+      assert Repo.parse_filter_key("age_gt") == {"age", :gt}
+      assert Repo.parse_filter_key("age_lte") == {"age", :lte}
+      assert Repo.parse_filter_key("age_lt") == {"age", :lt}
     end
 
     test "detects string matching suffixes" do
-      assert Repo.parse_filter_key("name_contains") == {:name, :contains}
-      assert Repo.parse_filter_key("name_icontains") == {:name, :icontains}
+      assert Repo.parse_filter_key("name_contains") == {"name", :contains}
+      assert Repo.parse_filter_key("name_icontains") == {"name", :icontains}
     end
 
     test "detects list suffix" do
-      assert Repo.parse_filter_key("status_in") == {:status, :in}
+      assert Repo.parse_filter_key("status_in") == {"status", :in}
     end
 
     test "detects not-equal suffix" do
-      assert Repo.parse_filter_key("field_not") == {:field, :not}
+      assert Repo.parse_filter_key("field_not") == {"field", :not}
     end
   end
 
