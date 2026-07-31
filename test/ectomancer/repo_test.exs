@@ -921,4 +921,82 @@ defmodule Ectomancer.RepoTest do
       {:ok, []} = Repo.list(TestUser, %{"offset" => 100})
     end
   end
+
+  describe "nested association creation" do
+    defmodule AssocParent do
+      use Ecto.Schema
+
+      schema "assoc_parents" do
+        field(:name, :string)
+        has_many(:children, Ectomancer.RepoTest.AssocChild)
+        has_one(:profile, Ectomancer.RepoTest.AssocProfile)
+
+        timestamps()
+      end
+    end
+
+    defmodule AssocChild do
+      use Ecto.Schema
+
+      schema "assoc_children" do
+        field(:name, :string)
+        belongs_to(:parent, Ectomancer.RepoTest.AssocParent)
+
+        timestamps()
+      end
+    end
+
+    defmodule AssocProfile do
+      use Ecto.Schema
+
+      schema "assoc_profiles" do
+        field(:bio, :string)
+        belongs_to(:parent, Ectomancer.RepoTest.AssocParent)
+
+        timestamps()
+      end
+    end
+
+    setup do
+      Sandbox.checkout(Ectomancer.TestRepo)
+      Application.put_env(:ectomancer, :repo, Ectomancer.TestRepo)
+      Ectomancer.DataCase.create_table_for_schema!(AssocParent)
+      Ectomancer.DataCase.create_table_for_schema!(AssocChild)
+      Ectomancer.DataCase.create_table_for_schema!(AssocProfile)
+
+      on_exit(fn ->
+        Application.delete_env(:ectomancer, :repo)
+      end)
+
+      :ok
+    end
+
+    test "create without associations works same as before" do
+      assert {:ok, parent} = Repo.create(AssocParent, %{name: "Solo"})
+      assert parent.name == "Solo"
+    end
+
+    test "create with has_many children succeeds" do
+      {:ok, parent} =
+        Repo.create(AssocParent, %{name: "Parent", children: [%{name: "Child1"}]},
+          associations: [
+            %{field: :children, cardinality: :many, related: AssocChild, type: :has_many}
+          ]
+        )
+
+      assert parent.name == "Parent"
+      assert parent.id
+    end
+
+    test "create with has_one profile succeeds" do
+      {:ok, parent} =
+        Repo.create(AssocParent, %{name: "Parent", profile: %{bio: "Bio"}},
+          associations: [
+            %{field: :profile, cardinality: :one, related: AssocProfile, type: :has_one}
+          ]
+        )
+
+      assert parent.name == "Parent"
+    end
+  end
 end
