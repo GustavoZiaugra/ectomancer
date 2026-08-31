@@ -16,7 +16,10 @@ defmodule Ectomancer do
 
         # Expose Ecto schemas as MCP tools
         expose MyApp.Accounts.User,
-          actions: [:list, :get, :create, :update]
+          actions: [:list, :get, :create, :update],
+          authorize: fn actor, _action ->
+            actor != nil && actor.role == :admin
+          end
 
         # Custom tools with authorization
         tool :admin_stats do

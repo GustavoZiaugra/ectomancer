@@ -193,7 +193,8 @@ defmodule Ectomancer.SoftDeleteTest do
 
     expose(Ectomancer.SoftDeleteTest.Post,
       actions: [:list, :get, :destroy],
-      soft_delete: true
+      soft_delete: true,
+      authorize: :none
     )
   end
 
@@ -208,7 +209,8 @@ defmodule Ectomancer.SoftDeleteTest do
 
     expose(Ectomancer.SoftDeleteTest.Post,
       actions: [:list],
-      soft_delete: true
+      soft_delete: true,
+      authorize: :none
     )
   end
 
@@ -217,7 +219,8 @@ defmodule Ectomancer.SoftDeleteTest do
 
     expose(Ectomancer.SoftDeleteTest.Post,
       actions: [:get],
-      soft_delete: true
+      soft_delete: true,
+      authorize: :none
     )
   end
 

@@ -41,6 +41,7 @@ defmodule Ectomancer.ScopeAndRedactionTest do
 
     expose(TenantItem,
       actions: [:list, :get, :destroy],
+      authorize: :none,
       scope: fn query, actor ->
         import Ecto.Query
         from(t in query, where: t.tenant_id == ^actor.tenant_id)

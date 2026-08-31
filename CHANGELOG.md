@@ -7,12 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Read this if you're upgrading.** `expose` now fails closed on authorization.
+> The default `:actions` is read-only (`[:list, :get]`), and any mutating action
+> without effective authorization is a **compile-time error**. Previously
+> `expose Foo` with no options generated an unauthenticated full-CRUD endpoint
+> (including `destroy`), which an anonymous caller could exploit to create and
+> hard-delete rows (#139). This is a breaking change — version bumped to 2.0.0.
+
+### Breaking
+- **`expose/2` defaults to read-only `[:list, :get]`** instead of
+  `[:list, :get, :create, :update, :destroy]` (#139).
+- **Mutating actions fail closed at compile time** (#139). Exposing `:create`,
+  `:update`, `:destroy`, `:restore`, `:upsert`, `:batch_create`,
+  `:batch_update`, or `:batch_destroy` without effective authorization now
+  raises. Provide an `:authorize` option (function, policy module, or per-action
+  rules) at the server or schema level, or explicitly opt in to public mutation
+  with `authorize: :none`.
+
+### Security
+
+- **Fixed: default `expose` created an unauthenticated full-CRUD endpoint (#139).**
+  With no `:authorize` option and `actor_from` unset, `expose Foo` emitted
+  `authorize(:none)` on every generated tool, letting an anonymous caller list,
+  read, create, update, and hard-delete rows. The default is now read-only, and
+  mutating actions without effective authorization no longer compile.
+- **`authorize: nil` no longer bypasses server-level authorization.** A
+  schema-level `authorize: nil` was previously treated as an explicit public
+  opt-out, skipping the `use Ectomancer, authorize: ...` global handler and
+  emitting public tools. It now falls through to the effective server-level
+  handler. Use `authorize: :none` to opt in to public access explicitly.
+
 ### Changed
 - **Installers generate read-only `expose` by default.** `mix ectomancer.setup`
   and `mix igniter.install ectomancer` no longer emit `[:list, :get, :create,
   :update, :destroy]` for schemas with writable fields. Generated modules expose
-  only `[:list, :get]`, so they keep compiling as `expose` moves to a fail-closed
-  authorization default; add an `:authorize` option to enable mutating actions.
+  only `[:list, :get]`, so they keep compiling under the fail-closed default;
+  add an `:authorize` option to enable mutating actions.
+- Default `:actions` for `expose/2` narrowed to `[:list, :get]`; read-only
+  configs are unaffected, mutating configs must add `:authorize` or
+  `authorize: :none`.
+
+### Testing
+- New tests: default actions are list-only; mutating action without authorization
+  raises at compile time (including `restore` auto-added by soft-delete); explicit
+  `authorize: :none`, real `authorize` functions, per-action rules, `readonly: true`,
+  and server-level global auth all bypass the raise; `authorize: nil` still
+  enforces server-level global auth.
+
+### Issues Closed
+- #139 — [Critical] Default `expose` creates unauthenticated full CRUD endpoint (incl. destroy)
 
 ## [1.7.1] - 2026-09-07
 

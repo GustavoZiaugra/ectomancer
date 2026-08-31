@@ -27,7 +27,7 @@ defmodule Ectomancer.ResourceTest do
   defmodule ResourceMCP do
     use Ectomancer, name: "resource-test", version: "1.0.0"
 
-    expose(TestUser, actions: [:list, :get, :create])
+    expose(TestUser, actions: [:list, :get, :create], authorize: :none)
     expose(TestPost, actions: [:list, :get])
   end
 
