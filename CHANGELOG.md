@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Raised the minimum `plug` constraint to `>= 1.19.2`** (was `~> 1.16`, now `>= 1.19.2 and < 2.0.0`). The old floor allowed downstream apps to resolve `plug` 1.16.0–1.19.1, which are vulnerable to an unbounded multipart header buffer accumulation DoS (CVE-2026-8468, GHSA-468c-vq7p-gh64). Fixed in `plug` 1.19.2.
+- **Raised the minimum `phoenix` constraint to `>= 1.7.22`** (was `>= 1.7.0`). The old floor allowed downstream apps to resolve `phoenix` 1.7.0–1.7.21, which are vulnerable to a long-poll NDJSON body splitting memory allocation issue (CVE-2026-32689, GHSA-628h-q48j-jr6q). Fixed in `phoenix` 1.7.22 (1.8.x fixed in 1.8.6).
+- **Dependency vulnerability audit** — cross-referenced all locked dependencies against the GitHub Advisory Database (erlang ecosystem) and `mix hex.audit`. No locked version is vulnerable: `plug` 1.20.3, `phoenix` 1.8.8, `mint` 1.9.3, `req` 0.6.3, `decimal` 3.1.1, and `ecto` 3.14.1 are all at or past the versions that patch their known CVEs. The constraint floors above close the gap where downstream apps could still resolve vulnerable versions.
+
 ## [1.7.0] - 2026-07-31
 
 > **Read this if you're upgrading.** This release fixes the defects found in a
