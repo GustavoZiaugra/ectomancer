@@ -265,4 +265,15 @@ defmodule Ectomancer.Authorization do
   def parse_authorization_config(handler) do
     %{global: parse_handler_for_global(handler), actions: %{}}
   end
+
+  @doc false
+  def explicitly_public_opt_out?(value, _action) when value in [:none, :public], do: true
+
+  def explicitly_public_opt_out?(rules, action) when is_list(rules) do
+    Keyword.get(rules, :all) in [:none, :public] or
+      Keyword.get(rules, :global) in [:none, :public] or
+      Keyword.get(rules, action) in [:none, :public]
+  end
+
+  def explicitly_public_opt_out?(_value, _action), do: false
 end

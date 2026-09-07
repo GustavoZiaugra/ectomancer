@@ -15,7 +15,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Schema → MCP tools** — auto-generates CRUD tools from `expose MyApp.Accounts.User`
 - **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
 - **Authorization system** — inline functions, policy modules, or action-specific rules
-- **Fail-closed by default** — `expose` only enables read-only `list`/`get`; mutating actions require an `:authorize` option or an explicit `authorize: :none` opt-in, enforced at compile time (#139)
+- **Fail-closed by default** — `expose` only enables read-only `list`/`get`; mutating actions require an `:authorize` option or an explicit `authorize: :none` opt-in, enforced at compile time (#139). The same guard covers mutating `expose_routes` routes and `expose_oban_jobs` `retry_job`/`cancel_job` tools
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
 - **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
@@ -283,6 +283,11 @@ and mount each in the router as shown above.
 > explicitly opt in to public mutation with `authorize: :none`. If you expose a
 > mutating action without either, compilation fails with a clear error — the old
 > behavior silently produced an unauthenticated full-CRUD endpoint.
+>
+> The same guard applies to mutating `expose_routes` routes (`POST`/`PUT`/`PATCH`/
+> `DELETE`) and the mutating `expose_oban_jobs` tools (`retry_job`, `cancel_job`):
+> each requires effective authorization or an explicit `authorize: :none`/`:public`
+> opt-in, enforced at compile time. Read-only route and Oban tools are always allowed.
 
 Three strategies, choose what fits:
 
@@ -331,9 +336,28 @@ Oban tools support the same per-action patterns:
 
 ```elixir
 expose_oban_jobs authorize: [
-  all: fn actor, _ -> actor.role == :admin end,
-  list_queues: :none
+  list_queues: :none,
+  retry_job: fn actor, _ -> actor.role == :admin end,
+  cancel_job: fn actor, _ -> actor.role == :admin end
 ]
+```
+
+Read-only tools (`list_oban_queues`, `get_queue_depth`, `list_stuck_jobs`) are
+always allowed. `retry_job`/`cancel_job` are mutating and require authorization
+— or an explicit opt-in:
+
+```elixir
+expose_oban_jobs(authorize: :none) # public mutation — explicit
+```
+
+`expose_routes` guards mutating HTTP methods the same way — add `:authorize`,
+or restrict with `methods: ["GET"]` for read-only exposure:
+
+```elixir
+expose_routes MyAppWeb.Router, methods: ["GET"] # read-only only
+
+expose_routes MyAppWeb.Router,
+  authorize: fn actor, _action -> actor.role == :admin end
 ```
 
 ## Configuration

@@ -49,6 +49,21 @@ attention. Match your setup against the cases below:
 - **Server-level auth already set.** If you already pass `authorize: ...` to
   `use Ectomancer`, every `expose` inherits it — nothing to change.
 
+- **`expose_oban_jobs` and `expose_routes` mutating tools/routes.** The same
+  fail-closed guard now applies to Oban `retry_job`/`cancel_job` and to
+  `POST`/`PUT`/`PATCH`/`DELETE` (and catch-all `*`) routes. Add an `:authorize`
+  option or opt in explicitly:
+
+  ```elixir
+  expose_oban_jobs(authorize: :none)                          # public mutation
+  expose_oban_jobs(authorize: fn actor, _ -> actor.role == :admin end)
+
+  expose_routes(MyAppWeb.Router, methods: ["GET"])            # read-only only
+  expose_routes(MyAppWeb.Router, authorize: :none)            # public mutation
+  ```
+
+  Read-only Oban tools and `GET` routes are unaffected and compile as before.
+
 Quick guide:
 
 | Current config | What happens now | Action needed |
@@ -68,6 +83,16 @@ Quick guide:
   raises. Provide an `:authorize` option (function, policy module, or per-action
   rules) at the server or schema level, or explicitly opt in to public mutation
   with `authorize: :none`.
+- **`expose_oban_jobs` mutating tools fail closed.** `retry_job`/`cancel_job`
+  previously defaulted to public. Without effective authorization (an
+  `:authorize` option, per-action rules, or server-level auth) and without an
+  explicit `authorize: :none` opt-in, compilation now raises. Read-only Oban
+  tools (`list_oban_queues`, `get_queue_depth`, `list_stuck_jobs`) are unaffected.
+- **`expose_routes` mutating routes fail closed.** `POST`/`PUT`/`PATCH`/`DELETE`
+  (and catch-all `*`) routes previously defaulted to public tools that invoke
+  controllers. Without effective authorization (`:authorize` option or
+  server-level auth) and without an explicit `authorize: :none` opt-in,
+  compilation now raises. Read-only `GET` routes are unaffected.
 
 ### Security
 
@@ -76,6 +101,12 @@ Quick guide:
   `authorize(:none)` on every generated tool, letting an anonymous caller list,
   read, create, update, and hard-delete rows. The default is now read-only, and
   mutating actions without effective authorization no longer compile.
+- **Fixed: `expose_oban_jobs` and `expose_routes` exposed anonymous mutating
+  tools by default.** Oban `retry_job`/`cancel_job` could delete or requeue jobs,
+  and mutating route tools could invoke controllers that change data — both
+  without any authorization unless the caller configured it. Mutating Oban tools
+  and mutating route tools now require effective authorization or an explicit
+  public opt-in, enforced at compile time.
 - **`authorize: nil` no longer bypasses server-level authorization.** A
   schema-level `authorize: nil` was previously treated as an explicit public
   opt-out, skipping the `use Ectomancer, authorize: ...` global handler and
@@ -98,6 +129,11 @@ Quick guide:
   `authorize: :none`, real `authorize` functions, per-action rules, `readonly: true`,
   and server-level global auth all bypass the raise; `authorize: nil` still
   enforces server-level global auth.
+- New tests: `expose_oban_jobs` raises without auth for `retry_job`/`cancel_job`
+  and accepts real `:authorize`, `authorize: :none`, per-action rules, and
+  server-level auth; `expose_routes` raises for mutating routes without auth and
+  accepts `:authorize`, `authorize: :none`, `methods: ["GET"]`, and server-level
+  auth.
 
 ### Issues Closed
 - #139 — [Critical] Default `expose` creates unauthenticated full CRUD endpoint (incl. destroy)
