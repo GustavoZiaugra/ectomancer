@@ -44,18 +44,28 @@ if Code.ensure_loaded?(Oban) do
 
     ## Authorization
 
-    By default, Oban tools are public (no authorization). Add a global
-    policy with `authorize:`, or use action-specific rules:
+    Mutating tools (`retry_job`, `cancel_job`) require effective authorization.
+    At compile time `expose_oban_jobs/1` raises if a mutating tool is requested
+    without an `:authorize` option (function, policy module, or action-specific
+    rules) and without an explicit public opt-out (`authorize: :none` or
+    `authorize: :public`). Authorization inherited from `use Ectomancer,
+    authorize: ...` satisfies the guard. Read-only tools (`list_oban_queues`,
+    `get_queue_depth`, `list_stuck_jobs`) are always allowed.
 
         expose_oban_jobs(authorize: fn actor, _ -> actor.role == :admin end)
 
         expose_oban_jobs authorize: [
           all: fn actor, _ -> actor.role == :admin end,
-          list_queues: :none
+          list_queues: :public
         ]
+
+        # Explicit public opt-in (all tools, including retry/cancel)
+        expose_oban_jobs(authorize: :none)
     """
 
     alias Ectomancer.ObanBridge.Queries
+
+    @mutating_oban_actions [:retry_job, :cancel_job]
 
     @doc """
     Exposes Oban job management tools.
@@ -81,12 +91,12 @@ if Code.ensure_loaded?(Oban) do
     defmacro expose_oban_jobs(opts \\ []) do
       if Code.ensure_loaded?(Oban) do
         namespace = Keyword.get(opts, :namespace)
+        global_auth_raw = Ectomancer.fetch_global_auth(__CALLER__.module)
 
         auth_config =
-          build_oban_auth_config(
-            Keyword.get(opts, :authorize),
-            Ectomancer.fetch_global_auth(__CALLER__.module)
-          )
+          build_oban_auth_config(Keyword.get(opts, :authorize), global_auth_raw)
+
+        validate_mutating_authorized!(opts[:authorize], global_auth_raw, auth_config)
 
         generate_oban_tools(namespace, auth_config)
       else
@@ -94,6 +104,35 @@ if Code.ensure_loaded?(Oban) do
         quote do
           :ok
         end
+      end
+    end
+
+    # Fail closed: retry/cancel tools require effective authorization unless the
+    # caller explicitly opts in to public mutation with `authorize: :none`.
+    defp validate_mutating_authorized!(authorize_raw, global_auth_raw, auth_config) do
+      unprotected =
+        Enum.filter(@mutating_oban_actions, fn action ->
+          is_nil(resolve_oban_handler(action, auth_config)) and
+            not Ectomancer.Authorization.explicitly_public_opt_out?(
+              authorize_raw,
+              action
+            ) and
+            not Ectomancer.Authorization.explicitly_public_opt_out?(
+              global_auth_raw,
+              action
+            )
+        end)
+
+      if unprotected != [] do
+        raise ArgumentError, """
+        `expose_oban_jobs` exposes mutating tool(s) #{inspect(unprotected)} without \
+        effective authorization. Anonymous callers could retry or delete Oban jobs.
+
+        To fix, either:
+          * add real authorization, e.g. `expose_oban_jobs(authorize: fn actor, _action -> actor.role == :admin end)`
+          * add action-specific rules, e.g. `expose_oban_jobs(authorize: [all: fn actor, _action -> actor.role == :admin end])`
+          * explicitly opt in to public mutation with `expose_oban_jobs(authorize: :none)`
+        """
       end
     end
 

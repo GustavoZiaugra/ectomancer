@@ -14,6 +14,8 @@ defmodule Ectomancer.RouteIntrospection do
     "*" => "call"
   }
 
+  @mutating_http_methods ["POST", "PUT", "PATCH", "DELETE", "*"]
+
   @doc """
   Parses a Phoenix route path and extracts parameters.
   """
@@ -211,6 +213,28 @@ defmodule Ectomancer.RouteIntrospection do
 
   @doc """
   Exposes Phoenix routes as MCP tools.
+
+  ## Authorization
+
+  Mutating routes (`POST`, `PUT`, `PATCH`, `DELETE`, and catch-all `*`) require
+  effective authorization. At compile time `expose_routes/2` raises if a mutating
+  route is exposed without an `:authorize` option and without an explicit public
+  opt-out (`authorize: :none`/`:public`). Authorization inherited from
+  `use Ectomancer, authorize: ...` satisfies the guard. Read-only (`GET`) routes
+  are always allowed; restrict exposure to them with `methods: ["GET"]`.
+
+      expose_routes MyAppWeb.Router, authorize: fn actor, _action -> actor.role == :admin end
+
+      # Explicit public opt-in (mutating routes allowed)
+      expose_routes MyAppWeb.Router, authorize: :none
+
+  ## Options
+
+    * `:only` - Only expose matching paths
+    * `:except` - Skip matching paths
+    * `:methods` - Only expose matching HTTP methods
+    * `:namespace` - Prefix tool names with a namespace
+    * `:authorize` - Authorization handler (function, policy module, or `:none`/`:public`)
   """
   defmacro expose_routes(router_module, opts \\ []) do
     router = Macro.expand(router_module, __CALLER__)
@@ -231,6 +255,13 @@ defmodule Ectomancer.RouteIntrospection do
         Ectomancer.Authorization.parse_handler_for_global(global_auth_raw)
       end
 
+    validate_mutating_authorized!(
+      filtered_routes,
+      opts[:authorize],
+      global_auth_raw,
+      auth_handler
+    )
+
     tool_definitions =
       Enum.map(filtered_routes, fn route ->
         tool_name = build_tool_name(route, namespace)
@@ -240,6 +271,33 @@ defmodule Ectomancer.RouteIntrospection do
 
     quote do
       (unquote_splicing(tool_definitions))
+    end
+  end
+
+  # Fail closed: routes that mutate (POST/PUT/PATCH/DELETE and catch-all "*")
+  # require effective authorization unless the caller explicitly opts in to
+  # public access with `authorize: :none`/`:public`.
+  defp validate_mutating_authorized!(routes, authorize_raw, global_auth_raw, auth_handler) do
+    unprotected =
+      routes
+      |> Enum.filter(fn {method, _path, _controller, _action} ->
+        method in @mutating_http_methods and
+          auth_handler in [nil, :none, :public] and
+          not Ectomancer.Authorization.explicitly_public_opt_out?(authorize_raw, method) and
+          not Ectomancer.Authorization.explicitly_public_opt_out?(global_auth_raw, method)
+      end)
+      |> Enum.map(fn {method, path, _controller, _action} -> "HTTP #{method} #{path}" end)
+
+    if unprotected != [] do
+      raise ArgumentError, """
+      `expose_routes` exposes mutating route(s) without effective authorization: \
+      #{Enum.join(unprotected, ", ")}. Anonymous callers could invoke them and change data.
+
+      To fix, either:
+        * add real authorization, e.g. `expose_routes MyAppWeb.Router, authorize: fn actor, _action -> actor.role == :admin end`
+        * restrict to read-only routes with `methods: ["GET"]`
+        * explicitly opt in to public mutation with `expose_routes MyAppWeb.Router, authorize: :none`
+      """
     end
   end
 

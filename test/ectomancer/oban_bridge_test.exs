@@ -175,12 +175,12 @@ defmodule Ectomancer.ObanBridgeTest do
   describe "macro-generated tools" do
     defmodule ObanMCP do
       use Ectomancer, name: "oban-test", version: "1.0.0"
-      expose_oban_jobs()
+      expose_oban_jobs(authorize: :none)
     end
 
     defmodule NamespacedObanMCP do
       use Ectomancer, name: "oban-ns-test", version: "1.0.0"
-      expose_oban_jobs(namespace: :background)
+      expose_oban_jobs(namespace: :background, authorize: :none)
     end
 
     test "generates list_oban_queues tool" do
@@ -555,6 +555,7 @@ defmodule Ectomancer.ObanBridgeTest do
         expose_oban_jobs(
           authorize: [
             list_queues: :public,
+            retry_job: fn actor, _action -> actor.role == :admin end,
             cancel_job: fn actor, _action -> actor.role == :admin end
           ]
         )
@@ -649,6 +650,65 @@ defmodule Ectomancer.ObanBridgeTest do
       # credo:disable-for-next-line
       result_admin = apply(cancel_mod, :execute, [%{}, frame_admin])
       refute match?({:error, %{code: -32_001}, _}, result_admin)
+    end
+  end
+
+  describe "fail-closed authorization for mutating oban tools" do
+    test "raises at compile time when expose_oban_jobs has no authorization" do
+      assert_raise ArgumentError, ~r/without effective authorization/, fn ->
+        Code.eval_string("""
+        defmodule NoAuthObanMCP do
+          use Ectomancer, name: "no-auth-oban-mcp", version: "1.0.0"
+          expose_oban_jobs()
+        end
+        """)
+      end
+    end
+
+    test "real authorize function bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AuthorizedObanMCP do
+               use Ectomancer, name: "auth-oban-mcp", version: "1.0.0"
+               expose_oban_jobs(authorize: fn actor, _action -> actor.role == :admin end)
+             end
+             """)
+    end
+
+    test "explicit authorize: :none bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule NoneObanPublicMCP do
+               use Ectomancer, name: "none-oban-public-mcp", version: "1.0.0"
+               expose_oban_jobs(authorize: :none)
+             end
+             """)
+    end
+
+    test "server-level global auth bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule GlobalObanAuthMCP do
+               use Ectomancer,
+                 name: "global-oban-auth-mcp",
+                 version: "1.0.0",
+                 authorize: fn actor, _action -> actor.role == :admin end
+
+               expose_oban_jobs()
+             end
+             """)
+    end
+
+    test "per-action authorize covering the mutating tools bypasses the raise" do
+      assert Code.eval_string("""
+             defmodule PerActionCoveredObanMCP do
+               use Ectomancer, name: "per-action-covered-oban-mcp", version: "1.0.0"
+
+               expose_oban_jobs(
+                 authorize: [
+                   retry_job: fn actor, _action -> actor.role == :admin end,
+                   cancel_job: fn actor, _action -> actor.role == :admin end
+                 ]
+               )
+             end
+             """)
     end
   end
 end

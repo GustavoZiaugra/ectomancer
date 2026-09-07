@@ -403,7 +403,7 @@ defmodule Ectomancer.RouteIntrospectionTest do
       defmodule CrudMCP do
         use Ectomancer
 
-        expose_routes(CrudRouter)
+        expose_routes(CrudRouter, authorize: :none)
       end
 
       assert {:module, get_users} = Code.ensure_loaded(CrudMCP.Tool.GetUsers)
@@ -678,6 +678,94 @@ defmodule Ectomancer.RouteIntrospectionTest do
       {url, _} = RouteIntrospection.build_url_with_params("/users/:id", %{})
 
       assert url == "/users/:id"
+    end
+  end
+
+  describe "fail-closed authorization for mutating route tools" do
+    test "raises at compile time when a mutating route has no authorization" do
+      assert_raise ArgumentError, ~r/mutating route/, fn ->
+        Code.eval_string("""
+        defmodule NoAuthRouteRouter do
+          def __routes__ do
+            [{"/users", {"POST", NoAuthRouteController, :create, []}}]
+          end
+        end
+
+        defmodule NoAuthRouteController do
+          def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "ok")
+        end
+
+        defmodule NoAuthRouteMCP do
+          use Ectomancer, name: "no-auth-route-mcp", version: "1.0.0"
+          expose_routes(NoAuthRouteRouter)
+        end
+        """)
+      end
+    end
+
+    test "explicit authorize: :none bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule NoneRouteRouterPublic do
+               def __routes__ do
+                 [{"/users", {"POST", NoneRouteControllerPublic, :create, []}}]
+               end
+             end
+
+             defmodule NoneRouteControllerPublic do
+               def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "ok")
+             end
+
+             defmodule NoneRouteMCPPublic do
+               use Ectomancer, name: "none-route-mcp-public", version: "1.0.0"
+               expose_routes(NoneRouteRouterPublic, authorize: :none)
+             end
+             """)
+    end
+
+    test "read-only methods filter bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule GetRouteRouter do
+               def __routes__ do
+                 [
+                   {"/users", {"GET", GetRouteController, :index, []}},
+                   {"/users", {"POST", GetRouteController, :create, []}}
+                 ]
+               end
+             end
+
+             defmodule GetRouteController do
+               def index(conn, _opts), do: Plug.Conn.send_resp(conn, 200, "ok")
+               def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "ok")
+             end
+
+             defmodule GetRouteMCP do
+               use Ectomancer, name: "get-route-mcp", version: "1.0.0"
+               expose_routes(GetRouteRouter, methods: ["GET"])
+             end
+             """)
+    end
+
+    test "real authorize function bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AuthRouteRouter do
+               def __routes__ do
+                 [{"/users", {"POST", AuthRouteController, :create, []}}]
+               end
+             end
+
+             defmodule AuthRouteController do
+               def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "ok")
+             end
+
+             defmodule AuthRouteMCP do
+               use Ectomancer,
+                 name: "auth-route-mcp",
+                 version: "1.0.0",
+                 authorize: fn actor, _action -> actor.role == :admin end
+
+               expose_routes(AuthRouteRouter)
+             end
+             """)
     end
   end
 end
