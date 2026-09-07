@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CI matrix and local toolchain updated to Elixir 1.20.4** (OTP 29). The lint job previously pinned `1.20.0`; it now exercises the current `1.20.x` patch release. Verified locally on Elixir 1.20.4 / OTP 29: `mix test` (873 passed), `mix compile --warnings-as-errors`, `mix format --check-formatted`, and `mix credo --strict` all clean.
+
 ### Security
 
 - **Raised the minimum `plug` constraint to `>= 1.19.2`** (was `~> 1.16`, now `>= 1.19.2 and < 2.0.0`). The old floor allowed downstream apps to resolve `plug` 1.16.0–1.19.1, which are vulnerable to an unbounded multipart header buffer accumulation DoS (CVE-2026-8468, GHSA-468c-vq7p-gh64). Fixed in `plug` 1.19.2.
