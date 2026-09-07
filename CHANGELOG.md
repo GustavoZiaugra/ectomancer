@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-07
+
 > **Read this if you're upgrading.** `expose` now fails closed on authorization.
 > The default `:actions` is read-only (`[:list, :get]`), and any mutating action
 > without effective authorization is a **compile-time error**. Previously
@@ -610,7 +612,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.1...v2.0.0
 [1.7.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.5.0...v1.6.0
