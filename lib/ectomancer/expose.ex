@@ -13,7 +13,8 @@ if Code.ensure_loaded?(Ecto) do
 
           expose MyApp.Accounts.User,
             actions: [:list, :get, :create, :update],
-            only: [:id, :email, :name, :role]
+            only: [:id, :email, :name, :role],
+            authorize: fn actor, _action -> actor.role == :admin end
 
           expose MyApp.Blog.Post,
             actions: [:list, :get],
@@ -101,6 +102,12 @@ if Code.ensure_loaded?(Ecto) do
 
     ## Authorization
 
+    Mutating actions (`:create`, `:update`, `:destroy`, `:restore`, `:upsert`, and the
+    batch variants) require effective authorization. At compile time `expose/2` raises
+    if a mutating action is requested without an `:authorize` option (function, policy
+    module, or per-action rules) and without an explicit `authorize: :none` opt-in.
+    The default `:actions` are read-only (`[:list, :get]`).
+
     You can add authorization to exposed schemas using the `:authorize` option:
 
         # Global authorization for all actions
@@ -158,7 +165,8 @@ if Code.ensure_loaded?(Ecto) do
         * `:only` - Whitelist fields
         * `:except` - Blacklist fields
         * `:filterable` - Fields that allow advanced filter operators (default: all exposed fields)
-        * `:readonly` - Disable mutation operations (`:create`, `:update`, `:destroy`)
+        * `:readonly` - Disable mutation operations (`:create`, `:update`, `:destroy`,
+          `:restore`, and the batch variants)
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
         * `:soft_delete` - Enable soft-delete awareness (auto-detects `:deleted_at`/`:archived_at` fields)
@@ -169,7 +177,7 @@ if Code.ensure_loaded?(Ecto) do
      ## Examples
 
          expose MyApp.Accounts.User
-         # Generates: list_users, get_user, create_user, update_user, destroy_user
+         # Generates: list_users, get_user (default actions are read-only)
 
          expose MyApp.Accounts.User, actions: [:list, :get]
          # Generates: list_users, get_user
@@ -232,12 +240,11 @@ if Code.ensure_loaded?(Ecto) do
     defp build_expose_config(schema, opts, global_auth_raw) do
       introspection = SchemaIntrospection.analyze(schema)
 
-      auth_explicitly_configured = Keyword.has_key?(opts, :authorize)
       auth_config = Authorization.parse_authorization_config(Keyword.get(opts, :authorize))
       parent_authorization = Authorization.parse_authorization_config(global_auth_raw)
       readonly = Keyword.get(opts, :readonly, false)
 
-      base_actions = Keyword.get(opts, :actions, [:list, :get, :create, :update, :destroy])
+      base_actions = Keyword.get(opts, :actions, [:list, :get])
 
       if :upsert in base_actions and not Keyword.has_key?(opts, :conflict_target) do
         raise ArgumentError,
@@ -245,11 +252,25 @@ if Code.ensure_loaded?(Ecto) do
                 "Example: expose #{inspect(schema)}, actions: [:upsert], conflict_target: :email"
       end
 
-      actions = filter_actions_for_readonly(base_actions, readonly)
       soft_delete = resolve_soft_delete(schema, opts)
 
       # Auto-add restore for soft-delete enabled schemas
-      actions = if soft_delete, do: actions ++ [:restore], else: actions
+      actions = if soft_delete, do: base_actions ++ [:restore], else: base_actions
+
+      # Readonly strips every mutating action — applied after restore auto-add
+      # so that `readonly: true, soft_delete: true` never emits a restore tool.
+      actions = filter_actions_for_readonly(actions, readonly)
+
+      # Fail closed: mutating actions require effective authorization unless the
+      # caller explicitly opts in to public access with `authorize: :none`.
+      validate_mutating_actions_authorized!(
+        schema,
+        actions,
+        auth_config,
+        parent_authorization,
+        Keyword.get(opts, :authorize),
+        global_auth_raw
+      )
 
       exposed_fields = filter_fields(introspection, opts)
       filterable_fields = filter_filterable_fields(exposed_fields, opts)
@@ -267,7 +288,7 @@ if Code.ensure_loaded?(Ecto) do
         introspection: introspection,
         authorization: auth_config,
         parent_authorization: parent_authorization,
-        auth_explicitly_configured: auth_explicitly_configured,
+        explicit_authorize: Keyword.get(opts, :authorize),
         readonly: readonly,
         preload: Keyword.get(opts, :preload, []),
         soft_delete: soft_delete,
@@ -326,6 +347,96 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp filter_actions_for_readonly(actions, _), do: actions
+
+    # Mutating actions are derived from @action_configs so that adding a new
+    # action to the data-driven table automatically gets fail-closed checks.
+    @mutating_actions Map.keys(@action_configs) -- [:list, :get]
+
+    # Raises at compile time when a mutating action is exposed without effective
+    # authorization and without an explicit public opt-out (`authorize: :none`
+    # or `authorize: :public`, at the server, schema, or per-action level).
+    # Without this guard the default posture is anonymous full CRUD.
+    defp validate_mutating_actions_authorized!(
+           schema,
+           actions,
+           auth_config,
+           parent_auth,
+           raw_auth,
+           global_auth_raw
+         ) do
+      unprotected_mutating =
+        Enum.filter(actions, fn action ->
+          action in @mutating_actions and
+            is_nil(effective_authorization_handler(auth_config, parent_auth, action)) and
+            not explicitly_public?(
+              auth_config,
+              parent_auth,
+              raw_auth,
+              global_auth_raw,
+              action
+            )
+        end)
+
+      if unprotected_mutating != [] do
+        raise ArgumentError, """
+        `expose #{inspect(schema)}` exposes mutating action(s) #{inspect(unprotected_mutating)} \
+        without effective authorization. Unauthenticated callers could create, update, or delete data.
+
+        To fix, either:
+          * keep only read-only actions (the default is `actions: [:list, :get]`)
+          * add real authorization, e.g. `authorize: fn actor, _action -> actor.role == :admin end`
+          * explicitly opt in to public mutation with `authorize: :none`
+
+        Example: expose #{inspect(schema)}, actions: #{inspect(actions)}, authorize: :none
+        """
+      end
+    end
+
+    defp explicitly_public?(auth_config, parent_auth, raw_auth, global_auth_raw, action) do
+      public_opt?(raw_auth) or
+        public_opt?(global_auth_raw) or
+        per_action_public?(auth_config, action) or
+        per_action_public?(parent_auth, action)
+    end
+
+    # An explicit public opt-out: `:none`/`:public` directly, or a keyword
+    # list whose `:all`/`:global` key is `:none`/`:public` (e.g.
+    # `authorize: [all: :none]`).
+    defp public_opt?(value) when value in [:none, :public], do: true
+
+    defp public_opt?(list) when is_list(list) do
+      Keyword.get(list, :all) in [:none, :public] or
+        Keyword.get(list, :global) in [:none, :public]
+    end
+
+    defp public_opt?(_), do: false
+
+    defp per_action_public?(nil, _action), do: false
+
+    defp per_action_public?(%{actions: actions}, action) do
+      Map.get(actions, action) in [:none, :public]
+    end
+
+    defp effective_authorization_handler(auth_config, parent_auth, action) do
+      case effective_handler(auth_config, action) do
+        nil -> effective_handler(parent_auth, action)
+        handler -> handler
+      end
+    end
+
+    defp effective_handler(nil, _action), do: nil
+
+    defp effective_handler(%{global: global, actions: actions}, action) do
+      case Map.get(actions, action) do
+        :none -> nil
+        :public -> nil
+        nil -> normalize_effective(global)
+        handler -> handler
+      end
+    end
+
+    defp normalize_effective(handler) when handler in [nil, :none, :public], do: nil
+    defp normalize_effective(handler), do: handler
 
     @doc false
     def parse_auth_config(nil), do: nil
@@ -543,8 +654,8 @@ if Code.ensure_loaded?(Ecto) do
     defp generate_authorization_block(action, config) do
       per_auth = config.authorization
       parent_auth = config.parent_authorization
-      per_explicit? = config.auth_explicitly_configured
-      do_generate_authorization_block(per_auth, parent_auth, action, per_explicit?)
+      explicit_authorize = config.explicit_authorize
+      do_generate_authorization_block(per_auth, parent_auth, action, explicit_authorize)
     end
 
     defp get_effective_handler(nil, _action), do: nil
@@ -561,7 +672,7 @@ if Code.ensure_loaded?(Ecto) do
 
     defp get_effective_handler(%{global: global}, _action), do: global
 
-    defp do_generate_authorization_block(auth_config, parent_auth, action, per_explicit?) do
+    defp do_generate_authorization_block(auth_config, parent_auth, action, explicit_authorize) do
       per_handler = get_effective_handler(auth_config, action)
       global_handler = get_effective_handler(parent_auth, action)
 
@@ -570,8 +681,13 @@ if Code.ensure_loaded?(Ecto) do
         is_nil(per_handler) and is_nil(global_handler) ->
           quote(do: authorize(:none))
 
-        # Explicit opt-out via authorize: :none → public, skipping global
-        is_nil(per_handler) and is_nil(auth_config) and per_explicit? ->
+        # Explicit public opt-out at schema level (`authorize: :none/:public`
+        # or `authorize: [all: :none]`) → public, skipping global. Only the
+        # raw option value counts: an explicit `authorize: nil` must NOT
+        # opt out — it falls through to the global handler below. Per-action
+        # `:none`/`:public` does NOT skip global: cascade applies (all levels
+        # must pass).
+        is_nil(per_handler) and public_opt?(explicit_authorize) ->
           quote(do: authorize(:none))
 
         # No per-schema handler → use global

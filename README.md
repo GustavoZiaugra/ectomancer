@@ -15,6 +15,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Schema → MCP tools** — auto-generates CRUD tools from `expose MyApp.Accounts.User`
 - **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
 - **Authorization system** — inline functions, policy modules, or action-specific rules
+- **Fail-closed by default** — `expose` only enables read-only `list`/`get`; mutating actions require an `:authorize` option or an explicit `authorize: :none` opt-in, enforced at compile time (#139)
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
 - **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
@@ -60,7 +61,7 @@ Add `ectomancer` to your dependencies:
 ```elixir
 def deps do
   [
-    {:ectomancer, "~> 1.7"}
+    {:ectomancer, "~> 2.0"}
   ]
 end
 ```
@@ -275,6 +276,14 @@ and mount each in the router as shown above.
 
 ## Authorization
 
+> **Fail-closed by default.** `expose` only generates read-only tools (`list`/`get`).
+> Any mutating action (`create`, `update`, `destroy`, `restore`, `upsert`, and the
+> batch variants) requires effective authorization: pass an `:authorize` option
+> (function, policy module, or per-action rules) at the server or schema level, or
+> explicitly opt in to public mutation with `authorize: :none`. If you expose a
+> mutating action without either, compilation fails with a clear error — the old
+> behavior silently produced an unauthenticated full-CRUD endpoint.
+
 Three strategies, choose what fits:
 
 | Style | Example | Use case |
@@ -413,6 +422,7 @@ returns a scoped query:
 ```elixir
 expose MyApp.Accounts.Workspace,
   actions: [:list, :get, :create, :update, :destroy],
+  authorize: :none, # or a real authorization handler; required for mutating actions
   scope: fn query, actor ->
     import Ecto.Query
     from(w in query, where: w.distribution_id == ^actor.distribution_id)
@@ -441,6 +451,7 @@ Perform multi-record mutations in a single transactional call:
 ```elixir
 expose MyApp.Accounts.User,
   actions: [:list, :get, :batch_create, :batch_update, :batch_destroy],
+  authorize: :none, # or a real authorization handler; required for mutating actions
   batch_size: 200
 ```
 
@@ -471,6 +482,7 @@ Insert a new record or update an existing one in a single call based on a confli
 ```elixir
 expose MyApp.Products.Product,
   actions: [:upsert],
+  authorize: :none, # or a real authorization handler; required for mutating actions
   conflict_target: :sku,
   on_conflict: :replace_all
 ```
@@ -494,6 +506,7 @@ Generated tool `upsert_product` accepts all writable fields. If a record matchin
 ```elixir
 expose MyApp.Inventory.Item,
   actions: [:upsert],
+  authorize: :none, # or a real authorization handler; required for mutating actions
   conflict_target: [:org_id, :sku]
 ```
 
@@ -502,6 +515,7 @@ expose MyApp.Inventory.Item,
 ```elixir
 expose MyApp.Accounts.User,
   actions: [:upsert],
+  authorize: :none, # or a real authorization handler; required for mutating actions
   conflict_target: :email,
   on_conflict: [set: [:name, :avatar_url]]
 ```
@@ -569,7 +583,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **1.7.1**
+Current version: **2.0.0**
 
 ## License
 

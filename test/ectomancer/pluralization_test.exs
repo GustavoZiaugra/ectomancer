@@ -112,7 +112,7 @@ defmodule Ectomancer.PluralizationTest do
     use Ectomancer, name: "list-plural-mcp", version: "1.0.0"
 
     expose(Status, actions: [:list])
-    expose(Study, actions: [:list, :get, :batch_create])
+    expose(Study, actions: [:list, :get, :batch_create], authorize: :none)
     expose(News, actions: [:list])
     expose(Users, actions: [:list])
   end

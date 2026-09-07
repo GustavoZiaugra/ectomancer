@@ -337,7 +337,8 @@ defmodule Ectomancer.BatchOperationsTest do
 
       expose(Post,
         actions: [:list, :batch_create],
-        field_authorize: fn _actor, field -> field != :body end
+        field_authorize: fn _actor, field -> field != :body end,
+        authorize: :none
       )
     end
 

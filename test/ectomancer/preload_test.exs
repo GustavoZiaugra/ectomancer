@@ -134,7 +134,8 @@ defmodule Ectomancer.PreloadTest do
 
       expose(Ectomancer.PreloadTest.Post,
         actions: [:create],
-        preloadable: true
+        preloadable: true,
+        authorize: :none
       )
     end
 

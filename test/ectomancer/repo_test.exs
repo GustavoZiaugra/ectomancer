@@ -515,7 +515,7 @@ defmodule Ectomancer.RepoTest do
     defmodule TestMCP do
       use Ectomancer, name: "test-repo-mcp", version: "1.0.0"
 
-      expose(TestUser, actions: [:list, :get, :create])
+      expose(TestUser, actions: [:list, :get, :create], authorize: :none)
     end
 
     alias __MODULE__.TestMCP, as: TestMCP

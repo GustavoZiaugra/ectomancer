@@ -42,7 +42,7 @@ defmodule Ectomancer.BatchOutputIncludeTest do
   defmodule ItemMCP do
     use Ectomancer, name: "batch-output-mcp", version: "1.0.0"
 
-    expose(Item, actions: [:list, :get, :create, :batch_create])
+    expose(Item, actions: [:list, :get, :create, :batch_create], authorize: :none)
   end
 
   defmodule IncludeMCP do

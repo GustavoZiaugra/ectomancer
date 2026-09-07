@@ -21,7 +21,7 @@ defmodule Ectomancer.ExposeTest do
   defmodule TestMCP do
     use Ectomancer, name: "test-mcp", version: "1.0.0"
 
-    expose(TestUserSchema, actions: [:list, :get, :create])
+    expose(TestUserSchema, actions: [:list, :get, :create], authorize: :none)
   end
 
   describe "expose/2 macro" do
@@ -179,7 +179,7 @@ defmodule Ectomancer.ExposeTest do
     test "soft_delete with custom field generates valid tools" do
       defmodule SoftDeleteFieldMCP do
         use Ectomancer, name: "sdfield-mcp", version: "1.0.0"
-        expose(TestUserSchema, actions: [:list], soft_delete: :deleted_at)
+        expose(TestUserSchema, actions: [:list], soft_delete: :deleted_at, authorize: :none)
       end
 
       assert Code.ensure_loaded?(SoftDeleteFieldMCP.Tool.ListTestUserSchemas)
@@ -197,7 +197,7 @@ defmodule Ectomancer.ExposeTest do
     test "expose with :except filters out fields" do
       defmodule ExceptMCP do
         use Ectomancer, name: "exc-mcp", version: "1.0.0"
-        expose(TestUserSchema, actions: [:create], except: [:password_hash])
+        expose(TestUserSchema, actions: [:create], except: [:password_hash], authorize: :none)
       end
 
       assert Code.ensure_loaded?(ExceptMCP.Tool.CreateTestUserSchema)
@@ -210,7 +210,8 @@ defmodule Ectomancer.ExposeTest do
 
       expose(TestUserSchema,
         actions: [:upsert],
-        conflict_target: :email
+        conflict_target: :email,
+        authorize: :none
       )
     end
 
@@ -272,12 +273,250 @@ defmodule Ectomancer.ExposeTest do
     end
   end
 
+  describe "default actions (fail-closed default)" do
+    defmodule DefaultActionsMCP do
+      use Ectomancer, name: "default-actions-mcp", version: "1.0.0"
+
+      expose(TestUserSchema)
+    end
+
+    test "generates list and get tools by default" do
+      assert Code.ensure_loaded?(DefaultActionsMCP.Tool.ListTestUserSchemas)
+      assert Code.ensure_loaded?(DefaultActionsMCP.Tool.GetTestUserSchema)
+    end
+
+    test "does not generate mutating tools by default" do
+      refute Code.ensure_loaded?(DefaultActionsMCP.Tool.CreateTestUserSchema)
+      refute Code.ensure_loaded?(DefaultActionsMCP.Tool.UpdateTestUserSchema)
+      refute Code.ensure_loaded?(DefaultActionsMCP.Tool.DestroyTestUserSchema)
+      refute Code.ensure_loaded?(DefaultActionsMCP.Tool.BatchCreateTestUserSchemas)
+    end
+  end
+
+  describe "fail-closed authorization for mutating actions" do
+    test "raises at compile time when a mutating action has no authorization" do
+      assert_raise ArgumentError, ~r/without effective authorization/, fn ->
+        Code.eval_string("""
+        defmodule NoAuthCreateMCP do
+          use Ectomancer, name: "no-auth-create-mcp", version: "1.0.0"
+          expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:create])
+        end
+        """)
+      end
+    end
+
+    test "raises at compile time for batch mutating actions without authorization" do
+      assert_raise ArgumentError, ~r/without effective authorization/, fn ->
+        Code.eval_string("""
+        defmodule NoAuthBatchMCP do
+          use Ectomancer, name: "no-auth-batch-mcp", version: "1.0.0"
+          expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:batch_destroy])
+        end
+        """)
+      end
+    end
+
+    test "raises at compile time when soft_delete auto-adds restore without authorization" do
+      assert_raise ArgumentError, ~r/without effective authorization/, fn ->
+        Code.eval_string("""
+        defmodule NoAuthRestoreMCP do
+          use Ectomancer, name: "no-auth-restore-mcp", version: "1.0.0"
+          expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:list], soft_delete: :deleted_at)
+        end
+        """)
+      end
+    end
+
+    test "explicit authorize: :none bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule ExplicitNoneCreateMCP do
+               use Ectomancer, name: "explicit-none-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:create], authorize: :none)
+             end
+             """)
+    end
+
+    test "real authorize option bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AuthorizedCreateMCP do
+               use Ectomancer, name: "auth-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:create],
+                 authorize: fn actor, _action -> actor.role == :admin end
+               )
+             end
+             """)
+    end
+
+    test "per-action authorize covering the mutating action bypasses the raise" do
+      assert Code.eval_string("""
+             defmodule PerActionCreateMCP do
+               use Ectomancer, name: "per-action-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:list, :get, :create],
+                 authorize: [
+                   list: :public,
+                   get: :public,
+                   create: fn actor, _action -> actor.role == :admin end
+                 ]
+               )
+             end
+             """)
+    end
+
+    test "explicit per-action :none for the mutating action bypasses the raise" do
+      assert Code.eval_string("""
+             defmodule PerActionNoneCreateMCP do
+               use Ectomancer, name: "per-action-none-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:list, :create],
+                 authorize: [list: :none, create: :none]
+               )
+             end
+             """)
+    end
+
+    test "read-only actions never trigger the raise" do
+      assert Code.eval_string("""
+             defmodule ReadOnlyNoAuthMCP do
+               use Ectomancer, name: "ro-no-auth-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:list, :get])
+             end
+             """)
+    end
+
+    test "readonly: true removes mutating actions and never triggers the raise" do
+      assert Code.eval_string("""
+             defmodule ReadonlyNoAuthMCP do
+               use Ectomancer, name: "ro-no-auth-readonly-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:create, :update, :destroy],
+                 readonly: true
+               )
+             end
+             """)
+    end
+
+    test "global auth from use Ectomancer bypasses the raise" do
+      assert Code.eval_string("""
+             defmodule GlobalAuthCreateMCP do
+               use Ectomancer,
+                 name: "global-auth-create-mcp",
+                 version: "1.0.0",
+                 authorize: fn actor, _action -> actor.role == :admin end
+
+               expose(Ectomancer.ExposeTest.TestUserSchema, actions: [:create])
+             end
+             """)
+    end
+
+    test "authorize: [all: :none] bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AllNoneCreateMCP do
+               use Ectomancer, name: "all-none-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:list, :create],
+                 authorize: [all: :none]
+               )
+             end
+             """)
+    end
+
+    test "authorize: [all: fn] bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AllFnCreateMCP do
+               use Ectomancer, name: "all-fn-create-mcp", version: "1.0.0"
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:create],
+                 authorize: [all: fn actor, _action -> actor != nil end]
+               )
+             end
+             """)
+    end
+
+    test "explicit authorize: nil does not bypass server-level global auth" do
+      assert Code.eval_string("""
+             defmodule NilAuthGlobalMCP do
+               use Ectomancer,
+                 name: "nil-auth-global-mcp",
+                 version: "1.0.0",
+                 authorize: fn actor, _action -> actor != nil end
+
+               expose(Ectomancer.ExposeTest.TestUserSchema,
+                 actions: [:create],
+                 authorize: nil
+               )
+             end
+             """)
+    end
+
+    test "readonly: true with soft_delete does not raise and excludes restore" do
+      defmodule ReadonlySoftDeleteMCP do
+        use Ectomancer, name: "readonly-soft-delete-mcp", version: "1.0.0"
+
+        expose(TestUserSchema, readonly: true, soft_delete: :deleted_at)
+      end
+
+      tools = ReadonlySoftDeleteMCP.__components__(:tool)
+      tool_names = Enum.map(tools, & &1.name)
+
+      assert "list_test_user_schemas" in tool_names
+      refute "restore_test_user_schema" in tool_names
+    end
+  end
+
+  describe "runtime authorization resolution with server-level global auth" do
+    defmodule GlobalDenyMCP do
+      use Ectomancer,
+        name: "global-deny-mcp",
+        version: "1.0.0",
+        authorize: fn actor, _action -> actor != nil end
+
+      expose(TestUserSchema, actions: [:create], authorize: nil)
+      expose(TestUserSchema, actions: [:update], authorize: :none, as: :public_user)
+
+      expose(TestUserSchema,
+        actions: [:destroy],
+        authorize: [destroy: :none],
+        as: :per_action_user
+      )
+    end
+
+    alias GlobalDenyMCP.Tool.CreateTestUserSchema
+    alias GlobalDenyMCP.Tool.DestroyPerActionUser
+    alias GlobalDenyMCP.Tool.UpdatePublicUser
+
+    test "explicit authorize: nil still enforces the server-level global handler" do
+      frame = %{assigns: %{ectomancer_actor: nil}}
+
+      assert {:error, %Anubis.MCP.Error{code: -32_001}, _} =
+               CreateTestUserSchema.execute(%{}, frame)
+    end
+
+    test "authorize: :none skips the server-level global handler" do
+      frame = %{assigns: %{ectomancer_actor: nil}}
+
+      assert {:error, %Anubis.MCP.Error{code: code}, _} =
+               UpdatePublicUser.execute(%{}, frame)
+
+      refute code == -32_001
+    end
+
+    test "per-action :none still enforces the server-level global handler" do
+      frame = %{assigns: %{ectomancer_actor: nil}}
+
+      assert {:error, %Anubis.MCP.Error{code: -32_001}, _} =
+               DestroyPerActionUser.execute(%{}, frame)
+    end
+  end
+
   describe "batch operations" do
     defmodule BatchMCP do
       use Ectomancer, name: "batch-mcp", version: "1.0.0"
 
       expose(TestUserSchema,
-        actions: [:batch_create, :batch_update, :batch_destroy]
+        actions: [:batch_create, :batch_update, :batch_destroy],
+        authorize: :none
       )
     end
 
@@ -330,7 +569,7 @@ defmodule Ectomancer.ExposeTest do
     test "batch_destroy tool is not generated when not in actions" do
       defmodule NoBatchDestroyMCP do
         use Ectomancer, name: "no-bd-mcp", version: "1.0.0"
-        expose(TestUserSchema, actions: [:batch_create])
+        expose(TestUserSchema, actions: [:batch_create], authorize: :none)
       end
 
       assert Code.ensure_loaded?(NoBatchDestroyMCP.Tool.BatchCreateTestUserSchemas)
@@ -358,7 +597,7 @@ defmodule Ectomancer.ExposeTest do
     test "batch_size option is accepted" do
       defmodule BatchSizeMCP do
         use Ectomancer, name: "batch-size-mcp", version: "1.0.0"
-        expose(TestUserSchema, actions: [:batch_create], batch_size: 50)
+        expose(TestUserSchema, actions: [:batch_create], batch_size: 50, authorize: :none)
       end
 
       assert Code.ensure_loaded?(BatchSizeMCP.Tool.BatchCreateTestUserSchemas)
@@ -387,7 +626,8 @@ defmodule Ectomancer.ExposeTest do
       use Ectomancer, name: "composite-key-mcp", version: "1.0.0"
 
       expose(CompositeKeyUser,
-        actions: [:get, :update, :destroy, :list, :restore]
+        actions: [:get, :update, :destroy, :list, :restore],
+        authorize: :none
       )
     end
 
