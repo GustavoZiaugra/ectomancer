@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-07
+
 ### Changed
 - **CI matrix and local toolchain updated to Elixir 1.20.4** (OTP 29). The lint job previously pinned `1.20.0`; it now exercises the current `1.20.x` patch release. Verified locally on Elixir 1.20.4 / OTP 29: `mix test` (873 passed), `mix compile --warnings-as-errors`, `mix format --check-formatted`, and `mix credo --strict` all clean.
 
@@ -461,7 +463,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.4.0...v1.5.0
