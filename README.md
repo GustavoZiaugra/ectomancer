@@ -342,6 +342,18 @@ expose_oban_jobs authorize: [
 ]
 ```
 
+> Unlike `expose`, an Oban per-action `:none`/`:public` rule **overrides** a
+> server-level policy rather than cascading to it. The macro always emits all five
+> tools, so to keep reads public while locking down mutations, deny the mutating
+> tools explicitly:
+>
+> ```elixir
+> expose_oban_jobs authorize: [
+>   retry_job: fn _actor, _action -> false end,
+>   cancel_job: fn _actor, _action -> false end
+> ]
+> ```
+
 Read-only tools (`list_oban_queues`, `get_queue_depth`, `list_stuck_jobs`) are
 always allowed. `retry_job`/`cancel_job` are mutating and require authorization
 — or an explicit opt-in:
