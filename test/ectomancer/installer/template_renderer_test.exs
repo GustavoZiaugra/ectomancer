@@ -22,6 +22,29 @@ defmodule Ectomancer.Installer.TemplateRendererTest do
       assert String.contains?(content, "MyApp.Accounts.User")
     end
 
+    test "generates read-only expose for schemas with writable fields" do
+      schemas = [
+        %{
+          module: MyApp.Accounts.User,
+          table: "users",
+          context: "Accounts",
+          associations: [:posts],
+          writable_fields: [:email, :name]
+        }
+      ]
+
+      content = TemplateRenderer.generate_mcp_module_content(schemas, "test-mcp", "1.0.0")
+
+      expose_line =
+        content
+        |> String.split("\n")
+        |> Enum.find(&String.contains?(&1, "actions:"))
+
+      assert expose_line =~ "actions: [:list, :get]"
+      refute expose_line =~ ":create"
+      refute expose_line =~ ":destroy"
+    end
+
     test "generates multiple expose annotations" do
       schemas = [
         %{
