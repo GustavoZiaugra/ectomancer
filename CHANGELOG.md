@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Installers generate read-only `expose` by default.** `mix ectomancer.setup`
+  and `mix igniter.install ectomancer` no longer emit `[:list, :get, :create,
+  :update, :destroy]` for schemas with writable fields. Generated modules expose
+  only `[:list, :get]`, so they keep compiling as `expose` moves to a fail-closed
+  authorization default; add an `:authorize` option to enable mutating actions.
+
 ## [1.7.1] - 2026-09-07
 
 ### Changed

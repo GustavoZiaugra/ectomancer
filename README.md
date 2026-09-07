@@ -77,7 +77,7 @@ This automatically:
 1. Adds the `ectomancer` dependency
 2. Checks for required dependencies (Ecto, Plug)
 3. Discovers Ecto schemas in your project and prompts you to select which to expose
-4. Generates an MCP module (`lib/my_app/mcp.ex`) with the selected schemas
+4. Generates an MCP module (`lib/my_app/mcp.ex`) exposing the selected schemas read-only (`list`/`get` tools); add an `:authorize` option to the generated `expose` calls to enable mutating actions
 5. Configures Ectomancer in `config/config.exs`
 6. Adds the MCP route to your Phoenix router
 7. Adds the Anubis supervisor to your application supervision tree

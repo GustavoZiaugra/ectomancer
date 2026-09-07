@@ -146,11 +146,5 @@ defmodule Ectomancer.Installer.TemplateRenderer do
     "  expose #{inspect(schema.module)},\n    actions: #{actions}#{namespace_opt}"
   end
 
-  defp determine_actions(schema) do
-    if Enum.any?(schema.writable_fields) do
-      "[:list, :get, :create, :update, :destroy]"
-    else
-      "[:list, :get]"
-    end
-  end
+  defp determine_actions(_schema), do: "[:list, :get]"
 end
