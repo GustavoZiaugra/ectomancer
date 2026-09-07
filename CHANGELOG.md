@@ -14,6 +14,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > (including `destroy`), which an anonymous caller could exploit to create and
 > hard-delete rows (#139). This is a breaking change — version bumped to 2.0.0.
 
+### Upgrading to 2.0.0
+
+**1. Bump the dependency**
+
+```elixir
+{:ectomancer, "~> 2.0"}
+```
+
+**2. Compile.** The fail-closed guard turns the old silent vulnerability into a
+compile-time error, so `mix compile` now tells you exactly which `expose` needs
+attention. Match your setup against the cases below:
+
+- **Bare `expose Foo` (no options).** Previously this generated anonymous full
+  CRUD. It now generates only the read-only `list_foos` / `get_foo` tools.
+  Want read-only? Nothing to do. Want writes? Say so explicitly and add
+  authorization:
+
+  ```elixir
+  expose Foo,
+    actions: [:list, :get, :create, :update, :destroy],
+    authorize: fn actor, _action -> actor.role == :admin end
+  ```
+
+- **`expose Foo, actions: [:create, ...]` with no `:authorize`.** Compilation
+  raises, listing the unprotected mutating actions. Either add a real handler
+  (function, policy module, per-action rules) at the server or schema level, or
+  explicitly opt in to public mutation:
+
+  ```elixir
+  expose Foo, actions: [:create], authorize: :none
+  ```
+
+- **Server-level auth already set.** If you already pass `authorize: ...` to
+  `use Ectomancer`, every `expose` inherits it — nothing to change.
+
+Quick guide:
+
+| Current config | What happens now | Action needed |
+|---|---|---|
+| `[:list, :get]` / `readonly: true` | unchanged | none |
+| bare `expose Foo`, read-only is fine | tools become read-only | none |
+| bare `expose Foo`, writes required | only `list`/`get` tools compile | add `actions:` + `authorize:` |
+| mutating actions with a real `:authorize` (fn, module, global) | unchanged | none |
+| mutating actions, intentionally public | **compile error** | add `authorize: :none` |
+
 ### Breaking
 - **`expose/2` defaults to read-only `[:list, :get]`** instead of
   `[:list, :get, :create, :update, :destroy]` (#139).
