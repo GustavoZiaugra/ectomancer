@@ -187,7 +187,10 @@ defmodule Ectomancer.Authorization do
   Like `parse_handler/1` but also accepts bare atoms as policy module names.
   Used for global authorization configs where `MyPolicyModule` is a valid form.
   """
-  def parse_handler_for_global(module) when is_atom(module) and module != nil, do: module
+  def parse_handler_for_global(module)
+      when is_atom(module) and module != nil and module != :none and module != :public,
+      do: module
+
   def parse_handler_for_global(handler), do: parse_handler(handler)
 
   @doc """
@@ -195,6 +198,7 @@ defmodule Ectomancer.Authorization do
   """
   def authorize_to_ast(nil), do: quote(do: authorize(:none))
   def authorize_to_ast(:none), do: quote(do: authorize(:none))
+  def authorize_to_ast(:public), do: quote(do: authorize(:none))
 
   def authorize_to_ast(module) when is_atom(module) do
     quote do
@@ -269,10 +273,16 @@ defmodule Ectomancer.Authorization do
   @doc false
   def explicitly_public_opt_out?(value, _action) when value in [:none, :public], do: true
 
-  def explicitly_public_opt_out?(rules, action) when is_list(rules) do
+  def explicitly_public_opt_out?(rules, action)
+      when is_list(rules) and is_atom(action) do
     Keyword.get(rules, :all) in [:none, :public] or
       Keyword.get(rules, :global) in [:none, :public] or
       Keyword.get(rules, action) in [:none, :public]
+  end
+
+  def explicitly_public_opt_out?(rules, _action) when is_list(rules) do
+    Keyword.get(rules, :all) in [:none, :public] or
+      Keyword.get(rules, :global) in [:none, :public]
   end
 
   def explicitly_public_opt_out?(_value, _action), do: false

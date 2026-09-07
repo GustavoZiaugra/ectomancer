@@ -767,5 +767,79 @@ defmodule Ectomancer.RouteIntrospectionTest do
              end
              """)
     end
+
+    test "pure GET-only router compiles without authorization and generates tools" do
+      {result, _binding} =
+        Code.eval_string("""
+        defmodule GetOnlyRouter do
+          def __routes__ do
+            [{"/users", {"GET", GetOnlyController, :index, []}}]
+          end
+        end
+
+        defmodule GetOnlyController do
+          def index(conn, _opts), do: Plug.Conn.send_resp(conn, 200, "ok")
+        end
+
+        defmodule GetOnlyMCP do
+          use Ectomancer, name: "get-only-mcp", version: "1.0.0"
+          expose_routes(GetOnlyRouter)
+        end
+
+        Code.ensure_loaded(GetOnlyMCP.Tool.GetUsers)
+        """)
+
+      assert {:module, _} = result
+    end
+
+    test "call-level authorize function on a mutating route bypasses the raise" do
+      {result, _binding} =
+        Code.eval_string("""
+        defmodule CallAuthRouter do
+          def __routes__ do
+            [{"/users", {"POST", CallAuthController, :create, []}}]
+          end
+        end
+
+        defmodule CallAuthController do
+          def create(conn, _opts), do: Plug.Conn.send_resp(conn, 201, "ok")
+        end
+
+        defmodule CallAuthMCP do
+          use Ectomancer, name: "call-auth-mcp", version: "1.0.0"
+
+          expose_routes(CallAuthRouter,
+            authorize: fn actor, _action -> actor.role == :admin end
+          )
+        end
+
+        Code.ensure_loaded(CallAuthMCP.Tool.PostUsers)
+        """)
+
+      assert {:module, _} = result
+    end
+
+    test "raises listing the offending route when DELETE is exposed without auth" do
+      assert_raise ArgumentError, ~r/DELETE \/users/, fn ->
+        Code.eval_string("""
+        defmodule DeleteRouteRouter do
+          def __routes__ do
+            [{"/users/:id", {"DELETE", DeleteRouteController, :destroy, []}}]
+          end
+        end
+
+        defmodule DeleteRouteController do
+          def destroy(conn, _opts), do: Plug.Conn.send_resp(conn, 204, "")
+        end
+
+        defmodule DeleteRouteMCP do
+          use Ectomancer, name: "delete-route-mcp", version: "1.0.0"
+          expose_routes(DeleteRouteRouter)
+        end
+        """)
+      end
+
+      Ectomancer.delete_global_auth(:"Elixir.DeleteRouteMCP")
+    end
   end
 end

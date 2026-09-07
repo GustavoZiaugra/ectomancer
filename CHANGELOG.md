@@ -63,6 +63,12 @@ attention. Match your setup against the cases below:
   ```
 
   Read-only Oban tools and `GET` routes are unaffected and compile as before.
+  Note: there is no read-only-only mode for the Oban bridge — it always emits all
+  five tools. To keep reads public while locking down mutations, deny the
+  mutating tools with per-action rules (`retry_job`/`cancel_job: fn _actor, _
+  -> false end`) or pass a real `:authorize`. Also note that Oban per-action
+  `:none`/`:public` rules override a server-level policy (they do not cascade,
+  unlike `expose`).
 
 Quick guide:
 
@@ -73,6 +79,10 @@ Quick guide:
 | bare `expose Foo`, writes required | only `list`/`get` tools compile | add `actions:` + `authorize:` |
 | mutating actions with a real `:authorize` (fn, module, global) | unchanged | none |
 | mutating actions, intentionally public | **compile error** | add `authorize: :none` |
+| bare `expose_oban_jobs()` (no auth) | **compile error** (`retry_job`, `cancel_job`) | add `:authorize` or `authorize: :none` |
+| `expose_oban_jobs(authorize: fn ...)` | unchanged | none |
+| `expose_routes` with mutating routes, no auth | **compile error** | add `:authorize`, `authorize: :none`, or `methods: ["GET"]` |
+| `expose_routes` with only `GET` routes | unchanged | none |
 
 ### Breaking
 - **`expose/2` defaults to read-only `[:list, :get]`** instead of
@@ -122,6 +132,10 @@ Quick guide:
 - Default `:actions` for `expose/2` narrowed to `[:list, :get]`; read-only
   configs are unaffected, mutating configs must add `:authorize` or
   `authorize: :none`.
+- **`authorize: :public` now means public for `expose_oban_jobs` and
+  `expose_routes`.** It previously resolved to a `:public` "policy module"
+  reference that denied every call at runtime. It now behaves like
+  `authorize: :none`, matching `expose` semantics.
 
 ### Testing
 - New tests: default actions are list-only; mutating action without authorization
@@ -130,10 +144,12 @@ Quick guide:
   and server-level global auth all bypass the raise; `authorize: nil` still
   enforces server-level global auth.
 - New tests: `expose_oban_jobs` raises without auth for `retry_job`/`cancel_job`
-  and accepts real `:authorize`, `authorize: :none`, per-action rules, and
-  server-level auth; `expose_routes` raises for mutating routes without auth and
-  accepts `:authorize`, `authorize: :none`, `methods: ["GET"]`, and server-level
-  auth.
+  and accepts real `:authorize`, `authorize: :none`, `authorize: :public`,
+  `[all: :none]`, per-action rules, and server-level auth; partial per-action
+  coverage raises naming the uncovered tool. `expose_routes` raises for mutating
+  routes without auth (including `DELETE`) and accepts `:authorize`,
+  `authorize: :none`, pure `GET`-only routers, `methods: ["GET"]`, and
+  server-level auth.
 
 ### Issues Closed
 - #139 — [Critical] Default `expose` creates unauthenticated full CRUD endpoint (incl. destroy)

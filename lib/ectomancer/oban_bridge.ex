@@ -9,12 +9,12 @@ if Code.ensure_loaded?(Oban) do
     ## Usage
 
         defmodule MyApp.MCP do
-          use Ectomancer
+          use Ectomancer, authorize: fn actor, _ -> actor.role == :admin end
 
-          # Expose all Oban job management tools
+          # Expose all Oban job management tools (authorized via the server-level policy)
           expose_oban_jobs
 
-          # Or with namespace prefix
+          # Or with a namespace prefix
           expose_oban_jobs(namespace: :background)
           # Generates: background_list_oban_queues, etc.
         end
@@ -77,16 +77,20 @@ if Code.ensure_loaded?(Oban) do
 
     ## Examples
 
-        expose_oban_jobs
+        expose_oban_jobs(authorize: fn actor, _ -> actor.role == :admin end)
         # Generates: list_oban_queues, get_queue_depth, list_stuck_jobs, retry_job, cancel_job
 
-        expose_oban_jobs(namespace: :jobs)
+        expose_oban_jobs(namespace: :jobs, authorize: fn actor, _ -> actor.role == :admin end)
         # Generates: jobs_list_oban_queues, jobs_get_queue_depth, etc.
 
         expose_oban_jobs authorize: [
-          all: fn actor, _ -> actor.role == :admin end,
-          list_queues: :none
+          retry_job: fn actor, _ -> actor.role == :admin end,
+          cancel_job: fn actor, _ -> actor.role == :admin end,
+          list_queues: :public
         ]
+
+        # Explicit public opt-in (all tools, including retry/cancel)
+        expose_oban_jobs(authorize: :none)
     """
     defmacro expose_oban_jobs(opts \\ []) do
       if Code.ensure_loaded?(Oban) do

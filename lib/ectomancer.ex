@@ -34,8 +34,13 @@ defmodule Ectomancer do
           end
         end
 
-        # Expose Phoenix routes as MCP tools
-        expose_routes MyAppWeb.Router
+        # Expose Phoenix routes as MCP tools (read-only GET routes)
+        expose_routes MyAppWeb.Router, methods: ["GET"]
+        # Generates: get_users, get_user, etc.
+
+        # Mutating routes (POST/PUT/PATCH/DELETE) require authorization:
+        expose_routes MyAppWeb.Router,
+          authorize: fn actor, _action -> actor.role == :admin end
         # Generates: get_users, post_users, get_user, put_user, delete_user, etc.
       end
 

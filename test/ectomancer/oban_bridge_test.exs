@@ -571,6 +571,13 @@ defmodule Ectomancer.ObanBridgeTest do
       result = apply(list_mod, :execute, [%{}, frame_user])
       refute match?({:error, %{code: -32_001}, _}, result)
 
+      # retry_job should also be restricted to admin: a non-admin should be denied
+      assert {:module, retry_mod} = Code.ensure_loaded(PerActionObanMCP.Tool.RetryJob)
+
+      # credo:disable-for-next-line
+      assert {:error, retry_error, _} = apply(retry_mod, :execute, [%{}, frame_user])
+      assert retry_error.code == -32_001
+
       # cancel_job should be restricted to admin: a non-admin should be denied
       assert {:module, cancel_mod} = Code.ensure_loaded(PerActionObanMCP.Tool.CancelJob)
 
@@ -663,6 +670,26 @@ defmodule Ectomancer.ObanBridgeTest do
         end
         """)
       end
+
+      Ectomancer.delete_global_auth(:"Elixir.NoAuthObanMCP")
+    end
+
+    test "raises listing the uncovered tool when only one mutating tool is authorized" do
+      assert_raise ArgumentError, ~r/retry_job/, fn ->
+        Code.eval_string("""
+        defmodule PartialCoverObanMCP do
+          use Ectomancer, name: "partial-cover-oban-mcp", version: "1.0.0"
+
+          expose_oban_jobs(
+            authorize: [
+              cancel_job: fn actor, _action -> actor.role == :admin end
+            ]
+          )
+        end
+        """)
+      end
+
+      Ectomancer.delete_global_auth(:"Elixir.PartialCoverObanMCP")
     end
 
     test "real authorize function bypasses the fail-closed raise" do
@@ -679,6 +706,39 @@ defmodule Ectomancer.ObanBridgeTest do
              defmodule NoneObanPublicMCP do
                use Ectomancer, name: "none-oban-public-mcp", version: "1.0.0"
                expose_oban_jobs(authorize: :none)
+             end
+             """)
+    end
+
+    test "explicit authorize: :public bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule PublicObanPublicMCP do
+               use Ectomancer, name: "public-oban-public-mcp", version: "1.0.0"
+               expose_oban_jobs(authorize: :public)
+             end
+             """)
+    end
+
+    test "authorize: [all: :none] bypasses the fail-closed raise" do
+      assert Code.eval_string("""
+             defmodule AllNoneObanMCP do
+               use Ectomancer, name: "all-none-oban-mcp", version: "1.0.0"
+               expose_oban_jobs(authorize: [all: :none])
+             end
+             """)
+    end
+
+    test "per-action :none opt-out for both mutating tools bypasses the raise" do
+      assert Code.eval_string("""
+             defmodule PerActionNoneBothObanMCP do
+               use Ectomancer, name: "per-action-none-both-oban-mcp", version: "1.0.0"
+
+               expose_oban_jobs(
+                 authorize: [
+                   retry_job: :none,
+                   cancel_job: :none
+                 ]
+               )
              end
              """)
     end
