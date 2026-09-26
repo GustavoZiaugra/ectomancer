@@ -619,7 +619,7 @@ mix test
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **2.0.0**
+Current version: **2.0.1**
 
 ## License
 
