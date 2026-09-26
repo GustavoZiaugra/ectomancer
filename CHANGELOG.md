@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raised dependency security floors so consumers cannot resolve vulnerable
+  versions:
+  - `mint` floor `>= 1.10.1` — fixes GHSA-g83f-2j6r-q6m4 (HIGH, unbounded
+    status-line/chunk-extension buffering), GHSA-7p8w-j234-7qc8 and
+    GHSA-rj5m-69wp-cxq9 (HTTP/1 chunk parsing DoS/smuggling)
+  - `phoenix` floor `>= 1.7.24` — fixes GHSA-6983-jfq8-485w (HIGH, unbounded
+    channel joins per connection) and GHSA-63mc-hw7g-86rr (presence key
+    prototype collision)
+  - `igniter` floor `~> 0.8.4` — fixes GHSA-cj7w-j579-gc42 (terminal escape
+    sequence injection in install prompt)
+
+### Changed
+
+- Updated lockfile: `mint` 1.10.1, `phoenix` 1.8.15, `igniter` 0.8.4,
+  `ecto` 3.14.2, `oban` 2.24.1, `ecto_sqlite3` 0.25.0, `ex_doc` 0.40.4,
+  `dialyxir` 1.4.8
+
 ## [2.0.0] - 2026-09-07
 
 > **Read this if you're upgrading.** `expose` now fails closed on authorization.
