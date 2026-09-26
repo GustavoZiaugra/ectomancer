@@ -77,7 +77,9 @@ defmodule Ectomancer.MixProject do
   defp deps do
     [
       # MCP Server Implementation (fork of Hermes, more actively maintained)
-      {:anubis_mcp, "~> 1.14"},
+      # 2.0 removed the deprecated HTTP+SSE transport (MCP 2024-11-05); Ectomancer
+      # dropped its :sse transport accordingly
+      {:anubis_mcp, "~> 2.0"},
 
       # JSON handling
       {:jason, "~> 1.4"},

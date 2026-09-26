@@ -120,11 +120,10 @@ defmodule Ectomancer.PlugTest do
       assert opts.anubis_opts[:server] == MyApp.MCP
     end
 
-    test "initializes with :sse transport" do
-      opts = Plug.init(server: MyApp.MCP, transport: :sse)
-      assert is_map(opts)
-      assert opts.transport == :sse
-      assert is_map(opts.sse_state)
+    test "raises for the removed :sse transport" do
+      assert_raise ArgumentError, ~r/:sse transport was removed/, fn ->
+        Plug.init(server: MyApp.MCP, transport: :sse)
+      end
     end
 
     test "raises on :websocket transport via init" do

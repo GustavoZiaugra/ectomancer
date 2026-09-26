@@ -6,7 +6,6 @@ if Code.ensure_loaded?(Plug) do
     Supports multiple transports:
 
       - `:streamable_http` (default) — MCP Streamable HTTP transport
-      - `:sse` — Legacy HTTP+SSE transport (MCP 2024-11-05, deprecated)
       - `:websocket` — WebSocket transport via `Phoenix.Socket.Transport`
 
     ## Prerequisites
@@ -19,13 +18,6 @@ if Code.ensure_loaded?(Plug) do
         # In your application.ex
         children = [
           {MyApp.MCP, transport: {:streamable_http, start: true}},
-          MyAppWeb.Endpoint
-        ]
-
-    ### SSE (legacy)
-
-        children = [
-          {MyApp.MCP, transport: {:sse, start: true}},
           MyAppWeb.Endpoint
         ]
 
@@ -52,13 +44,6 @@ if Code.ensure_loaded?(Plug) do
           forward "/", Ectomancer.Plug, server: MyApp.MCP
         end
 
-    ### SSE (legacy)
-
-        scope "/mcp" do
-          get  "/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
-          post "/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
-        end
-
     ### WebSocket
 
     WebSocket requires a `Phoenix.Socket.Transport` in your endpoint, not a Plug route.
@@ -73,7 +58,6 @@ if Code.ensure_loaded?(Plug) do
     | Transport | Option Value | Route Method | Backend |
     |-----------|-------------|-------------|---------|
     | Streamable HTTP | `:streamable_http` (default) | `forward` | `Anubis.Server.Transport.StreamableHTTP.Plug` |
-    | SSE (legacy) | `:sse` | `get` + `post` | `Anubis.Server.Transport.SSE.Plug` (deprecated) |
     | WebSocket | `:websocket` | `socket` (endpoint) | `Ectomancer.Plug.WebSocket` |
 
     ## Actor Extraction
@@ -115,7 +99,7 @@ if Code.ensure_loaded?(Plug) do
     ## Options
 
     - `:server` - The MCP server module (required)
-    - `:transport` - Transport type: `:streamable_http`, `:sse`, or `:websocket` (default: `:streamable_http`)
+    - `:transport` - Transport type: `:streamable_http` or `:websocket` (default: `:streamable_http`)
     - `:session_header` - Custom header name for session ID (default: "mcp-session-id", streamable_http only)
     - `:request_timeout` - Request timeout in milliseconds (default: 30000)
 
@@ -150,10 +134,10 @@ if Code.ensure_loaded?(Plug) do
           }
 
         :sse ->
-          # credo:disable-for-next-line Credo.Check.Refactor.Apply
-          sse_state = apply(Ectomancer.Plug.SSE, :init, [opts])
-
-          %{transport: :sse, sse_state: sse_state}
+          raise ArgumentError,
+                "The :sse transport was removed in Ectomancer 3.0. " <>
+                  "anubis_mcp 2.0 dropped the deprecated HTTP+SSE transport " <>
+                  "(MCP 2024-11-05). Use the default :streamable_http transport instead."
 
         :websocket ->
           raise ArgumentError,
@@ -194,11 +178,6 @@ if Code.ensure_loaded?(Plug) do
 
     defp dispatch_by_transport(conn, %{transport: :streamable_http, anubis_state: anubis_state}) do
       AnubisPlug.call(conn, anubis_state)
-    end
-
-    defp dispatch_by_transport(conn, %{transport: :sse, sse_state: sse_state}) do
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      apply(Ectomancer.Plug.SSE, :call, [conn, sse_state])
     end
 
     @doc """

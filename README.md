@@ -179,18 +179,23 @@ Done. Claude can now query your database through natural language at `/mcp`.
 
 ## Transports
 
-Ectomancer supports three transport options. Streamable HTTP is the default and recommended transport.
+Ectomancer supports two transport options. Streamable HTTP is the default and recommended transport.
+
+> **Upgrading from 2.x?** The legacy SSE transport was removed in 3.0.
+> `anubis_mcp` 2.0 dropped the deprecated HTTP+SSE transport and the MCP
+> 2024-11-05 protocol version, so `transport: :sse` now raises. Point your MCP
+> clients at the Streamable HTTP endpoint below (MCP 2025-03-26+).
 
 ### Transport Comparison
 
-| Feature | Streamable HTTP | SSE (legacy) | WebSocket |
-|---------|----------------|-------------|-----------|
-| MCP protocol | 2025-03-26+ | 2024-11-05 | Any version |
-| Status | **Recommended** | Deprecated | Available |
-| Endpoints | Single (`forward`) | Dual (GET + POST) | Phoenix socket |
-| Server notifications | Yes (SSE streaming) | Yes | Stub (future) |
-| Router method | `forward` | `get` + `post` | `socket` in endpoint |
-| Actor extraction | Plug.Conn | Plug.Conn | map (see below) |
+| Feature | Streamable HTTP | WebSocket |
+|---------|----------------|-----------|
+| MCP protocol | 2025-03-26+ | Any version |
+| Status | **Recommended** | Available |
+| Endpoints | Single (`forward`) | Phoenix socket |
+| Server notifications | Yes (SSE streaming) | Stub (future) |
+| Router method | `forward` | `socket` in endpoint |
+| Actor extraction | Plug.Conn | map (see below) |
 
 ### Streamable HTTP (default)
 
@@ -200,19 +205,6 @@ Ectomancer supports three transport options. Streamable HTTP is the default and 
 
 # Router
 forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
-```
-
-### SSE (legacy, deprecated)
-
-For clients that only support the MCP 2024-11-05 HTTP+SSE protocol:
-
-```elixir
-# Supervision
-{MyApp.MCP, transport: {:sse, start: true}}
-
-# Router
-get  "/mcp/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
-post "/mcp/sse", Ectomancer.Plug, server: MyApp.MCP, transport: :sse
 ```
 
 ### WebSocket
@@ -600,7 +592,6 @@ Prompts integrate with the MCP `prompts/list` and `prompts/get` protocol methods
 | Path | Description |
 |------|-------------|
 | `/mcp` | MCP endpoint (Streamable HTTP) |
-| `/mcp/sse` | SSE endpoint (legacy, transport: :sse) |
 | `/mcp/ws` | WebSocket endpoint (via Phoenix socket) |
 
 Open `priv/ectomancer.html` in a browser for a visual playground — browse tools, fill params, call them, and inspect results. No build step, no npm install, no dependencies.

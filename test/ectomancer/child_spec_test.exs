@@ -20,8 +20,8 @@ defmodule Ectomancer.ChildSpecTest do
     end
 
     test "accepts a bare transport atom" do
-      assert {TestMCP, transport: {:sse, start: true}} =
-               Ectomancer.child_spec(TestMCP, transports: :sse)
+      assert {TestMCP, transport: {:streamable_http, start: true}} =
+               Ectomancer.child_spec(TestMCP, transports: :streamable_http)
     end
 
     test "boots the transport supervisor under a real supervision tree" do
@@ -34,7 +34,13 @@ defmodule Ectomancer.ChildSpecTest do
 
     test "raises when more than one transport is requested" do
       assert_raise ArgumentError, ~r/single transport per server/, fn ->
-        Ectomancer.child_spec(TestMCP, transports: [:streamable_http, :sse])
+        Ectomancer.child_spec(TestMCP, transports: [:streamable_http, :websocket])
+      end
+    end
+
+    test "raises for the removed :sse transport" do
+      assert_raise ArgumentError, ~r/:sse transport was removed/, fn ->
+        Ectomancer.child_spec(TestMCP, transports: [:sse])
       end
     end
 

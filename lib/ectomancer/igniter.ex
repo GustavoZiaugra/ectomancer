@@ -233,7 +233,7 @@ defmodule Ectomancer.Igniter do
     Mix.shell().info("")
     Mix.shell().info("       config :ectomancer, :ws_server, #{module_name}")
     Mix.shell().info("")
-    Mix.shell().info("  3. Already running Streamable HTTP or SSE supervisor is reused.")
+    Mix.shell().info("  3. Already running Streamable HTTP supervisor is reused.")
     Mix.shell().info("     No additional Anubis.Server.Supervisor needed.")
     Mix.shell().info("")
   end
@@ -255,12 +255,10 @@ defmodule Ectomancer.Igniter do
     else
       Mix.shell().info("? Transport type?")
       Mix.shell().info("  1. Streamable HTTP (recommended)")
-      Mix.shell().info("  2. SSE (legacy, deprecated)")
-      Mix.shell().info("  3. WebSocket (requires manual endpoint config)")
+      Mix.shell().info("  2. WebSocket (requires manual endpoint config)")
 
       case IO.gets("> ") |> String.trim() do
-        "2" -> :sse
-        "3" -> :websocket
+        "2" -> :websocket
         _ -> :streamable_http
       end
     end
