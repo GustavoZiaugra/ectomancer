@@ -21,9 +21,15 @@ defmodule EctomancerTest do
       assert Keyword.get(args, :transport) == {:streamable_http, start: true}
     end
 
-    test "raises for multiple transports (anubis 1.14 supports one per server)" do
+    test "raises for multiple transports (anubis supports one per server)" do
       assert_raise ArgumentError, ~r/single transport per server/, fn ->
-        Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :sse])
+        Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http, :websocket])
+      end
+    end
+
+    test "raises for the removed :sse transport" do
+      assert_raise ArgumentError, ~r/:sse transport was removed/, fn ->
+        Ectomancer.child_spec(MyApp.MCP, transports: [:sse])
       end
     end
   end

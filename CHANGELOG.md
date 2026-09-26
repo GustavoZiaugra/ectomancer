@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING (next major release): dropped the legacy `:sse` transport.**
+  `anubis_mcp` 2.0 removed `Anubis.Server.Transport.SSE.Plug` and the MCP
+  2024-11-05 protocol version. `Ectomancer.Plug.SSE` is deleted, and
+  `transport: :sse` now raises a migration error from both `Ectomancer.Plug`
+  and `Ectomancer.child_spec/2`. Use the default `:streamable_http` transport
+  (MCP 2025-03-26+); MCP clients pinned to 2024-11-05 must be upgraded.
+
+### Changed
+
+- Bumped `anubis_mcp` to `~> 2.0`
+
 ## [2.0.1] - 2026-09-26
 
 ### Security

@@ -189,7 +189,7 @@ defmodule Ectomancer do
   ## Options
 
     * `:transports` — a single transport atom or a one-element list (required).
-      Supported values: `:streamable_http`, `:sse`.
+      Supported values: `:streamable_http`.
 
   One transport is supported per server module. `anubis_mcp` registers
   process names derived from the server module, so starting two transports for
@@ -223,15 +223,22 @@ defmodule Ectomancer do
     end
   end
 
-  defp child_spec_for_transport(server, transport)
-       when transport in [:streamable_http, :sse] do
-    {server, transport: {transport, start: true}}
+  defp child_spec_for_transport(server, :streamable_http) do
+    {server, transport: {:streamable_http, start: true}}
+  end
+
+  defp child_spec_for_transport(_server, :sse) do
+    raise ArgumentError,
+          "The :sse transport was removed in Ectomancer 3.0. " <>
+            "anubis_mcp 2.0 dropped the deprecated HTTP+SSE transport " <>
+            "(MCP 2024-11-05). Use :streamable_http instead, e.g. " <>
+            "`Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http])`."
   end
 
   defp child_spec_for_transport(_server, transport) do
     raise ArgumentError,
           "Unsupported transport #{inspect(transport)} in Ectomancer.child_spec/2. " <>
-            "Supported transports: :streamable_http, :sse."
+            "Supported transports: :streamable_http."
   end
 
   @doc false
