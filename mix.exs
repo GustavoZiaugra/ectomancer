@@ -82,17 +82,24 @@ defmodule Ectomancer.MixProject do
       # JSON handling
       {:jason, "~> 1.4"},
 
+      # Transitive via anubis_mcp -> finch. Floor >= 1.10.1 fixes
+      # GHSA-g83f-2j6r-q6m4, GHSA-7p8w-j234-7qc8 and GHSA-rj5m-69wp-cxq9
+      # (HTTP/1 request smuggling + memory/CPU exhaustion DoS)
+      {:mint, ">= 1.10.1 and < 2.0.0", optional: true},
+
       # Noun inflection (pluralize/singularize) for tool name generation
       {:plurality, "~> 0.3"},
 
       # Optional dependencies (only loaded if parent app uses them)
-      # Floor >= 1.7.22 fixes GHSA-628h-q48j-jr6q (long-poll NDJSON body splitting DoS)
-      {:phoenix, ">= 1.7.22", optional: true},
+      # Floor >= 1.7.24 fixes GHSA-628h-q48j-jr6q (long-poll NDJSON body splitting DoS)
+      # and GHSA-6983-jfq8-485w / GHSA-63mc-hw7g-86rr (channel join + presence DoS)
+      {:phoenix, ">= 1.7.24", optional: true},
       {:ecto, "~> 3.12", optional: true},
       # Floor >= 1.19.2 fixes GHSA-468c-vq7p-gh64 (unbounded multipart header buffer DoS)
       {:plug, ">= 1.19.2 and < 2.0.0", optional: true},
       {:oban, "~> 2.18", optional: true},
-      {:igniter, "~> 0.8", optional: true},
+      # Floor >= 0.8.4 fixes GHSA-cj7w-j579-gc42 (terminal escape sequence injection)
+      {:igniter, "~> 0.8.4", optional: true},
 
       # Development and testing
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
