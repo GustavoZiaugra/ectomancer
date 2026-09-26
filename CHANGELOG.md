@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-26
+
+> **Read this if you're upgrading.** The legacy `:sse` transport was removed,
+> and `anubis_mcp` is now 2.x — the MCP protocol floor is 2025-03-26. If you
+> used `transport: :sse`, switch to `:streamable_http` (the default), and
+> upgrade any MCP clients pinned to protocol 2024-11-05.
+
 ### Removed
 
-- **BREAKING (next major release): dropped the legacy `:sse` transport.**
+- **BREAKING: dropped the legacy `:sse` transport.**
   `anubis_mcp` 2.0 removed `Anubis.Server.Transport.SSE.Plug` and the MCP
   2024-11-05 protocol version. `Ectomancer.Plug.SSE` is deleted, and
   `transport: :sse` now raises a migration error from both `Ectomancer.Plug`
@@ -646,7 +653,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.1...v3.0.0
 [2.0.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.1...v2.0.0
 [1.7.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.0...v1.7.1
