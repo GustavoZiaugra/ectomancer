@@ -180,13 +180,15 @@ defmodule Ectomancer.Prompt do
             {:reply, response, frame}
           rescue
             e ->
+              Logger.error(
+                "Ectomancer prompt #{@prompt_name} crashed: " <>
+                  Exception.format(:error, e, __STACKTRACE__)
+              )
+
               error = %Anubis.MCP.Error{
                 code: -32_603,
-                message: "Prompt execution error: #{Exception.message(e)}",
-                data: %{
-                  error: inspect(e),
-                  stacktrace: Exception.format_stacktrace(__STACKTRACE__)
-                }
+                message: "Prompt execution failed",
+                data: %{}
               }
 
               {:error, error, frame}

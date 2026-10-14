@@ -507,11 +507,11 @@ defmodule Ectomancer.RouteIntrospectionTest do
       assert msg =~ "nil"
     end
 
-    test "formats error tuples" do
+    test "formats error tuples without leaking the reason" do
       {:ok, msg} = RouteIntrospection.format_controller_result({:error, "oops"})
 
       assert msg =~ "500"
-      assert msg =~ "oops"
+      refute msg =~ "oops"
     end
   end
 

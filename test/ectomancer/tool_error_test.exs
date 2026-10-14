@@ -10,7 +10,7 @@ defmodule Ectomancer.Tool.ErrorTest do
 
       assert code == -32_602
       assert message == "Duplicate value: Record with this value already exists"
-      assert data[:details] == error_msg
+      refute Map.has_key?(data, :details)
     end
 
     test "handles foreign key violation from PostgreSQL" do
@@ -21,7 +21,7 @@ defmodule Ectomancer.Tool.ErrorTest do
 
       assert code == -32_602
       assert message == "Invalid reference: Related record does not exist"
-      assert data[:details] == error_msg
+      refute Map.has_key?(data, :details)
     end
 
     test "handles not null constraint from PostgreSQL" do

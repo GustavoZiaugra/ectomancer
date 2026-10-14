@@ -26,6 +26,23 @@ defmodule Ectomancer.BatchOperationsTest do
     end
   end
 
+  defmodule ValidatedPost do
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    schema "batch_validated_posts" do
+      field(:title, :string)
+      field(:body, :string)
+      timestamps()
+    end
+
+    def changeset(struct, attrs) do
+      struct
+      |> cast(attrs, [:title, :body])
+      |> validate_required([:title])
+    end
+  end
+
   describe "batch_create" do
     setup do
       Sandbox.checkout(TestRepo)
@@ -105,6 +122,30 @@ defmodule Ectomancer.BatchOperationsTest do
     test "returns empty results for empty records" do
       {:ok, result} = Repo.batch_create(Post, %{"records" => []})
       assert result.total == 0
+    end
+
+    test "invalid records return encodable per-record errors and commit the valid ones" do
+      Ectomancer.DataCase.create_table_for_schema!(ValidatedPost)
+
+      {:ok, result} =
+        Repo.batch_create(ValidatedPost, %{
+          "records" => [
+            %{"title" => "Valid post"},
+            %{"body" => "no title"}
+          ]
+        })
+
+      assert result.total == 2
+      assert [%{status: :ok}] = result.succeeded
+      assert [%{status: :error, errors: errors}] = result.failed
+      assert errors == %{title: ["can't be blank"]}
+
+      # Previously crashed with a Jason.Encoder error on the changeset tuple,
+      # returning -32603 after the valid record had already been committed.
+      assert is_binary(Ectomancer.Output.encode!(result))
+
+      {:ok, %{data: posts}} = Repo.list(ValidatedPost, %{}, limit: 100)
+      assert Enum.map(posts, & &1.title) == ["Valid post"]
     end
   end
 

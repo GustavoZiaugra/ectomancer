@@ -4,6 +4,8 @@ if Code.ensure_loaded?(Oban) do
 
     import Ecto.Query
 
+    require Logger
+
     def list_queues do
       _ = repo()
 
@@ -37,7 +39,8 @@ if Code.ensure_loaded?(Oban) do
         {:ok, %{queues: formatted}}
       rescue
         e ->
-          {:error, "Failed to list queues: #{Exception.message(e)}"}
+          log_query_error(:list_queues, e, __STACKTRACE__)
+          {:error, "Failed to list queues"}
       end
     end
 
@@ -82,7 +85,8 @@ if Code.ensure_loaded?(Oban) do
         end
       rescue
         e ->
-          {:error, "Failed to get queue depth: #{Exception.message(e)}"}
+          log_query_error(:get_queue_depth, e, __STACKTRACE__)
+          {:error, "Failed to get queue depth"}
       end
     end
 
@@ -138,7 +142,8 @@ if Code.ensure_loaded?(Oban) do
         {:ok, %{jobs: formatted, count: length(formatted)}}
       rescue
         e ->
-          {:error, "Failed to list stuck jobs: #{Exception.message(e)}"}
+          log_query_error(:list_stuck_jobs, e, __STACKTRACE__)
+          {:error, "Failed to list stuck jobs"}
       end
     end
 
@@ -159,7 +164,8 @@ if Code.ensure_loaded?(Oban) do
         end
       rescue
         e ->
-          {:error, "Failed to retry job: #{Exception.message(e)}"}
+          log_query_error(:retry_job, e, __STACKTRACE__)
+          {:error, "Failed to retry job"}
       end
     end
 
@@ -182,7 +188,8 @@ if Code.ensure_loaded?(Oban) do
         end
       rescue
         e ->
-          {:error, "Failed to cancel job: #{Exception.message(e)}"}
+          log_query_error(:cancel_job, e, __STACKTRACE__)
+          {:error, "Failed to cancel job"}
       end
     end
 
@@ -192,6 +199,13 @@ if Code.ensure_loaded?(Oban) do
       Application.get_env(:ectomancer, :repo) ||
         raise ArgumentError,
               "Ectomancer repo not configured. Set config :ectomancer, :repo, YourApp.Repo"
+    end
+
+    defp log_query_error(operation, exception, stacktrace) do
+      Logger.error(
+        "Ectomancer.ObanBridge #{operation} failed: " <>
+          Exception.format(:error, exception, stacktrace)
+      )
     end
 
     defp repo_all(query), do: repo().all(query)
