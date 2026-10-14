@@ -132,6 +132,10 @@ if Code.ensure_loaded?(Ecto) do
 
           # Peri schema for Anubis validation (atom keys)
           def __mcp_raw_schema__, do: unquote(peri_schema)
+          # Anubis >= 2.1 builds the input validator from `mcp_schema/1` when
+          # exported. Without it the tool's validate_input is nil and every
+          # `tools/call` argument is dropped before the handler runs.
+          def mcp_schema(params), do: Peri.validate(__mcp_raw_schema__(), params)
           # JSON Schema for external clients (string keys, JSON encodable)
           def input_schema, do: unquote(json_schema_for_clients)
 

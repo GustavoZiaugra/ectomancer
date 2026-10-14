@@ -148,11 +148,18 @@ defmodule Ectomancer.Prompt do
         @raw_schema Ectomancer.Prompt.build_prompt_schema(unquote(arguments))
         @messages_fn unquote(messages_ast)
 
+        require Logger
+
         def name, do: @prompt_name
         def description, do: @moduledoc
         def __mcp_component_type__, do: :prompt
         def __scopes__, do: []
         def __mcp_raw_schema__, do: @raw_schema
+
+        # Anubis >= 2.1 builds the input validator from `mcp_schema/1` when
+        # exported. Without it prompt arguments are dropped before the
+        # messages callback runs.
+        def mcp_schema(params), do: Peri.validate(__mcp_raw_schema__(), params)
 
         def arguments do
           @arguments
