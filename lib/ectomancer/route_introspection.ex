@@ -16,6 +16,8 @@ defmodule Ectomancer.RouteIntrospection do
 
   @mutating_http_methods ["POST", "PUT", "PATCH", "DELETE", "*"]
 
+  require Logger
+
   @doc """
   Parses a Phoenix route path and extracts parameters.
   """
@@ -420,7 +422,12 @@ defmodule Ectomancer.RouteIntrospection do
         {:ok, "Response sent"}
 
       kind, reason ->
-        {:error, "Controller error (#{kind}): #{inspect(reason)}"}
+        Logger.error(
+          "Ectomancer route #{action} crashed: " <>
+            Exception.format(kind, reason, __STACKTRACE__)
+        )
+
+        {:error, "Controller error"}
     end
   end
 
@@ -453,7 +460,8 @@ defmodule Ectomancer.RouteIntrospection do
 
   @doc false
   def format_controller_result({:error, reason}) do
-    {:ok, "Status: 500 - Request failed: #{inspect(reason)}"}
+    Logger.error("Ectomancer route controller returned an error: #{inspect(reason)}")
+    {:ok, "Status: 500 - Request failed"}
   end
 
   @doc false

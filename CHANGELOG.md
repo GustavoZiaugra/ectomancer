@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-13
+
+> **Read this if you're on 3.0.0 and `anubis_mcp` 2.1+.** 3.0.0 dropped every
+> tool and prompt argument on `anubis_mcp` 2.1.0: the library's `~> 2.0`
+> requirement allowed 2.1, which builds the input validator from a new
+> `mcp_schema/1` callback that Ectomancer did not export. Bump to 3.0.1.
+
+### Fixed
+
+- **Tool and prompt arguments are no longer dropped on `anubis_mcp` 2.1+.**
+  Generated tool and prompt modules now export `mcp_schema/1`, which anubis
+  uses to build the component's input validator. On 3.0.0 + anubis 2.1.0 every
+  `tools/call` argument was discarded before the handler ran: `get_*` failed
+  with "Missing one or more required primary key fields", `create_*` failed
+  with "can't be blank", `limit`/filters/`order_by` were ignored, and custom
+  tool handlers with pattern-matched params raised `FunctionClauseError` (#174).
+- **Batch operations no longer crash after committing valid records.**
+  Failed batch entries held raw `Ecto.Changeset` structs, which are not
+  JSON-encodable — a single invalid record made the whole call return `-32603`
+  after the valid records were already committed, so a retry duplicated them.
+  Per-record errors are now returned as `%{field => [messages]}` and the valid
+  records are reported in `succeeded` (#174).
+- **Internal error details no longer leak to clients.** Tool and prompt
+  crashes, repository exceptions, route controller failures, Oban bridge
+  query errors, and database constraint details previously appeared in
+  `error.data` or tool results (`inspect/1` output, exception messages,
+  stacktraces). Clients now receive generic messages; details are logged
+  server-side (#174).
+- **No more `DBConnection.ConnectionError` compile warnings in Ecto-only
+  apps.** The Repo rescue clauses now classify exceptions via `__struct__`
+  instead of `%DBConnection.ConnectionError{}` patterns, so consumers that
+  depend on Ecto without `db_connection` no longer get 10 warnings (or
+  `--warnings-as-errors` failures) when compiling their app.
+
+### Changed
+
+- Updated lockfile to `anubis_mcp` 2.1.0, `peri` 0.11.3, `finch` 0.24.x (with
+  transitive `mint`/`decimal` bumps). Ectomancer remains compatible with
+  `anubis_mcp` 2.0.
+- Added a CI job that updates `anubis_mcp` to the latest allowed 2.x before
+  running the suite, so a future minor release cannot silently break the
+  integration again.
+- New regression tests cover the anubis component dispatch contract, batch
+  error encoding, and error redaction — including a full Streamable HTTP
+  JSON-RPC flow test (`initialize` → `tools/call` → `prompts/get`) that
+  drives the plug in-process and fails if tool or prompt arguments are
+  dropped.
+
 ## [3.0.0] - 2026-09-26
 
 > **Read this if you're upgrading.** The legacy `:sse` transport was removed,

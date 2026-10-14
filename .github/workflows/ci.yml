@@ -87,3 +87,26 @@ jobs:
 
     - name: Run tests
       run: mix test --warnings-as-errors
+
+  anubis_latest:
+    name: mix test (latest anubis_mcp 2.x)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.20.4'
+        otp-version: '29.0'
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Update anubis_mcp to the latest allowed 2.x
+      run: mix deps.update anubis_mcp
+
+    - name: Run tests
+      run: mix test --warnings-as-errors

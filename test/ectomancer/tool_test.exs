@@ -211,20 +211,21 @@ defmodule Ectomancer.ToolTest do
       {code, message, data} = Ectomancer.Tool.format_error("some random database error")
       assert code == -32_603
       assert message == "Tool execution failed"
-      assert data.reason == "some random database error"
+      assert data == %{}
     end
 
     test "format_error with atom reason returns generic error" do
       {code, message, data} = Ectomancer.Tool.format_error(:unknown_error)
       assert code == -32_603
       assert message == "Tool execution failed"
-      assert data.reason == ":unknown_error"
+      assert data == %{}
     end
 
     test "format_error with map reason returns generic error" do
-      {code, _message, data} = Ectomancer.Tool.format_error(%{foo: :bar})
+      {code, message, data} = Ectomancer.Tool.format_error(%{foo: :bar})
       assert code == -32_603
-      assert data.reason =~ "foo"
+      assert message == "Tool execution failed"
+      assert data == %{}
     end
 
     test "changeset errors include field names in structured format" do

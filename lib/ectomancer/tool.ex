@@ -125,6 +125,8 @@ if Code.ensure_loaded?(Ecto) do
           # Suppress compiler warnings about dead code when handler only returns {:ok, ...}
           @compile {:no_warn_unused, execute: 2}
 
+          require Logger
+
           def name, do: @tool_name
           def description, do: @moduledoc
           def __mcp_component_type__, do: :tool
@@ -132,6 +134,10 @@ if Code.ensure_loaded?(Ecto) do
 
           # Peri schema for Anubis validation (atom keys)
           def __mcp_raw_schema__, do: unquote(peri_schema)
+          # Anubis >= 2.1 builds the input validator from `mcp_schema/1` when
+          # exported. Without it the tool's validate_input is nil and every
+          # `tools/call` argument is dropped before the handler runs.
+          def mcp_schema(params), do: Peri.validate(__mcp_raw_schema__(), params)
           # JSON Schema for external clients (string keys, JSON encodable)
           def input_schema, do: unquote(json_schema_for_clients)
 
@@ -204,10 +210,15 @@ if Code.ensure_loaded?(Ecto) do
             end)
           rescue
             e ->
+              Logger.error(
+                "Ectomancer tool #{@tool_name} crashed: " <>
+                  Exception.format(:error, e, __STACKTRACE__)
+              )
+
               error = %Anubis.MCP.Error{
                 code: -32_603,
-                message: "Tool execution error: #{Exception.message(e)}",
-                data: %{error: inspect(e)}
+                message: "Tool execution failed",
+                data: %{}
               }
 
               {:error, error, frame}
@@ -494,6 +505,10 @@ if Code.ensure_loaded?(Ecto) do
       {-32_002, "Resource not found", %{}}
     end
 
+    def format_error(:internal_error) do
+      {-32_603, "Tool execution failed", %{}}
+    end
+
     def format_error(:not_soft_deletable) do
       {-32_602, "Invalid params: Schema does not support soft-delete", %{}}
     end
@@ -537,24 +552,24 @@ if Code.ensure_loaded?(Ecto) do
           format_null_violation_error(field_match, reason)
 
         not_found_error?(reason) ->
-          {-32_002, "Resource not found", %{details: reason}}
+          {-32_002, "Resource not found", %{}}
 
         foreign_key_error?(reason) ->
-          {-32_602, "Invalid reference: Related record does not exist", %{details: reason}}
+          {-32_602, "Invalid reference: Related record does not exist", %{}}
 
         unique_constraint_error?(reason) ->
-          {-32_602, "Duplicate value: Record with this value already exists", %{details: reason}}
+          {-32_602, "Duplicate value: Record with this value already exists", %{}}
 
         not_null_error?(reason) ->
-          {-32_602, "Missing required value", %{details: reason}}
+          {-32_602, "Missing required value", %{}}
 
         true ->
-          {-32_603, "Tool execution failed", %{reason: reason}}
+          {-32_603, "Tool execution failed", %{}}
       end
     end
 
-    def format_error(reason) do
-      {-32_603, "Tool execution failed", %{reason: inspect(reason)}}
+    def format_error(_reason) do
+      {-32_603, "Tool execution failed", %{}}
     end
 
     # Helper functions for format_error/1
@@ -564,12 +579,11 @@ if Code.ensure_loaded?(Ecto) do
       |> Regex.run(reason)
     end
 
-    defp format_null_violation_error(field_match, reason) when is_list(field_match) do
+    defp format_null_violation_error(field_match, _reason) when is_list(field_match) do
       field_name = Enum.at(field_match, 1)
       formatted_field = format_field_name(field_name)
 
-      {-32_602, "Missing required parameter: #{formatted_field}",
-       %{field: field_name, details: reason}}
+      {-32_602, "Missing required parameter: #{formatted_field}", %{field: field_name}}
     end
 
     defp not_found_error?(reason) when is_binary(reason) do
@@ -720,16 +734,20 @@ else
       {-32_002, "Resource not found", %{}}
     end
 
+    def format_error(:internal_error) do
+      {-32_603, "Tool execution failed", %{}}
+    end
+
     def format_error({:batch_size_exceeded, limit}) do
       {-32_602, "Batch size exceeds maximum of #{limit}", %{max_batch_size: limit}}
     end
 
-    def format_error(reason) when is_binary(reason) do
-      {-32_603, "Tool execution failed", %{reason: reason}}
+    def format_error(_reason) when is_binary(_reason) do
+      {-32_603, "Tool execution failed", %{}}
     end
 
-    def format_error(reason) do
-      {-32_603, "Tool execution failed", %{reason: inspect(reason)}}
+    def format_error(_reason) do
+      {-32_603, "Tool execution failed", %{}}
     end
 
     def map_changeset_errors(_changeset), do: %{}

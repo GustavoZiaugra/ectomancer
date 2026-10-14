@@ -25,6 +25,8 @@ if Code.ensure_loaded?(Ecto) do
     alias Ectomancer.Repo.Filtering
     alias Ectomancer.SchemaIntrospection
 
+    require Logger
+
     @doc """
     Gets the configured Repo module.
 
@@ -113,8 +115,8 @@ if Code.ensure_loaded?(Ecto) do
             end
           end)
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          e -> {:error, {:unexpected, "List failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:list, e, __STACKTRACE__)
         end
       end)
     end
@@ -143,10 +145,8 @@ if Code.ensure_loaded?(Ecto) do
             handle_get_result(repo, schema_module, params, result, opts)
           end
         rescue
-          Ecto.NoResultsError -> {:error, :not_found}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          e -> {:error, {:unexpected, "GET failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:get, e, __STACKTRACE__)
         end
       end)
     end
@@ -201,9 +201,8 @@ if Code.ensure_loaded?(Ecto) do
             end
           end)
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          e -> {:error, {:unexpected, "Create failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:create, e, __STACKTRACE__)
         end
       end)
     end
@@ -231,9 +230,8 @@ if Code.ensure_loaded?(Ecto) do
             perform_update(repo, schema_module, record, params || %{}, pk_fields)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          e -> {:error, {:unexpected, "Update failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:update, e, __STACKTRACE__)
         end
       end)
     end
@@ -260,9 +258,8 @@ if Code.ensure_loaded?(Ecto) do
             perform_destroy(repo, schema_module, record)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          e -> {:error, {:unexpected, "Destroy failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:destroy, e, __STACKTRACE__)
         end
       end)
     end
@@ -300,9 +297,8 @@ if Code.ensure_loaded?(Ecto) do
             do_upsert(repo, schema_module, attrs, opts)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          e -> {:error, {:unexpected, "Upsert failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:upsert, e, __STACKTRACE__)
         end
       end)
     end
@@ -435,9 +431,8 @@ if Code.ensure_loaded?(Ecto) do
             end
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          Ecto.StaleEntryError -> {:error, :stale_entry}
-          e -> {:error, {:unexpected, "Restore failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:restore, e, __STACKTRACE__)
         end
       end)
     end
@@ -479,8 +474,8 @@ if Code.ensure_loaded?(Ecto) do
             end)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          e -> {:error, {:unexpected, "Batch create failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:batch_create, e, __STACKTRACE__)
         end
       end)
     end
@@ -522,8 +517,8 @@ if Code.ensure_loaded?(Ecto) do
             end)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          e -> {:error, {:unexpected, "Batch update failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:batch_update, e, __STACKTRACE__)
         end
       end)
     end
@@ -564,8 +559,8 @@ if Code.ensure_loaded?(Ecto) do
             end)
           end
         rescue
-          DBConnection.ConnectionError -> {:error, {:db, "connection_lost"}}
-          e -> {:error, {:unexpected, "Batch destroy failed: #{Exception.message(e)}"}}
+          e ->
+            handle_repo_rescue(:batch_destroy, e, __STACKTRACE__)
         end
       end)
     end
@@ -692,12 +687,16 @@ if Code.ensure_loaded?(Ecto) do
           Enum.map(items, fn item ->
             try do
               case operation.(item) do
-                {:ok, record} -> %{status: :ok, record: record}
-                {:error, input, errors} -> %{status: :error, input: input, errors: errors}
+                {:ok, record} ->
+                  %{status: :ok, record: record}
+
+                {:error, input, errors} ->
+                  %{status: :error, input: input, errors: format_batch_errors(errors)}
               end
             rescue
               e ->
-                %{status: :error, input: item, errors: Exception.message(e)}
+                log_internal_error(:batch, e, __STACKTRACE__)
+                %{status: :error, input: item, errors: :internal_error}
             end
           end)
         end)
@@ -712,6 +711,14 @@ if Code.ensure_loaded?(Ecto) do
           {:error, reason}
       end
     end
+
+    # Changesets are not JSON-encodable; convert per-record validation errors
+    # to a plain map so batch results can be returned to the client.
+    defp format_batch_errors(%Ecto.Changeset{} = changeset) do
+      Ectomancer.Tool.map_changeset_errors(changeset)
+    end
+
+    defp format_batch_errors(reason), do: reason
 
     defp extract_pk_values(params, pk_fields, schema_module) when is_list(pk_fields) do
       field_types = SchemaIntrospection.analyze(schema_module).types
@@ -774,6 +781,34 @@ if Code.ensure_loaded?(Ecto) do
     defp get_repo(opts) do
       configured = repo_for_opts(opts)
       if configured, do: {:ok, configured}, else: {:error, :repo_not_configured}
+    end
+
+    defp log_internal_error(operation, exception, stacktrace) do
+      Logger.error(
+        "Ectomancer.Repo #{operation} failed: " <>
+          Exception.format(:error, exception, stacktrace)
+      )
+    end
+
+    # Classifies rescued exceptions without struct patterns: the Repo
+    # module is also compiled by apps that depend on Ecto but not on
+    # db_connection, where %DBConnection.ConnectionError{} would not
+    # resolve and would emit a compile warning.
+    defp handle_repo_rescue(_operation, %{__struct__: DBConnection.ConnectionError}, _stacktrace) do
+      {:error, {:db, "connection_lost"}}
+    end
+
+    defp handle_repo_rescue(_operation, %{__struct__: Ecto.NoResultsError}, _stacktrace) do
+      {:error, :not_found}
+    end
+
+    defp handle_repo_rescue(_operation, %{__struct__: Ecto.StaleEntryError}, _stacktrace) do
+      {:error, :stale_entry}
+    end
+
+    defp handle_repo_rescue(operation, exception, stacktrace) do
+      log_internal_error(operation, exception, stacktrace)
+      {:error, :internal_error}
     end
 
     defp repo_for_opts(opts) do
