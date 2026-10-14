@@ -33,6 +33,21 @@ defmodule Ectomancer.PlugIntegrationTest do
         {:ok, %{status: "healthy", version: Ectomancer.version()}}
       end)
     end
+
+    prompt :greet do
+      description("Greet someone")
+
+      argument(:name, :string, required: true)
+
+      messages(fn args ->
+        [
+          %{
+            role: "user",
+            content: %{type: "text", text: "Hi #{args["name"]}"}
+          }
+        ]
+      end)
+    end
   end
 
   setup do
@@ -172,6 +187,131 @@ defmodule Ectomancer.PlugIntegrationTest do
       result_conn = EctomancerPlug.call(conn, opts)
 
       assert result_conn.assigns[:ectomancer_actor] == %{id: 42, role: :admin}
+    end
+  end
+
+  describe "Streamable HTTP JSON-RPC flow" do
+    # Drives the full JSON-RPC dispatch the way a real MCP client does:
+    # initialize -> notifications/initialized -> tools/call -> prompts/get.
+    # Guards against argument-dropping regressions like the anubis_mcp 2.1
+    # `mcp_schema/1` contract change (#174): if the component input validator
+    # is missing, `echo` receives %{} and raises FunctionClauseError.
+    setup do
+      Application.delete_env(:ectomancer, :actor_from)
+      start_supervised!({TestMCP, transport: {:streamable_http, start: true}})
+      %{opts: EctomancerPlug.init(server: TestMCP)}
+    end
+
+    test "tool and prompt arguments survive the dispatch", %{opts: opts} do
+      init_conn =
+        post_jsonrpc(opts, %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{
+            "protocolVersion" => "2025-03-26",
+            "capabilities" => %{},
+            "clientInfo" => %{"name" => "ex_unit", "version" => "0.1"}
+          }
+        })
+
+      assert init_conn.status == 200
+      session_id = get_resp_header(init_conn, "mcp-session-id") |> List.first()
+      assert session_id, "initialize must return an mcp-session-id"
+
+      ack_conn =
+        post_jsonrpc(
+          opts,
+          %{"jsonrpc" => "2.0", "method" => "notifications/initialized"},
+          session_id
+        )
+
+      assert ack_conn.status == 202
+
+      tool_conn =
+        post_jsonrpc(
+          opts,
+          %{
+            "jsonrpc" => "2.0",
+            "id" => 2,
+            "method" => "tools/call",
+            "params" => %{
+              "name" => "echo",
+              "arguments" => %{"message" => "hello from test"}
+            }
+          },
+          session_id
+        )
+
+      assert tool_conn.status == 200
+      assert tool_conn.resp_body =~ "hello from test"
+      refute tool_conn.resp_body =~ "\"error\""
+
+      prompt_conn =
+        post_jsonrpc(
+          opts,
+          %{
+            "jsonrpc" => "2.0",
+            "id" => 3,
+            "method" => "prompts/get",
+            "params" => %{"name" => "greet", "arguments" => %{"name" => "Ada"}}
+          },
+          session_id
+        )
+
+      assert prompt_conn.status == 200
+      assert prompt_conn.resp_body =~ "Hi Ada"
+      refute prompt_conn.resp_body =~ "\"error\""
+    end
+
+    test "invalid tool arguments are rejected with a protocol error", %{opts: opts} do
+      init_conn =
+        post_jsonrpc(opts, %{
+          "jsonrpc" => "2.0",
+          "id" => 1,
+          "method" => "initialize",
+          "params" => %{
+            "protocolVersion" => "2025-03-26",
+            "capabilities" => %{},
+            "clientInfo" => %{"name" => "ex_unit", "version" => "0.1"}
+          }
+        })
+
+      session_id = get_resp_header(init_conn, "mcp-session-id") |> List.first()
+      assert session_id
+
+      # Missing the required :message argument must produce an invalid params
+      # error, not a FunctionClauseError from the handler.
+      tool_conn =
+        post_jsonrpc(
+          opts,
+          %{
+            "jsonrpc" => "2.0",
+            "id" => 2,
+            "method" => "tools/call",
+            "params" => %{"name" => "echo", "arguments" => %{}}
+          },
+          session_id
+        )
+
+      assert tool_conn.status == 200
+      assert tool_conn.resp_body =~ "Invalid params"
+    end
+
+    defp post_jsonrpc(opts, body, session_id \\ nil) do
+      conn =
+        conn(:post, "/mcp", Jason.encode!(body))
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json, text/event-stream")
+
+      conn =
+        if session_id do
+          put_req_header(conn, "mcp-session-id", session_id)
+        else
+          conn
+        end
+
+      EctomancerPlug.call(conn, opts)
     end
   end
 
