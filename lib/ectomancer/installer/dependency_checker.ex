@@ -54,8 +54,6 @@ defmodule Ectomancer.Installer.DependencyChecker do
   def dep_exists?(dep) do
     case File.read("mix.exs") do
       {:ok, content} ->
-        # Look for the dependency in the deps list
-        # Standard format: {:dep, ...}
         dep_string = Atom.to_string(dep)
         String.contains?(content, "{:#{dep_string},")
 

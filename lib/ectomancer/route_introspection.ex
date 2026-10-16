@@ -470,18 +470,16 @@ defmodule Ectomancer.RouteIntrospection do
   end
 
   defp build_plug_conn(method, url, _params, path_params) do
-    # Create connection with Plug.Test - this sets up a proper test adapter
-    # The empty string body allows read_body to work without issues
+    # Plug.Test installs a proper adapter; the empty string body lets
+    # controllers call read_body/1 without crashing.
     conn = Plug.Test.conn(method, url, "")
 
-    # Add private fields needed by Phoenix
     conn =
       conn
       |> Plug.Conn.put_private(:phoenix_router, true)
       |> Plug.Conn.put_private(:phoenix_endpoint, true)
       |> Plug.Conn.put_private(:plug_skip_csrf_protection, true)
 
-    # Fetch query params and set path params
     conn = Plug.Conn.fetch_query_params(conn)
     %{conn | path_params: path_params}
   end

@@ -232,7 +232,6 @@ defmodule Ectomancer.Prompt do
     end
   end
 
-  # Parse prompt block to extract components
   defp parse_prompt_block(block) do
     items =
       case block do
@@ -263,7 +262,6 @@ defmodule Ectomancer.Prompt do
     )
   end
 
-  # Build argument definition for MCP protocol
   defp build_argument_def(name, type, opts) do
     arg_name = to_string(name)
 

@@ -111,8 +111,6 @@ defmodule Ectomancer.Installer.SchemaDiscovery do
     _ -> %{table: nil, associations: [], writable_fields: []}
   end
 
-  # Private functions
-
   @doc false
   def detect_app_module_prefix do
     case File.read("mix.exs") do

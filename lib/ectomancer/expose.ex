@@ -171,7 +171,6 @@ if Code.ensure_loaded?(Ecto) do
     alias Ectomancer.Expose.Params
     alias Ectomancer.SchemaIntrospection
 
-    # Action configurations for data-driven generation
     @action_configs %{
       list: %{prefix: "list", description_template: "List all %{resource}s"},
       get: %{prefix: "get", description_template: "Get a %{resource} by ID"},
@@ -234,13 +233,10 @@ if Code.ensure_loaded?(Ecto) do
     """
     defmacro expose(schema_module, opts \\ []) do
       schema = Macro.expand(schema_module, __CALLER__)
-
-      # Compile-time validations and data extraction
       validate_schema_compiled!(schema)
 
       config = build_expose_config(schema, opts, Ectomancer.fetch_global_auth(__CALLER__.module))
 
-      # Generate tool definitions for each action
       tool_definitions =
         Enum.map(config.actions, fn action ->
           tool_name = build_tool_name(action, config.resource_name, config.namespace)
@@ -248,7 +244,6 @@ if Code.ensure_loaded?(Ecto) do
           generate_tool(action, config, tool_name)
         end)
 
-      # Generate MCP Resource module for schema discovery (opt-out with resource: false)
       resource_definitions =
         if config.resource do
           resource_prefix =
@@ -269,8 +264,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Configuration building
-
     defp build_expose_config(schema, opts, global_auth_raw) do
       introspection = SchemaIntrospection.analyze(schema)
 
@@ -288,7 +281,6 @@ if Code.ensure_loaded?(Ecto) do
 
       soft_delete = resolve_soft_delete(schema, opts)
 
-      # Auto-add restore for soft-delete enabled schemas
       actions = if soft_delete, do: base_actions ++ [:restore], else: base_actions
 
       # Readonly strips every mutating action — applied after restore auto-add
@@ -534,8 +526,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Validation functions
-
     defp validate_schema_compiled!(schema) do
       case Code.ensure_compiled(schema) do
         {:module, _} ->
@@ -571,15 +561,12 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Resource generation for MCP schema discovery
-
     defp generate_resource(config, module_name, uri_key) do
       resource_name = config.resource_name
       schema = config.schema
       introspection = config.introspection
       actions = config.actions
 
-      # Build metadata structures at compile time
       fields_meta =
         Enum.map(config.exposed_fields, fn field ->
           ecto_type = Map.get(introspection.types, field)
@@ -649,10 +636,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Tool generation with proper param support
-    # Params are now fully enabled with JSON Schema format for external communication
-    # Validation is handled internally in Ectomancer.Repo
-
     defp generate_tool(action, config, tool_name) do
       description = build_description(action, config.resource_name, config.namespace)
       params = Params.generate_params(action, config)
@@ -684,7 +667,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Authorization block generation
     defp generate_authorization_block(action, config) do
       per_auth = config.authorization
       parent_auth = config.parent_authorization
@@ -711,7 +693,6 @@ if Code.ensure_loaded?(Ecto) do
       global_handler = get_effective_handler(parent_auth, action)
 
       cond do
-        # No auth anywhere
         is_nil(per_handler) and is_nil(global_handler) ->
           quote(do: authorize(:none))
 
@@ -724,15 +705,12 @@ if Code.ensure_loaded?(Ecto) do
         is_nil(per_handler) and public_opt?(explicit_authorize) ->
           quote(do: authorize(:none))
 
-        # No per-schema handler → use global
         is_nil(per_handler) ->
           generate_single_auth(global_handler)
 
-        # Only per-schema handler, no global
         is_nil(global_handler) ->
           generate_single_auth(per_handler)
 
-        # Both present → cascade (both must pass)
         true ->
           generate_cascade_auth(per_handler, global_handler)
       end
@@ -804,8 +782,6 @@ if Code.ensure_loaded?(Ecto) do
     def get_ecto_type_for_param({:array, _}), do: :list
     def get_ecto_type_for_param(:map), do: :map
     def get_ecto_type_for_param(_), do: :string
-
-    # Tool name building - data-driven approach
 
     defp build_tool_name(action, resource_name, namespace) do
       config = @action_configs[action]

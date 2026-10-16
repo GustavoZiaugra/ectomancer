@@ -854,8 +854,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Private functions
-
     @doc false
     def validate_repo(repo_module) when repo_module == __MODULE__, do: nil
     @doc false
@@ -1342,7 +1340,6 @@ if Code.ensure_loaded?(Ecto) do
               {:error, {:missing_primary_key, pk_field}}
 
             raw_value ->
-              # Cast the value based on field type
               field_type = Map.get(field_types, pk_field)
               cast_value = cast_primary_key_value(raw_value, field_type)
               {:ok, {pk_field, cast_value}}
@@ -1359,10 +1356,8 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Cast primary key values based on their Ecto type
     @doc false
     def cast_primary_key_value(value, :binary_id) when is_binary(value) do
-      # binary_id fields need to be cast to Ecto.UUID format
       case Ecto.UUID.cast(value) do
         {:ok, casted} -> casted
         :error -> value
@@ -1380,7 +1375,6 @@ if Code.ensure_loaded?(Ecto) do
 
     @doc false
     def cast_primary_key_value(value, Ecto.UUID) when is_binary(value) do
-      # Explicit UUID type
       case Ecto.UUID.cast(value) do
         {:ok, casted} -> casted
         :error -> value

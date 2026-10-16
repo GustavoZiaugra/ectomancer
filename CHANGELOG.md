@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `import_deps: [:ectomancer]` no longer have `mix format` rewrite
   `expose Foo` into `expose(Foo)` (#174).
 
+### Changed
+
+- **Comment cleanup across `lib/`.** Removed section-marker, boilerplate, and
+  code-restating comments (e.g. leftover `mix new` placeholders, "Tool N:"
+  markers, stale "now enabled" notes). Public behavior documentation stays in
+  `@moduledoc`/`@doc`; remaining inline comments are limited to rationale the
+  code cannot express (scope verification, atom-table exhaustion, Anubis
+  `mcp_schema/1` wiring, batch restore semantics).
+
 ### Fixed
 
 - **`order_by` no longer sorts by `except:`-hidden fields.** Ordering is now

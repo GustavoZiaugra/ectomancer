@@ -100,7 +100,6 @@ defmodule Ectomancer.Resource do
     {description, uri_str, mime_type_str, auth_handler, read_handler_ast} =
       parse_resource_block(block)
 
-    # Determine if URI is static or templated (contains {var} patterns)
     is_template = String.contains?(uri_str, "{")
     action = :read
 
@@ -261,9 +260,8 @@ defmodule Ectomancer.Resource do
     end
   end
 
-  # Parse resource block to extract components
   defp parse_resource_block(block) do
-    # Handle the block which may contain nested __block__ structures
+    # The block may contain nested __block__ structures
     items =
       case block do
         {:__block__, _, inner_items} -> flatten_block_items(inner_items)

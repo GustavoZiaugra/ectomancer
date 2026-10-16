@@ -154,8 +154,6 @@ if Code.ensure_loaded?(Ecto) do
     def field_info(schema_module, field) do
       type = schema_module.__schema__(:type, field)
 
-      # Check if field is nullable by looking at the type
-      # Nullable fields in Ecto typically have {:maybe, type} or are virtual
       nullable =
         case type do
           nil -> true
@@ -304,7 +302,6 @@ if Code.ensure_loaded?(Ecto) do
                 module |> Module.split() |> List.last() |> Macro.underscore()
               rescue
                 _ ->
-                  # Not a real module, just return the atom as string
                   Atom.to_string(module)
               end
 

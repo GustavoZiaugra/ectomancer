@@ -104,7 +104,6 @@ if Code.ensure_loaded?(Oban) do
 
         generate_oban_tools(namespace, auth_config)
       else
-        # Oban not available, generate nothing
         quote do
           :ok
         end
@@ -178,7 +177,6 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    # Generate all Oban management tools
     defp generate_oban_tools(namespace, auth_config) do
       tools = [
         generate_list_queues_tool(namespace, resolve_oban_handler(:list_queues, auth_config)),
@@ -215,7 +213,6 @@ if Code.ensure_loaded?(Oban) do
       Ectomancer.Authorization.authorize_to_ast(handler)
     end
 
-    # Tool 1: list_oban_queues
     defp generate_list_queues_tool(namespace, auth_handler) do
       tool_name = build_tool_name("list_oban_queues", namespace)
 
@@ -231,7 +228,6 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    # Tool 2: get_queue_depth
     defp generate_get_queue_depth_tool(namespace, auth_handler) do
       tool_name = build_tool_name("get_queue_depth", namespace)
 
@@ -249,7 +245,6 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    # Tool 3: list_stuck_jobs
     defp generate_list_stuck_jobs_tool(namespace, auth_handler) do
       tool_name = build_tool_name("list_stuck_jobs", namespace)
 
@@ -279,7 +274,6 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    # Tool 4: retry_job
     defp generate_retry_job_tool(namespace, auth_handler) do
       tool_name = build_tool_name("retry_job", namespace)
 
@@ -297,7 +291,6 @@ if Code.ensure_loaded?(Oban) do
       end
     end
 
-    # Tool 5: cancel_job
     defp generate_cancel_job_tool(namespace, auth_handler) do
       tool_name = build_tool_name("cancel_job", namespace)
 

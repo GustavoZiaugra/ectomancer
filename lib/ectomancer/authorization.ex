@@ -67,7 +67,6 @@ defmodule Ectomancer.Authorization do
     handler = Keyword.get(opts, :handler)
     parent_auth = Keyword.get(opts, :parent_auth)
 
-    # First check parent authorization (cascade)
     with :ok <- check_parent(parent_auth, actor, action) do
       do_check(handler, actor, action)
     end
@@ -84,8 +83,6 @@ defmodule Ectomancer.Authorization do
     handler not in [nil, :none] or
       (is_list(parent_auth) and enabled?(parent_auth))
   end
-
-  # Private functions
 
   defp check_parent(nil, _actor, _action), do: :ok
   defp check_parent([], _actor, _action), do: :ok
@@ -136,7 +133,6 @@ defmodule Ectomancer.Authorization do
   end
 
   defp call_policy_module(module, actor, action, opts \\ []) do
-    # Check if module implements the behavior
     cond do
       function_exported?(module, :authorize, 3) ->
         module.authorize(actor, action, opts)

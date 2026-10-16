@@ -70,12 +70,9 @@ if Code.ensure_loaded?(Ecto) do
       {description, params, auth_handler, parent_auth_handler, handler_ast} =
         parse_tool_block(block)
 
-      # Build Peri schema for Anubis validation (atom keys)
       peri_schema = build_peri_schema(params)
-      # Build JSON Schema for external clients (string keys)
       json_schema = build_json_schema(params)
 
-      # Infer action name from tool name for authorization
       action = tool_action_from_name(tool_name_str)
 
       quote do
@@ -227,9 +224,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Helpers to generate conditional clauses for tool modules.
-    # Extracted to keep define_tool_module shallow for Credo.
-
     defp build_execute_clause(true, handler_ast) do
       quote do
         def execute(params, frame) do
@@ -305,10 +299,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Parse tool block to extract components
     defp parse_tool_block(block) do
-      # Handle the block which is a __block__ containing the tool definitions
-      # Flatten nested __block__ structures
       items =
         case block do
           {:__block__, _, inner_items} -> flatten_block_items(inner_items)
@@ -346,7 +337,6 @@ if Code.ensure_loaded?(Ecto) do
       )
     end
 
-    # Flatten nested __block__ items
     @doc false
     def flatten_block_items(items) do
       Enum.flat_map(items, fn
@@ -355,7 +345,6 @@ if Code.ensure_loaded?(Ecto) do
       end)
     end
 
-    # Build Peri schema for Anubis validation (atom keys)
     defp build_peri_schema(params) do
       Enum.map(params, fn {name, type, opts} ->
         full_type =
@@ -366,7 +355,6 @@ if Code.ensure_loaded?(Ecto) do
       |> Enum.into(%{})
     end
 
-    # Build JSON Schema for external clients (string keys, JSON encodable)
     defp build_json_schema(params) do
       properties =
         Enum.map(params, fn {name, type, _} ->
@@ -388,7 +376,6 @@ if Code.ensure_loaded?(Ecto) do
       %{"type" => "array", "items" => json_property_for_type(inner)}
     end
 
-    # Map DSL types to Peri types
     defp type_to_peri(:string), do: :string
     defp type_to_peri(:integer), do: :integer
     defp type_to_peri(:float), do: :float
@@ -398,7 +385,6 @@ if Code.ensure_loaded?(Ecto) do
     defp type_to_peri({:array, inner}), do: {:list, type_to_peri(inner)}
     defp type_to_peri(_), do: :string
 
-    # Map DSL types to JSON Schema types
     defp type_to_json(:string), do: "string"
     defp type_to_json(:integer), do: "integer"
     defp type_to_json(:float), do: "number"
@@ -432,7 +418,6 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    # Infer action type from tool name for authorization
     defp tool_action_from_name(tool_name) do
       name = String.downcase(tool_name)
 
@@ -578,8 +563,6 @@ if Code.ensure_loaded?(Ecto) do
       {-32_603, "Tool execution failed", %{}}
     end
 
-    # Helper functions for format_error/1
-
     defp extract_null_violation_field(reason) when is_binary(reason) do
       ~r/null value in column "([^"]+)"/i
       |> Regex.run(reason)
@@ -673,7 +656,6 @@ if Code.ensure_loaded?(Ecto) do
     """
     @spec infer_validation_type(%{atom() => String.t()} | %{atom() => [String.t()]}) :: atom()
     def infer_validation_type(errors) when is_map(errors) do
-      # Normalize errors to a single string for pattern matching
       error_messages =
         errors
         |> Map.values()
