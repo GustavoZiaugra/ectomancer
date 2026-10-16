@@ -26,7 +26,9 @@ if Code.ensure_loaded?(Ecto) do
     When a `:scope` function is supplied (via `opts` or the `scope:` option on
     `expose`), writes are verified against it inside the same transaction:
     inserted rows are re-selected through the scope, updated rows are re-checked
-    after the write, and out-of-scope results are rolled back. Batch operations
+    after the write, and out-of-scope results are rolled back. Nested `create`
+    with `:associations` is verified after the children are inserted; a violation
+    rolls back the parent and children together. Batch operations
     undo/restore per-record and keep the rest of the batch, but if the
     verification or the compensating write itself fails, the whole batch is
     rolled back (fail-closed). Scoped writes on schemas without a primary key

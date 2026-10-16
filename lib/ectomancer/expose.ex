@@ -37,10 +37,15 @@ if Code.ensure_loaded?(Ecto) do
         the authenticated caller from `actor_from`. Applies to reads and writes:
         create/upsert/batch_create rows are re-selected through the scope after
         insert and rolled back when not visible, and update/batch_update rows are
-        re-checked after the write.
+        re-checked after the write. Nested creation with `:associations` is verified
+        after the children are inserted (parent and children roll back together),
+        and scoped writes on schemas without a primary key are rejected because the
+        row cannot be re-selected for verification.
       * `:associations` - Enable nested creation of associated records on `:create`.
         `true` for all associations, or a list of specific association atoms.
-        Example: `associations: true` or `associations: [:comments]`
+        Example: `associations: true` or `associations: [:comments]`. When `:scope`
+        is configured, the parent row is verified against the scope after its
+        children are inserted; a violation rolls back the whole transaction.
 
     ## Generated Tools
 

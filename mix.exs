@@ -53,6 +53,7 @@ defmodule Ectomancer.MixProject do
       extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       source_url: @source_url,
       source_ref: "v#{@version}",
+      skip_code_autolink_to: ["Ectomancer.Plug.init/1"],
       groups_for_modules: [
         Core: [Ectomancer, Ectomancer.Tool, Ectomancer.Expose],
         Integration: [

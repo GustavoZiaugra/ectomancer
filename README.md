@@ -16,7 +16,7 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
 - **Authorization system** — inline functions, policy modules, or action-specific rules
 - **Fail-closed by default** — `expose` only enables read-only `list`/`get`; mutating actions require an `:authorize` option or an explicit `authorize: :none` opt-in, enforced at compile time (#139). The same guard covers mutating `expose_routes` routes and `expose_oban_jobs` `retry_job`/`cancel_job` tools
-- **Write-time scope enforcement** — `scope:` now covers writes too: created/upserted rows are re-selected through the scope and rolled back when not visible, and updated rows are re-checked after the write (#174)
+- **Write-time scope enforcement** — `scope:` now covers writes too: created/upserted rows (including nested `create` with `associations:`) are re-selected through the scope and rolled back when not visible, and updated rows are re-checked after the write (#174)
 - **OAuth discovery** — `/.well-known/oauth-protected-resource` route helper and RFC 9728 `WWW-Authenticate` challenges for claude.ai custom connectors (#174)
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
@@ -507,7 +507,9 @@ The scope is applied to **every generated action — reads and writes**:
 - `create`/`upsert` (insert path)/`batch_create` — the inserted row is re-selected
   through the scope inside the same transaction and **rolled back** if it is not
   visible (an actor cannot write rows under another tenant by supplying a foreign
-  tenant key)
+  tenant key). This includes nested creation with `associations:` — the parent is
+  verified after its children are inserted, and parent and children roll back
+  together on a violation
 - `update`/`batch_update` — the row is fetched through the scope and re-checked
   after the write; if the update moved the row out of scope, the transaction is
   rolled back (single update) or the original values are restored and the row is
@@ -562,6 +564,24 @@ from every row returned by `list`, `get`, and batch tools:
 # password_hash will never appear in tool output, only in params it is omitted
 expose MyApp.Accounts.User, except: [:password_hash, :secret_token]
 ```
+
+Ordering is restricted to fields the caller can actually see: `order_by` is
+resolved against the visible field set, so a field hidden with `except:` cannot
+control row ordering — otherwise a client could bisect its values through the
+row order.
+
+The same applies to `field_authorize:`, a dynamic callback that strips fields
+per actor:
+
+```elixir
+expose MyApp.Accounts.User,
+  field_authorize: fn actor, field ->
+    field != :salary or actor.role == :admin
+  end
+```
+
+Fields denied to the current actor are stripped from results **and** excluded
+from the `order_by` allowlist.
 
 ## Batch operations
 
