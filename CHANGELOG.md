@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-10-16
+
+> **Upgrading from 3.0.x: writes now honor `scope:`.** Rows created or moved
+> outside the actor's scope are rolled back and reported as `Resource not
+> found` (single tools) or `scope_violation` (batch); scoped writes on
+> pk-less schemas are rejected. `order_by` ignores `except:`-hidden and
+> actor-denied fields, and `/.well-known/oauth-protected-resource` is
+> available for OAuth-aware MCP clients.
+
 ### Added
 
 - **Write-time `scope:` enforcement.** `scope:` was only applied to reads and to
@@ -792,7 +801,9 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.2...HEAD
+[3.0.2]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.1...v3.0.2
+[3.0.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.1...v3.0.0
 [2.0.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/GustavoZiaugra/ectomancer/compare/v1.7.1...v2.0.0
