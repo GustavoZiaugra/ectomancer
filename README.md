@@ -16,6 +16,8 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
 - **Authorization system** — inline functions, policy modules, or action-specific rules
 - **Fail-closed by default** — `expose` only enables read-only `list`/`get`; mutating actions require an `:authorize` option or an explicit `authorize: :none` opt-in, enforced at compile time (#139). The same guard covers mutating `expose_routes` routes and `expose_oban_jobs` `retry_job`/`cancel_job` tools
+- **Write-time scope enforcement** — `scope:` now covers writes too: created/upserted rows (including nested `create` with `associations:`) are re-selected through the scope and rolled back when not visible, and updated rows are re-checked after the write (#174)
+- **OAuth discovery** — `/.well-known/oauth-protected-resource` route helper and RFC 9728 `WWW-Authenticate` challenges for claude.ai custom connectors (#174)
 - **Actor threading** — the current user flows through every tool call automatically
 - **Custom tools** — `tool :search_users do ... end` with typed params
 - **Upsert operations** — `upsert_{resource}` for insert-or-update workflows with conflict target and `on_conflict` control
@@ -268,6 +270,14 @@ and mount each in the router as shown above.
 
 ## Authorization
 
+> **Read actions are public by default.** The fail-closed guard above covers
+> mutations only: a bare `expose SomeSchema` generates `list_*`/`get_*` tools
+> with **no authorization and no scope**, so any caller (including anonymous
+> ones, when `actor_from` is unset) can read every row — across tenants, if any.
+> Always add `authorize:` and/or `scope:` to every `expose` that touches
+> multi-tenant or sensitive data. The installer scaffolds a reminder comment
+> into the generated MCP module.
+
 > **Fail-closed by default.** `expose` only generates read-only tools (`list`/`get`).
 > Any mutating action (`create`, `update`, `destroy`, `restore`, `upsert`, and the
 > batch variants) requires effective authorization: pass an `:authorize` option
@@ -364,6 +374,40 @@ expose_routes MyAppWeb.Router,
   authorize: fn actor, _action -> actor.role == :admin end
 ```
 
+### OAuth discovery (claude.ai custom connectors)
+
+MCP clients that support OAuth discovery (claude.ai custom connectors) need two
+things: an RFC 9728 protected-resource document and a `WWW-Authenticate`
+challenge on unauthorized responses.
+
+Serve the discovery document with the bundled plug:
+
+```elixir
+# In config/config.exs
+config :ectomancer, :oauth_protected_resource, %{
+  "resource" => "https://your-app.com/mcp",
+  "authorization_servers" => ["https://auth.your-app.com"],
+  "scopes_supported" => ["mcp"]
+}
+
+# In your router
+get "/.well-known/oauth-protected-resource",
+    Ectomancer.Plug.OAuthProtectedResource,
+    []
+```
+
+To make 401 responses point clients at that document, configure the URL:
+
+```elixir
+config :ectomancer, :oauth,
+  resource_metadata_url: "https://your-app.com/.well-known/oauth-protected-resource"
+```
+
+`Ectomancer.Plug` then emits
+`WWW-Authenticate: Bearer resource_metadata="https://your-app.com/.well-known/oauth-protected-resource"`
+on every 401. Without this config, 401 responses keep the plain JSON body (fine
+for Claude Code with a static bearer token).
+
 ## Configuration
 
 ### Sources
@@ -457,9 +501,58 @@ expose MyApp.Accounts.Workspace,
   end
 ```
 
-The scope is applied to `list`, `get`, `update`, `destroy`, and batch operations.
-It composes with authorization-policy scopes (`{:ok, :scoped, fn query -> ... end}`)
+The scope is applied to **every generated action — reads and writes**:
+
+- `list`/`get` — only rows matching the scope are returned
+- `create`/`upsert` (insert path)/`batch_create` — the inserted row is re-selected
+  through the scope inside the same transaction and **rolled back** if it is not
+  visible (an actor cannot write rows under another tenant by supplying a foreign
+  tenant key). This includes nested creation with `associations:` — the parent is
+  verified after its children are inserted, and parent and children roll back
+  together on a violation
+- `update`/`batch_update` — the row is fetched through the scope and re-checked
+  after the write; if the update moved the row out of scope, the transaction is
+  rolled back (single update) or the original values are restored and the row is
+  reported as a failed batch entry
+- `destroy`/`restore`/`batch_destroy` — the row is fetched through the scope
+  before the operation
+
+A scope violation is reported to clients as `Resource not found` (the same
+non-leaky shape as a scoped-out read) or as a per-record `failed` entry with
+`errors: "scope_violation"` in batch results.
+
+Two fail-closed guarantees apply when the safety net itself cannot complete:
+
+- If the post-write re-select or the compensating write (rollback/undo/restore)
+  raises — DB trigger, constraint, connection loss — the **whole batch** is
+  rolled back rather than committing a row that may sit outside the actor's
+  scope.
+- If a scoped write is executed **inside a caller-managed transaction** (for
+  example `Repo.transaction/1` wrapping several tool calls), a scope violation
+  aborts that transaction: the offending call returns `Resource not found`, and
+  the caller's `Repo.transaction` returns `{:error, :rollback}` with all writes
+  rolled back.
+- Scoped writes on schemas **without a primary key** cannot be verified (there
+  is no key to re-select by), so they are rejected instead of silently allowed.
+
+The scope composes with authorization-policy scopes (`{:ok, :scoped, fn query -> ... end}`)
 when both are configured.
+
+> **DX note:** functions passed to `scope:` and `authorize:` are spliced as AST
+> into every generated tool module, so they cannot call local helpers of the host
+> module. Write host helpers as fully qualified remote calls:
+
+```elixir
+# Wrong — generated module fails to compile: undefined function tenant_ids/1
+# scope: fn query, actor -> from(w in query, where: w.tenant_id in ^tenant_ids(actor)) end
+
+# Right — remote call into the host module
+expose MyApp.Accounts.Workspace,
+  scope: fn query, actor ->
+    import Ecto.Query
+    from(w in query, where: w.tenant_id in ^MyApp.MCP.tenant_ids(actor))
+  end
+```
 
 ### Field filtering on results
 
@@ -471,6 +564,24 @@ from every row returned by `list`, `get`, and batch tools:
 # password_hash will never appear in tool output, only in params it is omitted
 expose MyApp.Accounts.User, except: [:password_hash, :secret_token]
 ```
+
+Ordering is restricted to fields the caller can actually see: `order_by` is
+resolved against the visible field set, so a field hidden with `except:` cannot
+control row ordering — otherwise a client could bisect its values through the
+row order.
+
+The same applies to `field_authorize:`, a dynamic callback that strips fields
+per actor:
+
+```elixir
+expose MyApp.Accounts.User,
+  field_authorize: fn actor, field ->
+    field != :salary or actor.role == :admin
+  end
+```
+
+Fields denied to the current actor are stripped from results **and** excluded
+from the `order_by` allowlist.
 
 ## Batch operations
 
@@ -607,6 +718,19 @@ Open `priv/ectomancer.html` in a browser for a visual playground — browse tool
 ```bash
 mix test
 ```
+
+The suite runs against in-memory SQLite. Scope-write rollback/undo semantics and
+`mode: :savepoint` batch containment are also validated against a real Postgres
+(because a failed statement aborts a Postgres transaction, unlike SQLite):
+
+```bash
+# any reachable Postgres database works
+ECTOMANCER_PG_URL=postgres://postgres:postgres@localhost:5432/ectomancer_test \
+  mix test --only postgres
+```
+
+The `postgres scope tests` CI job runs the same command against a `postgres:16`
+service container.
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 

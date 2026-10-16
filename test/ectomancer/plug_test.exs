@@ -132,4 +132,74 @@ defmodule Ectomancer.PlugTest do
       end
     end
   end
+
+  describe "OAuth discovery surface" do
+    alias Ectomancer.Plug.OAuthProtectedResource
+
+    setup do
+      original_actor_from = Application.get_env(:ectomancer, :actor_from)
+      original_oauth = Application.get_env(:ectomancer, :oauth)
+      original_metadata = Application.get_env(:ectomancer, :oauth_protected_resource)
+
+      Application.put_env(:ectomancer, :actor_from, fn _conn -> {:error, :unauthorized} end)
+
+      on_exit(fn ->
+        restore_env(:actor_from, original_actor_from)
+        restore_env(:oauth, original_oauth)
+        restore_env(:oauth_protected_resource, original_metadata)
+      end)
+
+      :ok
+    end
+
+    defp restore_env(key, nil), do: Application.delete_env(:ectomancer, key)
+    defp restore_env(key, value), do: Application.put_env(:ectomancer, key, value)
+
+    test "401 omits WWW-Authenticate when oauth is not configured" do
+      Application.delete_env(:ectomancer, :oauth)
+
+      conn = Plug.call(conn(:post, "/mcp"), Plug.init(server: MyApp.MCP))
+
+      assert conn.status == 401
+      assert get_resp_header(conn, "www-authenticate") == []
+    end
+
+    test "401 includes the RFC 9728 challenge when resource_metadata_url is configured" do
+      url = "https://app.example.com/.well-known/oauth-protected-resource"
+      Application.put_env(:ectomancer, :oauth, resource_metadata_url: url)
+
+      conn = Plug.call(conn(:post, "/mcp"), Plug.init(server: MyApp.MCP))
+
+      assert conn.status == 401
+      assert get_resp_header(conn, "www-authenticate") == ["Bearer resource_metadata=\"#{url}\""]
+    end
+
+    test "well-known plug returns 404 when unconfigured" do
+      Application.delete_env(:ectomancer, :oauth_protected_resource)
+
+      conn =
+        conn(:get, "/.well-known/oauth-protected-resource")
+        |> OAuthProtectedResource.call(OAuthProtectedResource.init([]))
+
+      assert conn.status == 404
+      assert Jason.decode!(conn.resp_body) == %{"error" => "Not Found"}
+    end
+
+    test "well-known plug serves the configured metadata document" do
+      metadata = %{
+        "resource" => "https://app.example.com/mcp",
+        "authorization_servers" => ["https://auth.example.com"]
+      }
+
+      Application.put_env(:ectomancer, :oauth_protected_resource, metadata)
+
+      conn =
+        conn(:get, "/.well-known/oauth-protected-resource")
+        |> OAuthProtectedResource.call(OAuthProtectedResource.init([]))
+
+      assert conn.status == 200
+      assert Jason.decode!(conn.resp_body) == metadata
+      assert get_resp_header(conn, "content-type") == ["application/json; charset=utf-8"]
+    end
+  end
 end

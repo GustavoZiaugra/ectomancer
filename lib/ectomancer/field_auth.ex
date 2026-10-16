@@ -3,8 +3,11 @@ defmodule Ectomancer.FieldAuth do
   Field-level authorization for Ectomancer tools.
 
   Allows filtering record fields based on actor permissions after a tool
-  executes. Field auth is applied as a response transform — the DB query
-  is unaffected, only the returned data is filtered.
+  executes. Field auth is applied as a response transform — the row data
+  itself is unaffected, only the returned fields are filtered. The one
+  query-level effect: `:list` ordering (`order_by`) is restricted to fields
+  the actor is allowed to see, so a denied field cannot control row order
+  and leak relative values through the ordering.
 
   ## Usage
 
@@ -58,4 +61,19 @@ defmodule Ectomancer.FieldAuth do
   end
 
   def filter_fields(data, _actor, _auth_fn), do: data
+
+  @doc """
+  Returns whether `field` is allowed for `actor` under the authorization
+  callback. Mirrors the truthiness used by `filter_fields/3`.
+
+  Used to restrict `order_by` to fields the actor may actually see, so a
+  denied field cannot control row ordering.
+  """
+  @spec field_allowed?(any(), atom(), function() | nil) :: boolean()
+  def field_allowed?(_actor, _field, nil), do: true
+  def field_allowed?(_actor, _field, auth_fn) when not is_function(auth_fn, 2), do: true
+
+  def field_allowed?(actor, field, auth_fn) do
+    !!auth_fn.(actor, field)
+  end
 end

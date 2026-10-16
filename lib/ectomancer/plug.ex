@@ -165,6 +165,7 @@ if Code.ensure_loaded?(Plug) do
       case actor do
         {:error, _reason} ->
           conn
+          |> put_www_authenticate_header()
           |> put_resp_content_type("application/json")
           |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
           |> halt()
@@ -173,6 +174,28 @@ if Code.ensure_loaded?(Plug) do
           conn
           |> assign(:ectomancer_actor, actor)
           |> dispatch_by_transport(state)
+      end
+    end
+
+    # Emits the RFC 9728 protected-resource discovery challenge so OAuth-aware
+    # clients (e.g. claude.ai custom connectors) can find the authorization
+    # server for this MCP endpoint.
+    #
+    #     config :ectomancer, :oauth,
+    #       resource_metadata_url: "https://your-app.com/.well-known/oauth-protected-resource"
+    defp put_www_authenticate_header(conn) do
+      case Application.get_env(:ectomancer, :oauth) do
+        config when is_list(config) ->
+          case Keyword.get(config, :resource_metadata_url) do
+            nil ->
+              conn
+
+            url ->
+              put_resp_header(conn, "www-authenticate", "Bearer resource_metadata=\"#{url}\"")
+          end
+
+        _ ->
+          conn
       end
     end
 

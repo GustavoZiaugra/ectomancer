@@ -505,6 +505,12 @@ if Code.ensure_loaded?(Ecto) do
       {-32_002, "Resource not found", %{}}
     end
 
+    def format_error(:scope_violation) do
+      # The write was rolled back because the resulting row is not visible
+      # under the actor's scope. Non-leaky: same as not_found.
+      {-32_002, "Resource not found", %{}}
+    end
+
     def format_error(:internal_error) do
       {-32_603, "Tool execution failed", %{}}
     end
@@ -731,6 +737,10 @@ else
     end
 
     def format_error(:not_found) do
+      {-32_002, "Resource not found", %{}}
+    end
+
+    def format_error(:scope_violation) do
       {-32_002, "Resource not found", %{}}
     end
 
