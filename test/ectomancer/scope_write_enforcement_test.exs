@@ -12,6 +12,7 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
 
   use Ectomancer.DataCase
 
+  alias Ectomancer.ScopeWriteEnforcementTest.FieldAuthOrderMCP.Tool, as: FieldAuthOrderTool
   alias Ectomancer.ScopeWriteEnforcementTest.RedactedOrderMCP.Tool, as: RedactedTool
   alias Ectomancer.ScopeWriteEnforcementTest.ScopedWriteMCP.Tool, as: ScopedTool
   alias Ectomancer.TestRepo
@@ -38,7 +39,18 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
     end
   end
 
-  @moduletag schemas: [TenantItem, PkLessItem]
+  defmodule TenantItemChild do
+    use Ecto.Schema
+
+    schema "tenant_item_children" do
+      field(:name, :string)
+      belongs_to(:tenant_item, TenantItem)
+
+      timestamps()
+    end
+  end
+
+  @moduletag schemas: [TenantItem, PkLessItem, TenantItemChild]
 
   setup %{repo: _repo} do
     Application.put_env(:ectomancer, :repo, TestRepo)
@@ -82,6 +94,19 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
     )
   end
 
+  defmodule FieldAuthOrderMCP do
+    use Ectomancer, name: "field-auth-order-mcp", version: "1.0.0"
+
+    expose(TenantItem,
+      actions: [:list],
+      authorize: :none,
+      field_authorize: fn actor, field ->
+        field != :secret or Map.get(actor, :admin, false)
+      end
+    )
+  end
+
+  defp frame(actor) when is_map(actor), do: %{assigns: %{ectomancer_actor: actor}}
   defp frame(tenant_id), do: %{assigns: %{ectomancer_actor: %{tenant_id: tenant_id}}}
 
   defp tenant_one_scope do
@@ -89,6 +114,10 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
       import Ecto.Query
       from(t in query, where: t.tenant_id == 1)
     end
+  end
+
+  defp assoc_config do
+    [%{field: :children, cardinality: :many, related: TenantItemChild, type: :has_many}]
   end
 
   defp reply_text(tool, params, actor) do
@@ -242,6 +271,31 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
 
       assert :binary.match(text, "new-row") < :binary.match(text, "old-row")
     end
+
+    test "order_by on a field denied by field_authorize is ignored" do
+      # secret "a" (second-row) sorts first if ordering were allowed
+      text =
+        reply_text(
+          FieldAuthOrderTool.ListTenantItems,
+          %{"order_by" => "secret"},
+          %{tenant_id: 1, admin: false}
+        )
+
+      assert :binary.match(text, "first-row") < :binary.match(text, "second-row")
+      refute text =~ "\"secret\""
+    end
+
+    test "order_by on a field allowed by field_authorize still works" do
+      text =
+        reply_text(
+          FieldAuthOrderTool.ListTenantItems,
+          %{"order_by" => "secret"},
+          %{tenant_id: 1, admin: true}
+        )
+
+      assert :binary.match(text, "second-row") < :binary.match(text, "first-row")
+      assert text =~ "\"secret\""
+    end
   end
 
   describe "scope safety net failures" do
@@ -351,6 +405,37 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
 
       {:ok, [row]} = Ectomancer.Repo.list(TenantItem, %{"name" => "mine"})
       assert row.secret == "s2"
+    end
+  end
+
+  describe "scope enforcement on association writes" do
+    test "create with associations rolls back when the parent lands out of scope" do
+      assert {:error, :scope_violation} =
+               Ectomancer.Repo.create(
+                 TenantItem,
+                 %{name: "smuggled", tenant_id: 2, children: [%{name: "child"}]},
+                 associations: assoc_config(),
+                 scope: tenant_one_scope(),
+                 repo: TestRepo
+               )
+
+      assert count(TenantItem) == 0
+      assert count(TenantItemChild) == 0
+    end
+
+    test "create with associations commits when the parent stays in scope" do
+      assert {:ok, parent} =
+               Ectomancer.Repo.create(
+                 TenantItem,
+                 %{name: "own", tenant_id: 1, children: [%{name: "child"}]},
+                 associations: assoc_config(),
+                 scope: tenant_one_scope(),
+                 repo: TestRepo
+               )
+
+      assert parent.name == "own"
+      assert count(TenantItem) == 1
+      assert count(TenantItemChild) == 1
     end
   end
 

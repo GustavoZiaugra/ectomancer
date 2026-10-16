@@ -47,6 +47,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`order_by` no longer sorts by `except:`-hidden fields.** Ordering is now
   resolved against the exposed/filterable field allowlist instead of every
   schema field, closing an ordering-leak on redacted columns (#174).
+- **`create` with `associations:` now enforces `scope:`.** The scope re-check on
+  the association-create path was dead code — `insert_associations/4` returned
+  the bare struct, so the `{:ok, record}` match never fired and the check was
+  skipped. A scoped actor could pass a foreign `tenant_id` with nested
+  `associations:` and commit the parent row under another tenant. The parent row
+  is now re-selected through the scope after the children are inserted, and the
+  whole transaction (parent and children) is rolled back on violation (#174).
+- **`order_by` respects `field_authorize`.** The `order_by` allowlist was static
+  (`result_fields`), so a field denied to the actor by the dynamic
+  `field_authorize` callback could still control row ordering and leak relative
+  values through the row order. The allowlist is now narrowed per-actor with the
+  same callback that filters result fields (#174).
 - **Anonymous reads are now documented loudly.** A bare `expose` still generates
   public read tools, but the README, `Ectomancer.Expose` docs, and the installer
   template now warn that `list`/`get` need explicit `authorize:`/`scope:` for
@@ -63,10 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against a real Postgres, which SQLite cannot exercise (a failed statement
   aborts a Postgres transaction but not a SQLite one). New CI job
   `postgres scope tests` runs it against a `postgres:16` service.
-- New SQLite coverage: upsert insert/update scope paths, batch safety-net
-  failure paths (trigger-blocked undo and restore abort the whole batch),
-  caller-managed transaction semantics (`{:error, :rollback}`), and fail-closed
-  rejection of scoped writes on pk-less schemas.
+- New SQLite coverage: upsert insert/update scope paths, association-create
+  scope enforcement (parent + children rolled back together), `order_by` vs
+  `field_authorize`, batch safety-net failure paths (trigger-blocked undo and
+  restore abort the whole batch), caller-managed transaction semantics
+  (`{:error, :rollback}`), and fail-closed rejection of scoped writes on
+  pk-less schemas.
 
 ## [3.0.1] - 2026-10-13
 

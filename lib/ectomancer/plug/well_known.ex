@@ -34,9 +34,18 @@ if Code.ensure_loaded?(Plug) do
     import Plug.Conn
 
     @impl Plug
+    @doc """
+    Returns the plug options unchanged.
+    """
+    @spec init(Plug.opts()) :: Plug.opts()
     def init(opts), do: opts
 
     @impl Plug
+    @doc """
+    Sends the configured `:oauth_protected_resource` metadata as JSON with
+    status 200, or a JSON 404 when no metadata is configured.
+    """
+    @spec call(Plug.Conn.t(), Plug.opts()) :: Plug.Conn.t()
     def call(conn, _opts) do
       case Application.get_env(:ectomancer, :oauth_protected_resource) do
         metadata when is_map(metadata) ->

@@ -226,12 +226,25 @@ if Code.ensure_loaded?(Ecto) do
     # `order_by` must be resolved against the fields visible in results — not
     # every schema field (a caller could order by, and bisect, a field hidden
     # with `except:`), and not the narrower filterable allowlist (ordering by
-    # `inserted_at` is a common request on a bare expose — see #174).
+    # `inserted_at` is a common request on a bare expose — see #174). When
+    # `field_authorize` is configured the allowlist is narrowed per-actor so a
+    # denied field cannot control row ordering either.
     defp orderable_expr(:list, config) do
       fields = config.result_fields || config.introspection.fields
 
-      quote do
-        opts = Keyword.put(opts, :orderable, unquote(fields))
+      if config.field_authorize do
+        quote do
+          allowed =
+            Enum.filter(unquote(fields), fn field ->
+              Ectomancer.FieldAuth.field_allowed?(actor, field, unquote(config.field_authorize))
+            end)
+
+          opts = Keyword.put(opts, :orderable, allowed)
+        end
+      else
+        quote do
+          opts = Keyword.put(opts, :orderable, unquote(fields))
+        end
       end
     end
 

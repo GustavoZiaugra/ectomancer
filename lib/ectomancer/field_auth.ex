@@ -58,4 +58,19 @@ defmodule Ectomancer.FieldAuth do
   end
 
   def filter_fields(data, _actor, _auth_fn), do: data
+
+  @doc """
+  Returns whether `field` is allowed for `actor` under the authorization
+  callback. Mirrors the truthiness used by `filter_fields/3`.
+
+  Used to restrict `order_by` to fields the actor may actually see, so a
+  denied field cannot control row ordering.
+  """
+  @spec field_allowed?(any(), atom(), function() | nil) :: boolean()
+  def field_allowed?(_actor, _field, nil), do: true
+  def field_allowed?(_actor, _field, auth_fn) when not is_function(auth_fn, 2), do: true
+
+  def field_allowed?(actor, field, auth_fn) do
+    !!auth_fn.(actor, field)
+  end
 end

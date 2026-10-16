@@ -197,7 +197,9 @@ if Code.ensure_loaded?(Ecto) do
         * `:namespace` - Prefix tools with namespace
         * `:as` - Alternative resource name
         * `:soft_delete` - Enable soft-delete awareness (auto-detects `:deleted_at`/`:archived_at` fields)
-        * `:field_authorize` - Dynamic field-level authorization callback `fn actor, field -> boolean :: boolean()`
+        * `:field_authorize` - Dynamic field-level authorization callback `fn actor, field -> boolean :: boolean()`.
+          Denied fields are stripped from results, and `:list` ordering (`order_by`) is
+          restricted to fields the actor is allowed to see
         * `:associations` - Enable nested creation of associated records on `:create`.
           `true` for all associations, or a list of specific association atoms.
 

@@ -1167,12 +1167,12 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     defp insert_assocs_and_verify(repo, schema_module, record, assoc_attrs, associations, scope) do
-      with {:ok, record} <- insert_associations(repo, record, assoc_attrs, associations) do
-        if visible_under_scope?(repo, schema_module, record, scope) do
-          record
-        else
-          repo.rollback(:scope_violation)
-        end
+      record = insert_associations(repo, record, assoc_attrs, associations)
+
+      if visible_under_scope?(repo, schema_module, record, scope) do
+        record
+      else
+        repo.rollback(:scope_violation)
       end
     end
 
