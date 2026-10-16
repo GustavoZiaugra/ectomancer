@@ -88,6 +88,7 @@ if Code.ensure_loaded?(Ecto) do
       quote do
         fn params, actor, scope ->
           opts = unquote(scope_expr(config.scope))
+          unquote(orderable_expr(action, config))
           unquote(preload_expr)
           unquote(extra_expr)
           unquote(repo_expr)
@@ -168,6 +169,7 @@ if Code.ensure_loaded?(Ecto) do
       quote do
         fn params, actor, scope ->
           opts = unquote(scope_expr(config.scope))
+          unquote(orderable_expr(action, config))
           unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(assoc_names), opts)
@@ -203,6 +205,7 @@ if Code.ensure_loaded?(Ecto) do
       quote do
         fn params, actor, scope ->
           opts = unquote(scope_expr(config.scope))
+          unquote(orderable_expr(action, config))
           unquote(preload_expr)
           {include, clean_params} = Map.pop(params, "include", nil)
           opts = Ectomancer.Repo.validate_includes(include, unquote(allowed), opts)
@@ -218,6 +221,22 @@ if Code.ensure_loaded?(Ecto) do
 
     defp scope_expr(config_scope) do
       quote(do: [scope: Ectomancer.Scope.compose(scope, actor, unquote(config_scope))])
+    end
+
+    # `order_by` must be resolved against the fields visible in results — not
+    # every schema field (a caller could order by, and bisect, a field hidden
+    # with `except:`), and not the narrower filterable allowlist (ordering by
+    # `inserted_at` is a common request on a bare expose — see #174).
+    defp orderable_expr(:list, config) do
+      fields = config.result_fields || config.introspection.fields
+
+      quote do
+        opts = Keyword.put(opts, :orderable, unquote(fields))
+      end
+    end
+
+    defp orderable_expr(_action, _config) do
+      quote(do: :ok)
     end
 
     @doc false

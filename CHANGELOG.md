@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Write-time `scope:` enforcement.** `scope:` was only applied to reads and to
+  the fetch/conflict-selection queries of writes, so a scoped actor could create
+  rows under another tenant, move its own row out of scope with an update, or
+  bypass the scope on the upsert insert path. Now:
+  - `create`/`upsert` (insert path)/`batch_create` re-select the inserted row
+    through the scope inside the same transaction and roll it back when it is not
+    visible (`create`, single upsert) or delete it and report the row as a failed
+    batch entry (`batch_create`)
+  - `update`/`batch_update` re-check the row after the write; a single update is
+    rolled back, a batch update restores the original values and reports the row
+    as failed
+  - violations surface as `Resource not found` for single tools and
+    `errors: "scope_violation"` in batch results (#174)
+  - fail-closed: if the verification re-select or the compensating write
+    (rollback/undo/restore) itself raises — DB trigger, constraint, connection
+    loss — the whole batch is rolled back instead of risking an out-of-scope
+    row being committed. Scoped writes executed inside a caller-managed
+    transaction abort that transaction (`{:error, :rollback}`) on violation,
+    and scoped writes on pk-less schemas are rejected because the written row
+    cannot be re-selected for verification.
+- **OAuth discovery surface for MCP clients** (`claude.ai` custom connectors).
+  `Ectomancer.Plug` now emits an RFC 9728 `WWW-Authenticate: Bearer
+  resource_metadata="..."` challenge on 401 responses when
+  `config :ectomancer, :oauth, resource_metadata_url:` is set, and the new
+  `Ectomancer.Plug.OAuthProtectedResource` plug serves the
+  `/.well-known/oauth-protected-resource` document from
+  `config :ectomancer, :oauth_protected_resource` (#174).
+- `.formatter.exs` now exports `locals_without_parens` for the Ectomancer DSL
+  (`expose`, `tool`, `prompt`, `resource`, `expose_routes`, `expose_oban_jobs`,
+  `description`, `param`, `authorize`, `handle`), so consumers using
+  `import_deps: [:ectomancer]` no longer have `mix format` rewrite
+  `expose Foo` into `expose(Foo)` (#174).
+
+### Fixed
+
+- **`order_by` no longer sorts by `except:`-hidden fields.** Ordering is now
+  resolved against the exposed/filterable field allowlist instead of every
+  schema field, closing an ordering-leak on redacted columns (#174).
+- **Anonymous reads are now documented loudly.** A bare `expose` still generates
+  public read tools, but the README, `Ectomancer.Expose` docs, and the installer
+  template now warn that `list`/`get` need explicit `authorize:`/`scope:` for
+  multi-tenant data (#174).
+- **`scope:`/`authorize:` DX.** Documented that these functions are spliced as
+  AST into generated tool modules and must call host helpers as fully qualified
+  remote calls (#174).
+
+### Testing
+
+- **Postgres-only scope integration suite.** `test/ectomancer/postgres_scope_test.exs`
+  (run with `ECTOMANCER_PG_URL=... mix test --only postgres`) validates
+  rollback/undo/restore semantics and `mode: :savepoint` batch containment
+  against a real Postgres, which SQLite cannot exercise (a failed statement
+  aborts a Postgres transaction but not a SQLite one). New CI job
+  `postgres scope tests` runs it against a `postgres:16` service.
+- New SQLite coverage: upsert insert/update scope paths, batch safety-net
+  failure paths (trigger-blocked undo and restore abort the whole batch),
+  caller-managed transaction semantics (`{:error, :rollback}`), and fail-closed
+  rejection of scoped writes on pk-less schemas.
+
 ## [3.0.1] - 2026-10-13
 
 > **Read this if you're on 3.0.0 and `anubis_mcp` 2.1+.** 3.0.0 dropped every

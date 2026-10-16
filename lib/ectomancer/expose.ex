@@ -34,7 +34,10 @@ if Code.ensure_loaded?(Ecto) do
       * `:preload` - Ecto associations to eager-load on `:list` and `:get` results
       * `:scope` - Function `fn query, actor -> query end` applied to every generated
         CRUD query for row-level scoping (e.g. multi-tenant isolation). The actor is
-        the authenticated caller from `actor_from`.
+        the authenticated caller from `actor_from`. Applies to reads and writes:
+        create/upsert/batch_create rows are re-selected through the scope after
+        insert and rolled back when not visible, and update/batch_update rows are
+        re-checked after the write.
       * `:associations` - Enable nested creation of associated records on `:create`.
         `true` for all associations, or a list of specific association atoms.
         Example: `associations: true` or `associations: [:comments]`
@@ -108,6 +111,13 @@ if Code.ensure_loaded?(Ecto) do
     module, or per-action rules) and without an explicit `authorize: :none` opt-in.
     The default `:actions` are read-only (`[:list, :get]`).
 
+    > **Read actions are public by default.** A bare `expose SomeSchema` generates
+    > `list_*`/`get_*` tools with no authorization and no scope, so unauthenticated
+    > callers can read every row (across tenants, if any). For internal tools this
+    > may be acceptable; for multi-tenant data, always add `authorize:` and/or
+    > `scope:` to every `expose`. Consider installing with `mix igniter.install
+    > ectomancer`, which scaffolds this guidance into the generated module.
+
     You can add authorization to exposed schemas using the `:authorize` option:
 
         # Global authorization for all actions
@@ -126,6 +136,23 @@ if Code.ensure_loaded?(Ecto) do
             get: :public,
             create: fn actor, _action -> actor.role == :admin end
           ]
+
+    ### `scope:` and `authorize:` functions are copied into generated modules
+
+    Functions passed to `scope:` and `authorize:` are spliced as AST into each
+    generated tool module. They cannot call local (private or public) helpers of
+    the host module — the generated module has no such function. Write host
+    helpers as fully qualified remote calls instead:
+
+        # Wrong — undefined function tenant_ids/1 at compile time
+        expose User, scope: fn query, actor ->
+          from(u in query, where: u.tenant_id in ^tenant_ids(actor))
+        end
+
+        # Right — remote call into the host module
+        expose User, scope: fn query, actor ->
+          from(u in query, where: u.tenant_id in ^MyApp.MCP.tenant_ids(actor))
+        end
 
     ## Repo Configuration
 

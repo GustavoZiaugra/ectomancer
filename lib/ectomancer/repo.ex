@@ -20,6 +20,22 @@ if Code.ensure_loaded?(Ecto) do
 
     If not configured, it defaults to trying `MyApp.Repo` based on your app's
     module namespace.
+
+    ## Scope enforcement on writes
+
+    When a `:scope` function is supplied (via `opts` or the `scope:` option on
+    `expose`), writes are verified against it inside the same transaction:
+    inserted rows are re-selected through the scope, updated rows are re-checked
+    after the write, and out-of-scope results are rolled back. Batch operations
+    undo/restore per-record and keep the rest of the batch, but if the
+    verification or the compensating write itself fails, the whole batch is
+    rolled back (fail-closed). Scoped writes on schemas without a primary key
+    cannot be re-selected for verification and are rejected.
+
+    Calling a scoped write from inside a caller-managed transaction follows
+    Ecto/DBConnection nesting semantics: a scope violation marks the outer
+    transaction as aborted, so `Repo.transaction/1` returns `{:error, :rollback}`
+    and all of the caller's writes are rolled back.
     """
 
     alias Ectomancer.Repo.Filtering
@@ -76,7 +92,10 @@ if Code.ensure_loaded?(Ecto) do
               |> Filtering.build_filter_query(filter_params, introspection.fields)
               |> Filtering.apply_scope(Keyword.get(opts, :scope))
               |> Filtering.apply_soft_delete_filter(schema_module, meta_params)
-              |> Filtering.apply_ordering(meta_params, introspection.fields)
+              |> Filtering.apply_ordering(
+                meta_params,
+                Keyword.get(opts, :orderable, introspection.fields)
+              )
 
             has_explicit_limit =
               Map.has_key?(meta_params, "limit") or Keyword.has_key?(opts, :limit)
@@ -187,17 +206,15 @@ if Code.ensure_loaded?(Ecto) do
             associations = Keyword.get(opts, :associations, false)
             struct = struct(schema_module)
             attrs = normalize_params(params || %{}, schema_module)
+            scope = Keyword.get(opts, :scope)
 
             if associations do
-              create_with_associations(repo, schema_module, struct, attrs, associations)
+              create_with_associations(repo, schema_module, struct, attrs, associations, scope)
             else
               changeset =
                 changeset_for(schema_module, struct, attrs, writable_fields(schema_module))
 
-              case repo.insert(changeset) do
-                {:ok, record} -> {:ok, record}
-                {:error, changeset} -> {:error, changeset}
-              end
+              insert_and_verify_scope(repo, changeset, schema_module, scope)
             end
           end)
         rescue
@@ -227,7 +244,14 @@ if Code.ensure_loaded?(Ecto) do
                {:ok, pk_fields, pk_values} <-
                  extract_pk_for_mutation(schema_module, params || %{}),
                {:ok, record} <- fetch_single_record(repo, schema_module, pk_values, opts) do
-            perform_update(repo, schema_module, record, params || %{}, pk_fields)
+            perform_update(
+              repo,
+              schema_module,
+              record,
+              params || %{},
+              pk_fields,
+              Keyword.get(opts, :scope)
+            )
           end
         rescue
           e ->
@@ -305,31 +329,33 @@ if Code.ensure_loaded?(Ecto) do
 
     defp do_upsert(repo, schema_module, attrs, opts) do
       conflict_target = Keyword.get(opts, :conflict_target)
+      scope = Keyword.get(opts, :scope)
 
       if conflict_target do
         upsert_with_conflict(repo, schema_module, attrs, conflict_target, opts)
       else
-        insert_for_upsert(repo, schema_module, attrs, :inserted)
+        insert_for_upsert(repo, schema_module, attrs, :inserted, scope)
       end
     end
 
     defp upsert_with_conflict(repo, schema_module, attrs, conflict_target, opts) do
       conflict_fields = List.wrap(conflict_target)
       conflict_values = Map.take(attrs, conflict_fields)
+      scope = Keyword.get(opts, :scope)
 
       if has_all_conflict_values?(conflict_values, conflict_fields) do
         query = build_upsert_find_query(schema_module, conflict_values)
 
         query =
           query
-          |> Filtering.apply_scope(Keyword.get(opts, :scope))
+          |> Filtering.apply_scope(scope)
 
         case repo.one(query) do
-          nil -> insert_for_upsert(repo, schema_module, attrs, :inserted)
+          nil -> insert_for_upsert(repo, schema_module, attrs, :inserted, scope)
           existing -> upsert_update_existing(repo, schema_module, existing, attrs, opts)
         end
       else
-        insert_for_upsert(repo, schema_module, attrs, :inserted)
+        insert_for_upsert(repo, schema_module, attrs, :inserted, scope)
       end
     end
 
@@ -337,14 +363,14 @@ if Code.ensure_loaded?(Ecto) do
       map_size(conflict_values) == length(conflict_fields) and conflict_values != %{}
     end
 
-    defp insert_for_upsert(repo, schema_module, attrs, action) do
+    defp insert_for_upsert(repo, schema_module, attrs, action, scope) do
       struct = struct(schema_module)
 
       changeset = build_create_changeset(schema_module, struct, attrs)
 
-      case repo.insert(changeset) do
+      case insert_and_verify_scope(repo, changeset, schema_module, scope) do
         {:ok, record} -> {:ok, {record, action}}
-        {:error, changeset} -> {:error, changeset}
+        {:error, reason} -> {:error, reason}
       end
     end
 
@@ -375,9 +401,9 @@ if Code.ensure_loaded?(Ecto) do
 
       changeset = changeset_for(schema_module, existing, update_attrs, writable)
 
-      case repo.update(changeset) do
+      case update_and_verify_scope(repo, changeset, schema_module, Keyword.get(opts, :scope)) do
         {:ok, record} -> {:ok, {record, :updated}}
-        {:error, changeset} -> {:error, changeset}
+        {:error, reason} -> {:error, reason}
       end
     end
 
@@ -469,7 +495,7 @@ if Code.ensure_loaded?(Ecto) do
           else
             with_repo(opts, fn repo ->
               run_batch(repo, schema_module, records, opts, fn attrs ->
-                perform_batch_create(repo, schema_module, attrs)
+                perform_batch_create(repo, schema_module, attrs, opts)
               end)
             end)
           end
@@ -571,15 +597,44 @@ if Code.ensure_loaded?(Ecto) do
       Map.get(params, to_string(key), Map.get(params, key, []))
     end
 
-    defp perform_batch_create(repo, schema_module, attrs) do
+    defp perform_batch_create(repo, schema_module, attrs, opts) do
       struct = struct(schema_module)
       attrs = normalize_params(attrs, schema_module)
       changeset = build_create_changeset(schema_module, struct, attrs)
 
       case repo.insert(changeset, mode: :savepoint) do
-        {:ok, record} -> {:ok, record}
+        {:ok, record} -> verify_batch_create(repo, schema_module, record, attrs, opts)
         {:error, changeset} -> {:error, attrs, changeset}
       end
+    end
+
+    defp verify_batch_create(repo, schema_module, record, attrs, opts) do
+      if visible_under_scope?(repo, schema_module, record, Keyword.get(opts, :scope)) do
+        {:ok, record}
+      else
+        undo_out_of_scope_insert(repo, record, attrs)
+      end
+    rescue
+      e -> abort_batch_on_failed_safety_net(repo, e, __STACKTRACE__)
+    end
+
+    # The inserted row is not visible under the actor's scope: undo it so the
+    # rest of the batch can still commit, and report the row as failed. Hard
+    # delete is safe here — the row was created in this same transaction.
+    defp undo_out_of_scope_insert(repo, record, attrs) do
+      case repo.delete(record, mode: :savepoint) do
+        {:ok, _record} -> {:error, attrs, :scope_violation}
+        {:error, reason} -> repo.rollback(reason)
+      end
+    end
+
+    # If the scope safety net itself fails — the verification re-select or the
+    # undo write raised (DB trigger, constraint, connection loss) — abort the
+    # whole batch. Swallowing the error would let `run_batch/5` report the row
+    # as failed while it stays committed outside the actor's scope.
+    defp abort_batch_on_failed_safety_net(repo, error, stacktrace) do
+      log_internal_error(:scope_write_verification, error, stacktrace)
+      repo.rollback(:scope_verification_failed)
     end
 
     defp build_create_changeset(schema_module, struct, attrs) do
@@ -657,18 +712,47 @@ if Code.ensure_loaded?(Ecto) do
           {:error, record_attrs, :not_found}
 
         record ->
-          update_attrs =
-            record_attrs
-            |> normalize_params(schema_module)
-            |> Enum.reject(fn {k, _v} -> k in pk_fields end)
-            |> Enum.into(%{})
+          apply_batch_update(repo, schema_module, record, record_attrs, pk_fields, scope)
+      end
+    end
 
-          changeset = build_changeset(schema_module, record, update_attrs, pk_fields)
+    defp apply_batch_update(repo, schema_module, record, record_attrs, pk_fields, scope) do
+      update_attrs =
+        record_attrs
+        |> normalize_params(schema_module)
+        |> Enum.reject(fn {k, _v} -> k in pk_fields end)
+        |> Enum.into(%{})
 
-          case repo.update(changeset, mode: :savepoint) do
-            {:ok, record} -> {:ok, record}
-            {:error, changeset} -> {:error, record_attrs, changeset}
-          end
+      original = Map.take(record, Map.keys(update_attrs))
+      changeset = build_changeset(schema_module, record, update_attrs, pk_fields)
+
+      case repo.update(changeset, mode: :savepoint) do
+        {:ok, updated} ->
+          verify_batch_update(repo, schema_module, updated, original, record_attrs, scope)
+
+        {:error, changeset} ->
+          {:error, record_attrs, changeset}
+      end
+    end
+
+    defp verify_batch_update(repo, schema_module, updated, original, record_attrs, scope) do
+      if visible_under_scope?(repo, schema_module, updated, scope) do
+        {:ok, updated}
+      else
+        restore_batch_update(repo, updated, original, record_attrs)
+      end
+    rescue
+      e -> abort_batch_on_failed_safety_net(repo, e, __STACKTRACE__)
+    end
+
+    # The update moved the row out of the actor's scope: restore the original
+    # values so the batch transaction can still commit, and report the row as
+    # failed. Base the restore on `updated` — `change/2` drops no-op changes,
+    # so building it from the pre-update struct would emit no UPDATE at all.
+    defp restore_batch_update(repo, updated, original, record_attrs) do
+      case repo.update(Ecto.Changeset.change(updated, original), mode: :savepoint) do
+        {:ok, _record} -> {:error, record_attrs, :scope_violation}
+        {:error, reason} -> repo.rollback(reason)
       end
     end
 
@@ -854,7 +938,7 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp perform_update(repo, schema_module, record, params, pk_fields) do
+    defp perform_update(repo, schema_module, record, params, pk_fields, scope) do
       update_attrs =
         params
         |> normalize_params(schema_module)
@@ -867,7 +951,7 @@ if Code.ensure_loaded?(Ecto) do
         |> Enum.reject(fn f -> f in pk_fields end)
 
       changeset = changeset_for(schema_module, record, update_attrs, writable)
-      repo.update(changeset)
+      update_and_verify_scope(repo, changeset, schema_module, scope)
     end
 
     defp perform_destroy(repo, schema_module, record) do
@@ -958,7 +1042,90 @@ if Code.ensure_loaded?(Ecto) do
       end
     end
 
-    defp create_with_associations(repo, schema_module, struct, attrs, associations) do
+    # Inserts a record, then re-selects it through the actor's scope and rolls
+    # the transaction back if it is no longer visible. Without this, a scoped
+    # actor can write rows under another tenant by supplying a foreign tenant
+    # key on create/upsert (see #174).
+    defp insert_and_verify_scope(repo, changeset, _schema_module, nil) do
+      repo.insert(changeset)
+    end
+
+    defp insert_and_verify_scope(repo, changeset, schema_module, scope) do
+      repo.transaction(fn ->
+        case repo.insert(changeset) do
+          {:ok, record} -> verify_written_row(repo, schema_module, record, scope)
+          {:error, changeset} -> {:error, changeset}
+        end
+      end)
+      |> unwrap_transaction_result()
+    end
+
+    # Updates a record, then re-selects it through the actor's scope and rolls
+    # the transaction back if the update moved it out of scope (e.g. a scoped
+    # actor re-assigning the row's tenant key — see #174).
+    defp update_and_verify_scope(repo, changeset, _schema_module, nil) do
+      repo.update(changeset)
+    end
+
+    defp update_and_verify_scope(repo, changeset, schema_module, scope) do
+      repo.transaction(fn ->
+        case repo.update(changeset) do
+          {:ok, record} -> verify_written_row(repo, schema_module, record, scope)
+          {:error, changeset} -> {:error, changeset}
+        end
+      end)
+      |> unwrap_transaction_result()
+    end
+
+    defp verify_written_row(repo, schema_module, record, scope) do
+      if visible_under_scope?(repo, schema_module, record, scope) do
+        {:ok, record}
+      else
+        repo.rollback(:scope_violation)
+      end
+    end
+
+    defp unwrap_transaction_result({:ok, result}), do: result
+    defp unwrap_transaction_result({:error, reason}), do: {:error, reason}
+
+    # Re-selects a written record by primary key through the scope. Returns
+    # true when the row is still visible to the scoped actor.
+    defp visible_under_scope?(_repo, _schema_module, _record, nil), do: true
+
+    defp visible_under_scope?(repo, schema_module, record, scope) do
+      pk_fields = SchemaIntrospection.analyze(schema_module).primary_key
+
+      if pk_fields == [] do
+        # No primary key: the written row cannot be re-selected, so the write
+        # cannot be verified against the scope. Fail closed instead of letting
+        # an unverifiable scoped write through.
+        Logger.warning(
+          "Ectomancer.Repo: scoped write on pk-less schema #{inspect(schema_module)} " <>
+            "cannot be verified against the scope; rejecting it (fail-closed)"
+        )
+
+        false
+      else
+        recheck_written_row(repo, schema_module, record, scope, pk_fields)
+      end
+    end
+
+    defp recheck_written_row(repo, schema_module, record, scope, pk_fields) do
+      pk_values = Map.take(record, pk_fields)
+
+      if Enum.all?(pk_fields, &Map.has_key?(pk_values, &1)) do
+        query =
+          schema_module
+          |> build_pk_query(pk_values)
+          |> Filtering.apply_scope(scope)
+
+        not is_nil(repo.one(query))
+      else
+        true
+      end
+    end
+
+    defp create_with_associations(repo, schema_module, struct, attrs, associations, scope) do
       assoc_config_fields = Enum.map(associations, & &1.field)
       {assoc_attrs, record_attrs} = Map.split(attrs, assoc_config_fields)
       writable = writable_fields(schema_module)
@@ -971,7 +1138,8 @@ if Code.ensure_loaded?(Ecto) do
           record_attrs,
           writable,
           assoc_attrs,
-          associations
+          associations,
+          scope
         )
       end)
       |> normalize_transaction_result()
@@ -984,13 +1152,27 @@ if Code.ensure_loaded?(Ecto) do
            record_attrs,
            writable,
            assoc_attrs,
-           associations
+           associations,
+           scope
          ) do
       changeset = changeset_for(schema_module, struct, record_attrs, writable)
 
       case repo.insert(changeset) do
-        {:ok, record} -> insert_associations(repo, record, assoc_attrs, associations)
-        {:error, changeset} -> repo.rollback(changeset)
+        {:ok, record} ->
+          insert_assocs_and_verify(repo, schema_module, record, assoc_attrs, associations, scope)
+
+        {:error, changeset} ->
+          repo.rollback(changeset)
+      end
+    end
+
+    defp insert_assocs_and_verify(repo, schema_module, record, assoc_attrs, associations, scope) do
+      with {:ok, record} <- insert_associations(repo, record, assoc_attrs, associations) do
+        if visible_under_scope?(repo, schema_module, record, scope) do
+          record
+        else
+          repo.rollback(:scope_violation)
+        end
       end
     end
 

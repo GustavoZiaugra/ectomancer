@@ -130,6 +130,17 @@ defmodule Ectomancer.Installer.TemplateRenderer do
         name: "#{mcp_name}",
         version: "#{mcp_version}"
 
+      # SECURITY: generated list/get tools are PUBLIC unless you add
+      # authorization and/or a row-level scope. Recommended:
+      #
+      #   authorize: fn actor, _action -> actor != nil end
+      #   scope: fn query, actor ->
+      #     import Ecto.Query
+      #     from(r in query, where: r.tenant_id == ^actor.tenant_id)
+      #   end
+      #
+      # See the Ectomancer README ("Security") for details.
+
     #{expose_lines}#{oban_line}
     end
     """

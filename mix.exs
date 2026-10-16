@@ -109,7 +109,10 @@ defmodule Ectomancer.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
       # Database testing
-      {:ecto_sqlite3, "~> 0.22", only: :test}
+      {:ecto_sqlite3, "~> 0.22", only: :test},
+      # Postgres-only integration tests (test/ectomancer/postgres_scope_test.exs);
+      # run them locally with ECTOMANCER_PG_URL=postgres://... mix test --only postgres
+      {:postgrex, "~> 0.22", only: :test}
     ]
   end
 end
