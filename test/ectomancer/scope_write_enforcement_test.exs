@@ -50,7 +50,24 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
     end
   end
 
-  @moduletag schemas: [TenantItem, PkLessItem, TenantItemChild]
+  defmodule CustomChangesetItem do
+    use Ecto.Schema
+
+    schema "custom_changeset_items" do
+      field(:name, :string)
+      field(:tenant_id, :integer)
+    end
+
+    # Simulates a custom changeset that re-derives the tenant key from
+    # elsewhere, changing a field the caller never sent.
+    def changeset(struct, attrs) do
+      struct
+      |> Ecto.Changeset.cast(attrs, [:name])
+      |> Ecto.Changeset.put_change(:tenant_id, 2)
+    end
+  end
+
+  @moduletag schemas: [TenantItem, PkLessItem, TenantItemChild, CustomChangesetItem]
 
   setup %{repo: _repo} do
     Application.put_env(:ectomancer, :repo, TestRepo)
@@ -213,6 +230,28 @@ defmodule Ectomancer.ScopeWriteEnforcementTest do
 
       {:ok, [unchanged]} = Ectomancer.Repo.list(TenantItem, %{"name" => "mine"})
       assert unchanged.tenant_id == 1
+    end
+
+    test "batch_update restore undoes fields changed by a custom changeset" do
+      :ok = insert!(CustomChangesetItem, %{name: "orig", tenant_id: 1})
+      row = TestRepo.one(CustomChangesetItem)
+
+      # The request only changes :name; the schema's custom changeset/2 also
+      # moves tenant_id to 2, so the scope check rejects the write and the
+      # restore must undo both fields.
+      assert {:ok, %{failed: [failed]}} =
+               Ectomancer.Repo.batch_update(
+                 CustomChangesetItem,
+                 %{"records" => [%{"id" => row.id, "name" => "new"}]},
+                 scope: tenant_one_scope(),
+                 repo: TestRepo
+               )
+
+      assert failed.errors == :scope_violation
+
+      reloaded = TestRepo.get(CustomChangesetItem, row.id)
+      assert reloaded.name == "orig"
+      assert reloaded.tenant_id == 1
     end
   end
 

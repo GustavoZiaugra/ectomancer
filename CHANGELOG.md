@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`order_by` no longer sorts by `except:`-hidden fields.** Ordering is now
   resolved against the exposed/filterable field allowlist instead of every
   schema field, closing an ordering-leak on redacted columns (#174).
+- **`batch_update` restore now undoes every field the changeset writes.** The
+  compensating restore only snapshotted the fields present in the caller's
+  attrs, so a schema's custom `changeset/2` could change a scope field the
+  caller never sent (e.g. re-derive `tenant_id`) that the restore never
+  reverted — the row stayed outside the actor's scope while the batch
+  committed and reported it as failed. The restore is now based on the built
+  changeset's changed fields (#174).
 - **`create` with `associations:` now enforces `scope:`.** The scope re-check on
   the association-create path was dead code — `insert_associations/4` returned
   the bare struct, so the `{:ok, record}` match never fired and the check was
@@ -77,10 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `postgres scope tests` runs it against a `postgres:16` service.
 - New SQLite coverage: upsert insert/update scope paths, association-create
   scope enforcement (parent + children rolled back together), `order_by` vs
-  `field_authorize`, batch safety-net failure paths (trigger-blocked undo and
-  restore abort the whole batch), caller-managed transaction semantics
-  (`{:error, :rollback}`), and fail-closed rejection of scoped writes on
-  pk-less schemas.
+  `field_authorize`, custom-changeset batch restore, batch safety-net failure
+  paths (trigger-blocked undo and restore abort the whole batch),
+  caller-managed transaction semantics (`{:error, :rollback}`), and fail-closed
+  rejection of scoped writes on pk-less schemas.
 
 ## [3.0.1] - 2026-10-13
 

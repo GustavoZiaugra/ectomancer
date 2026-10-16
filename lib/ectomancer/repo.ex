@@ -725,8 +725,14 @@ if Code.ensure_loaded?(Ecto) do
         |> Enum.reject(fn {k, _v} -> k in pk_fields end)
         |> Enum.into(%{})
 
-      original = Map.take(record, Map.keys(update_attrs))
       changeset = build_changeset(schema_module, record, update_attrs, pk_fields)
+
+      # Snapshot every field the changeset actually changes, not just the
+      # caller's attrs: a custom `changeset/2` can modify fields that are
+      # absent from the request (e.g. re-derive `tenant_id`), and the scope
+      # restore below must undo all of them or the row can stay outside the
+      # actor's scope while the batch commits and reports it as failed.
+      original = Map.take(record, changed_fields(schema_module, changeset))
 
       case repo.update(changeset, mode: :savepoint) do
         {:ok, updated} ->
@@ -735,6 +741,16 @@ if Code.ensure_loaded?(Ecto) do
         {:error, changeset} ->
           {:error, record_attrs, changeset}
       end
+    end
+
+    # Schema fields the built changeset will write. Association keys are
+    # filtered out — they cannot be restored with `Ecto.Changeset.change/2`.
+    defp changed_fields(schema_module, changeset) do
+      fields = schema_module.__schema__(:fields)
+
+      changeset.changes
+      |> Map.keys()
+      |> Enum.filter(&(&1 in fields))
     end
 
     defp verify_batch_update(repo, schema_module, updated, original, record_attrs, scope) do
