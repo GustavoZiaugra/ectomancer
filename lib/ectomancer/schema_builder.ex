@@ -65,7 +65,6 @@ if Code.ensure_loaded?(Ecto) do
           "required" => ["email"]
         }
     """
-    # Allow nil for fields parameter to use default writable fields
     @spec build(module(), [atom()] | nil, keyword()) :: map()
     def build(schema_module, fields \\ nil, opts \\ []) do
       fields = fields || SchemaIntrospection.writable_fields(schema_module)
@@ -81,13 +80,10 @@ if Code.ensure_loaded?(Ecto) do
       required_fields =
         case opts[:required] do
           nil ->
-            # Auto-detect required fields based on type (exclude nilable)
             fields
             |> Enum.reject(fn field ->
               type = introspection.types[field]
-              # Consider fields with {:maybe, _} type or default values as optional
-              is_nil(type) or
-                (is_tuple(type) and elem(type, 0) == :maybe)
+              is_nil(type) or (is_tuple(type) and elem(type, 0) == :maybe)
             end)
             |> Enum.map(&to_string/1)
 
@@ -192,28 +188,22 @@ if Code.ensure_loaded?(Ecto) do
       {fields, required} =
         case action do
           :upsert ->
-            # For upsert, use all writable fields (same as create)
             {base_fields, nil}
 
           :create ->
-            # For create, use all writable fields with auto-required
             {base_fields, nil}
 
           :update ->
-            # For update, all fields are optional (partial updates allowed)
             {base_fields, []}
 
           :get ->
-            # For get, only need primary key
             pk = SchemaIntrospection.primary_key(schema_module)
             {pk, Enum.map(pk, &to_string/1)}
 
           :list ->
-            # For list, optional filter fields
             {base_fields, []}
 
           :destroy ->
-            # For destroy, only need primary key
             pk = SchemaIntrospection.primary_key(schema_module)
             {pk, Enum.map(pk, &to_string/1)}
 

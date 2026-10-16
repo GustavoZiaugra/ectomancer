@@ -89,8 +89,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     end
   end
 
-  # MCP Module
-
   @doc false
   def mcp_module_path(app_name) do
     "lib/#{app_name || "my_app"}/mcp.ex"
@@ -102,7 +100,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
     if File.exists?(path) do
       File.rm!(path)
 
-      # Remove empty parent directory if it only contained mcp.ex
       parent = Path.dirname(path)
 
       if File.exists?(parent) and dir_empty?(parent) do
@@ -114,8 +111,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
       :not_found
     end
   end
-
-  # Mix Dependency
 
   @doc false
   def has_dependency? do
@@ -153,8 +148,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
       :error
     end
   end
-
-  # Config
 
   @doc false
   def has_config? do
@@ -198,8 +191,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
       :error
     end
   end
-
-  # Router
 
   @doc false
   def router_path(app_name) do
@@ -259,8 +250,6 @@ defmodule Mix.Tasks.Ectomancer.Teardown do
       :error
     end
   end
-
-  # Helpers
 
   @doc false
   def detect_app_name do

@@ -184,8 +184,6 @@ if Code.ensure_loaded?(Phoenix.Socket.Transport) do
     @impl Phoenix.Socket.Transport
     def terminate(_reason, _state), do: :ok
 
-    ## Private helpers
-
     defp resolve_server(_state) do
       Application.get_env(:ectomancer, :ws_server)
     end
