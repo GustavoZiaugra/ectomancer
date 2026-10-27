@@ -100,6 +100,9 @@ defmodule Ectomancer.MixProject do
       {:ecto, "~> 3.12", optional: true},
       # Floor >= 1.19.2 fixes GHSA-468c-vq7p-gh64 (unbounded multipart header buffer DoS)
       {:plug, ">= 1.19.2 and < 2.0.0", optional: true},
+      # Floor >= 2.2.1 fixes CVE-2026-105963 (secret key base exposure in
+      # stack trace arguments on wrong-typed Plug.Crypto arguments)
+      {:plug_crypto, ">= 2.2.1 and < 3.0.0", optional: true},
       {:oban, "~> 2.18", optional: true},
       # Floor >= 0.8.4 fixes GHSA-cj7w-j579-gc42 (terminal escape sequence injection)
       {:igniter, "~> 0.8.4", optional: true},
