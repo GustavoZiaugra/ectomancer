@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CVE-2026-105963 (secret key base exposure in stack trace arguments on
   wrong-typed `Plug.Crypto` arguments).
 
+### Changed
+
+- Updated dependencies and CI tooling: `anubis_mcp` 2.2.0, `ecto_sqlite3` 0.26,
+  `phoenix` 1.8.16, and `req` 0.7.5, plus `actions/checkout` v7 and
+  `actions/cache` v6.
+- Removed the unused `:inflex` entry from `mix.lock`.
+
+No public API changes.
+
 ### Upgrade notes
 
 - `plug_crypto >= 2.2.1` is required. Applications using encrypted cookie
