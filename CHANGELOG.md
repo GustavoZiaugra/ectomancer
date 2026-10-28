@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CVE-2026-105963 (secret key base exposure in stack trace arguments on
   wrong-typed `Plug.Crypto` arguments).
 
+### Upgrade notes
+
+- `plug_crypto >= 2.2.1` is required. Applications using encrypted cookie
+  sessions should apply the Plug.Crypto 2.x key-length migration
+  (`key_length: 32`); values of `16` or `24` now raise when a session is
+  written.
+
 ## [3.0.2] - 2026-10-16
 
 > **Upgrading from 3.0.x: writes now honor `scope:`.** Rows created or moved
