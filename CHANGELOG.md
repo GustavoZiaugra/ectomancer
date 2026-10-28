@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Require `plug_crypto >= 2.2.1` and update the lockfile to 2.2.1, fixing
+  CVE-2026-105963 (secret key base exposure in stack trace arguments on
+  wrong-typed `Plug.Crypto` arguments).
+
 ## [3.0.2] - 2026-10-16
 
 > **Upgrading from 3.0.x: writes now honor `scope:`.** Rows created or moved
