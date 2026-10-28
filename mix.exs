@@ -13,7 +13,7 @@ defmodule Ectomancer.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       name: "Ectomancer",
-      description: "Add an AI brain to your Phoenix app - Auto-expose Ecto schemas as MCP tools",
+      description: "Turn Ecto schemas into a safe MCP server for Claude",
       package: package(),
       docs: docs(),
       source_url: @source_url,

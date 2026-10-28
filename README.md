@@ -6,11 +6,77 @@
 [![Downloads](https://img.shields.io/hexpm/dt/ectomancer)](https://hex.pm/packages/ectomancer)
 [![License](https://img.shields.io/hexpm/l/ectomancer)](https://github.com/GustavoZiaugra/ectomancer/blob/main/LICENSE)
 
-**Auto-generate MCP tools from your Ecto schemas — your Phoenix app, now conversationally operable by Claude and any LLM.**
+**Turn your Ecto schemas into a safe MCP server for Claude.**
 
-Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and turns your database schemas into live MCP tools. Add it to your router, start the server, and your AI assistant can query, create, and update records through natural language — no hand-written tool definitions, no boilerplate.
+Ectomancer exposes selected Ecto schemas as MCP tools, so Claude, Cursor, or any MCP client can query and update your Phoenix app's data using your existing authorization — not a database password.
 
-## Features
+![Ectomancer Demo](priv/demo.gif)
+
+> 3 Ecto schemas → 15+ MCP tools. No hand-written tool definitions.
+
+```bash
+mix igniter.install ectomancer
+```
+
+[Try the demo](https://github.com/GustavoZiaugra/ectomancer_demo) · [Read the docs](https://hexdocs.pm/ectomancer) · [Watch the demo](#demo)
+
+## Why Ectomancer
+
+- **Safe by default** — `expose` is read-only (`list`/`get`); mutations require an explicit `authorize:`.
+- **Your auth, not DB credentials** — actor threading and scopes flow through every tool call.
+- **Ecto-native** — uses your existing schemas and associations. No SQL strings or duplicate models.
+- **One command** — the Igniter installer adds the dependency, discovers schemas, patches your router, and wires the supervision tree.
+- **Any MCP client** — Claude, Cursor, Codex, or your own client over Streamable HTTP or WebSocket.
+
+## Why not just use a Postgres MCP?
+
+| | Generic Postgres MCP | Hand-written MCP tools | Ectomancer |
+|---|---|---|---|
+| Access | DB credentials | Custom code | App-level, scoped |
+| Auth | DB roles | You build it | Your existing actor/auth |
+| Schema semantics | Raw SQL | Manual | Ecto schemas |
+| Setup | Connection string | Days | One command |
+| Blast radius | Whole database | Whatever you built | Only exposed schemas/actions |
+
+> Don't give Claude your database password. Give it scoped tools that respect your app's authorization.
+
+## Quick start
+
+```elixir
+defmodule MyApp.MCP do
+  use Ectomancer, name: "myapp-mcp"
+
+  expose MyApp.Accounts.User, actions: [:list, :get]
+end
+```
+
+Add it to your supervision tree and router:
+
+```elixir
+# application.ex
+children = [
+  Ectomancer.child_spec(MyApp.MCP, transports: [:streamable_http]),
+  MyAppWeb.Endpoint
+]
+
+# router.ex
+forward "/mcp", Ectomancer.Plug, server: MyApp.MCP
+```
+
+See [Installation](#installation) for the one-command installer and full setup.
+
+## Who it's for
+
+- Phoenix apps with Ecto/Postgres and an internal admin, support, or analytics use case.
+- Teams using Claude, Cursor, Codex, or another MCP client.
+- Developers who want scoped app access, not a raw SQL console.
+
+**Not for:** non-Elixir apps, teams that need a generic database MCP, or anyone looking for an unauthenticated public data API.
+
+Using Ectomancer? [Add yourself to ADOPTERS.md](ADOPTERS.md) — it helps other Phoenix developers see what is possible.
+
+<details>
+<summary>Full feature list</summary>
 
 - **Schema → MCP tools** — auto-generates CRUD tools from `expose MyApp.Accounts.User`
 - **Route introspection** — `expose_routes MyAppWeb.Router` turns HTTP endpoints into callable tools
@@ -32,11 +98,11 @@ Ectomancer sits on top of [anubis_mcp](https://hex.pm/packages/anubis_mcp) and t
 - **Interactive installer** — `mix ectomancer.setup` auto-discovers schemas and patches your project
 - **Igniter installer** — `mix igniter.install ectomancer` auto-configures Ectomancer with schema selection, config files, router routes, and supervision tree
 
+</details>
+
 ## Demo
 
-Watch Ectomancer in action — a full Phoenix app with User, Post, and Comment schemas exposed as MCP tools, running on the Streamable HTTP transport.
-
-![Ectomancer Demo](priv/demo.gif)
+The demo is a full Phoenix app with User, Post, and Comment schemas exposed as MCP tools over the Streamable HTTP transport.
 
 *3 Ecto schemas → 15 MCP tools with zero boilerplate. Replay locally with `asciinema play priv/demo.cast`.*
 
