@@ -61,7 +61,7 @@ jobs:
           deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
 
     - name: Install dependencies
-      run: mix deps.get
+      run: mix deps.get --check-locked
 
     - name: Reject project-level advisory ignores
       if: ${{ matrix.lint }}
@@ -136,7 +136,7 @@ jobs:
         otp-version: '29.0'
 
     - name: Install dependencies
-      run: mix deps.get
+      run: mix deps.get --check-locked
 
     - name: Run Postgres scope tests
       run: mix test --only postgres
@@ -160,7 +160,7 @@ jobs:
         otp-version: '29.0'
 
     - name: Install dependencies
-      run: mix deps.get
+      run: mix deps.get --check-locked
 
     - name: Update anubis_mcp to the latest allowed 2.x
       run: mix deps.update anubis_mcp
