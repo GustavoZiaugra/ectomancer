@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-11-23
+
+### Security
+
+- Updated `phoenix` to 1.8.17, fixing EEF-CVE-2026-128361 and
+  EEF-CVE-2026-129344 (HIGH).
+
+### Changed
+
+- Updated dependencies: `ecto` 3.14.3, `plug` 1.20.4, `telemetry` 1.4.3,
+  `websock_adapter` 0.7.2, `dialyxir` 1.4.9, `ex_doc` 0.40.5, and
+  `makeup` 1.2.3.
+
+No public API changes.
+
 ## [3.0.3] - 2026-10-28
 
 ### Security
@@ -825,7 +840,8 @@ expose MyApp.Blog.Post, readonly: true
 - Row limits to prevent memory exhaustion (100 records default)
 - Proper error messages without exposing internal details
 
-[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.4...HEAD
+[3.0.4]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.3...v3.0.4
 [3.0.3]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/GustavoZiaugra/ectomancer/compare/v3.0.0...v3.0.1

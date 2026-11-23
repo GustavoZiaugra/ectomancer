@@ -800,7 +800,7 @@ service container.
 
 Zero compiler warnings, full Credo and Dialyzer compliance.
 
-Current version: **3.0.3**
+Current version: **3.0.4**
 
 ## License
 
